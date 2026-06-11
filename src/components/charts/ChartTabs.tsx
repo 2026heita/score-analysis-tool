@@ -1,4 +1,4 @@
-type ChartTab = 'histogram' | 'boxplot' | 'cdf';
+import type { ChartTab } from '../../types';
 
 interface ChartTabsProps {
   activeTab: ChartTab;
@@ -9,6 +9,7 @@ const TABS: { key: ChartTab; label: string }[] = [
   { key: 'histogram', label: '分布图' },
   { key: 'boxplot', label: '箱线图' },
   { key: 'cdf', label: '累积分布图' },
+  { key: 'quartile', label: '四分位占比图' },
 ];
 
 export default function ChartTabs({ activeTab, onChange }: ChartTabsProps) {
@@ -35,6 +36,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     gap: '8px',
     marginBottom: '12px',
+    flexWrap: 'wrap',
   },
   tab: {
     padding: '6px 16px',

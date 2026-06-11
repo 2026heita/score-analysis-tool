@@ -38,10 +38,12 @@ export default function CdfChart({ values, fieldName, userValue }: CdfChartProps
     const yData = cdf.map(p => p.percentile);
 
     // 用户标记点：放在曲线上对应位置
+    // 使用严格小于口径，与全站百分位一致
     const markPoint: any[] = [];
 
     if (userValue !== undefined) {
-      const lowerCount = cleanValues.filter(v => v <= userValue).length;
+      // 百分位口径：低于该值人数 / 有效人数 * 100（严格小于）
+      const lowerCount = cleanValues.filter(v => v < userValue).length;
       const percentile = cleanValues.length > 0 ? (lowerCount / cleanValues.length) * 100 : 0;
 
       markPoint.push({
@@ -68,7 +70,7 @@ export default function CdfChart({ values, fieldName, userValue }: CdfChartProps
         trigger: 'axis',
         formatter: (params: any) => {
           const p = params[0];
-          return `${p.value[0]}<br/>累计比例：${p.value[1].toFixed(1)}%`;
+          return `${p.value[0]}<br/>低于该值比例：${p.value[1].toFixed(1)}%`;
         },
       },
       grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
@@ -82,7 +84,7 @@ export default function CdfChart({ values, fieldName, userValue }: CdfChartProps
         type: 'value',
         min: 0,
         max: 100,
-        name: '累计比例',
+        name: '低于该值比例 (%)',
         nameTextStyle: { fontSize: 11, color: '#94a3b8' },
         axisLabel: { formatter: '{value}%' },
         splitLine: { lineStyle: { type: 'dashed', color: '#e2e8f0' } },

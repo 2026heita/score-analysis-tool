@@ -98,11 +98,16 @@ export default function TraditionalSubjectRadar({ initialEntries, onStateChange 
       },
       tooltip: {
         trigger: 'item',
-        formatter: (params: any) => {
-          const idx = params.dataIndex;
-          const e = validEntries[idx];
-          const norm = normalizeScore(e.score, e.maxScore);
-          return `科目：${e.name}<br/>实际分：${Number.isInteger(e.score) ? e.score : e.score.toFixed(1)}<br/>满分：${e.maxScore}<br/>标准化百分比：${norm.toFixed(1)}%`;
+        formatter: () => {
+          const lines = ['传统科目得分率雷达图'];
+          for (const e of entries) {
+            const norm = e.maxScore > 0 ? normalizeScore(e.score, e.maxScore) : 0;
+            const scoreStr = e.score > 0 ? e.score.toString() : '-';
+            const maxStr = e.maxScore > 0 ? e.maxScore.toString() : '-';
+            const normStr = e.score > 0 && e.maxScore > 0 ? `${norm.toFixed(1)}%` : '-';
+            lines.push(`${e.name}：${scoreStr} / ${maxStr}，${normStr}`);
+          }
+          return lines.join('<br/>');
         },
       },
       radar: {
@@ -125,7 +130,7 @@ export default function TraditionalSubjectRadar({ initialEntries, onStateChange 
         },
       ],
     } as EChartsOption;
-  }, [validEntries]);
+  }, [validEntries, entries]);
 
   // 结论
   const conclusion = useMemo(() => {

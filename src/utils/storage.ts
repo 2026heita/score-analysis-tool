@@ -64,16 +64,32 @@ export const DEFAULT_SAMPLE_TEXT = `名次\t总分\t语文数学两科之和\t�
 49\t528\t190\t100\t84\t42\t40\t36
 50\t525\t188\t99\t83\t41\t39\t35`;
 
-export function getDefaultState(): SavedState {
+/** 系统默认状态：用于"恢复默认"和"填入示例数据" */
+export function getSystemDefaultState(): SavedState {
   return {
     version: CURRENT_VERSION,
     rawText: DEFAULT_SAMPLE_TEXT,
-    selectedField: '',
+    selectedField: '外语单科成绩',
     inputValue: '117',
     showAllFields: false,
     activeChartTab: 'histogram',
     originalFieldRadar: { selections: [], viewMode: 'bar' },
     traditionalSubjectRadar: { entries: DEFAULT_TRADITIONAL_ENTRIES },
+    analysisMode: 'scoreRate',
+  };
+}
+
+/** 空白默认状态：用于首次加载或 localStorage 为空时 */
+export function getDefaultState(): SavedState {
+  return {
+    version: CURRENT_VERSION,
+    rawText: '',
+    selectedField: '',
+    inputValue: '',
+    showAllFields: false,
+    activeChartTab: 'histogram',
+    originalFieldRadar: { selections: [], viewMode: 'bar' },
+    traditionalSubjectRadar: { entries: [] },
     analysisMode: 'scoreRate',
   };
 }
