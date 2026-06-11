@@ -1,7 +1,7 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { parseTableText } from './utils/parseTable';
 import { calculateStats, calculatePosition, formatNumber } from './utils/stats';
-import { saveState, loadSavedState, clearSavedState, getDefaultState } from './utils/storage';
+import { saveState, loadSavedState, clearSavedState, getDefaultState, getSystemDefaultState } from './utils/storage';
 import type { ParsedTable, StatsResult, PositionResult, ChartTab, OriginalFieldRadarState, TraditionalSubjectEntry } from './types';
 import UsageGuide from './components/UsageGuide';
 import ChartTabs from './components/charts/ChartTabs';
@@ -9,12 +9,49 @@ import HistogramChart from './components/charts/HistogramChart';
 import BoxPlotChart from './components/charts/BoxPlotChart';
 import CdfChart from './components/charts/CdfChart';
 import RadarAnalysis from './components/charts/RadarAnalysis';
+import QuartilePieChart from './components/charts/QuartilePieChart';
 
 const EXCLUDED_KEYWORDS = ['名次', '排名', '序号', '编号', '序号号'];
 
 export default function App() {
+  // ===== 注入全局动画样式 =====
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      .section-animate {
+        animation: fadeInUp 0.2s ease-out;
+      }
+      .stat-card-hover:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      }
+      .header-btn:hover {
+        background: rgba(255,255,255,0.25);
+        color: #fff;
+      }
+      .parse-btn:hover {
+        box-shadow: 0 4px 16px rgba(37,99,235,0.4);
+      }
+      .sample-btn:hover {
+        background: #dbeafe;
+      }
+      .copy-btn:hover {
+        background: #dbeafe;
+      }
+    `;
+    document.head.appendChild(style);
+    return () => { document.head.removeChild(style); };
+  }, []);
+
   const savedState = useMemo(() => loadSavedState(), []);
-  const defaultState = useMemo(() => getDefaultState(), []);
 
   const [rawText, setRawText] = useState(savedState?.rawText ?? '');
   const [parsedData, setParsedData] = useState<ParsedTable | null>(null);
@@ -26,11 +63,13 @@ export default function App() {
   const [activeChartTab, setActiveChartTab] = useState<ChartTab>((savedState?.activeChartTab as ChartTab) ?? 'histogram');
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
   const [originalFieldState, setOriginalFieldState] = useState<OriginalFieldRadarState>(
-    savedState?.originalFieldRadar ?? defaultState.originalFieldRadar
+    savedState?.originalFieldRadar ?? { selections: [], viewMode: 'bar' }
   );
   const [traditionalEntries, setTraditionalEntries] = useState<TraditionalSubjectEntry[]>(
-    savedState?.traditionalSubjectRadar?.entries ?? defaultState.traditionalSubjectRadar.entries
+    savedState?.traditionalSubjectRadar?.entries ?? getSystemDefaultState().traditionalSubjectRadar.entries
   );
 
   // ===== 自动保存 =====
@@ -104,10 +143,32 @@ export default function App() {
   useEffect(() => {
     if (!parsedData) return;
     if (availableFields.length === 0) { setSelectedField(''); return; }
-    if (!selectedField || !availableFields.includes(selectedField)) {
-      setSelectedField(availableFields[0]);
+
+    // 如果用户已保存了有效字段，不覆盖
+    if (selectedField && availableFields.includes(selectedField)) return;
+
+    // 自动选择字段：优先"外语单科成绩"，否则第一个
+    const preferred = availableFields.includes('外语单科成绩') ? '外语单科成绩' : availableFields[0];
+    setSelectedField(preferred);
+
+    // 如果 inputValue 为空，给一个合理默认值
+    if (!inputValue) {
+      if (preferred === '外语单科成绩') {
+        setInputValue('117');
+      } else {
+        // 取该字段中位数
+        const vals = parsedData.rows
+          .map(row => parseFloat(row[preferred]))
+          .filter(v => Number.isFinite(v))
+          .sort((a, b) => a - b);
+        if (vals.length > 0) {
+          const mid = Math.floor(vals.length / 2);
+          const median = vals.length % 2 === 0 ? (vals[mid - 1] + vals[mid]) / 2 : vals[mid];
+          setInputValue(Number.isInteger(median) ? median.toString() : median.toFixed(1));
+        }
+      }
     }
-  }, [availableFields, selectedField, parsedData]);
+  }, [availableFields, selectedField, parsedData, inputValue]);
 
   // ===== 统计计算（先定义，供后续 useCallback 使用） =====
   const stats: StatsResult | null = useMemo(() => {
@@ -171,7 +232,7 @@ export default function App() {
   }, [rawText, selectedField, inputValue, showAllFields, activeChartTab, originalFieldState, traditionalEntries]);
 
   const handleReset = useCallback(() => {
-    const def = getDefaultState();
+    const def = getSystemDefaultState();
     setRawText(def.rawText);
     setSelectedField(def.selectedField);
     setInputValue(def.inputValue);
@@ -188,6 +249,8 @@ export default function App() {
     saveState(def as any);
     setSaveMsg('已恢复默认设置');
     setTimeout(() => setSaveMsg(null), 2000);
+    // textarea 回到顶部
+    setTimeout(() => { textareaRef.current?.scrollTo({ top: 0 }); }, 0);
   }, []);
 
   const handleClear = useCallback(() => {
@@ -196,14 +259,14 @@ export default function App() {
     setSelectedField(''); setInputValue(''); setShowAllFields(false);
     setActiveChartTab('histogram');
     setOriginalFieldState({ selections: [], viewMode: 'bar' });
-    setTraditionalEntries(getDefaultState().traditionalSubjectRadar.entries);
+    setTraditionalEntries(getSystemDefaultState().traditionalSubjectRadar.entries);
     setSaveMsg('已清空数据');
     setTimeout(() => setSaveMsg(null), 2000);
   }, []);
 
   const handleFillSample = useCallback(() => {
     if (rawText.trim() && !window.confirm('当前输入会被示例数据覆盖，是否继续？')) return;
-    const def = getDefaultState();
+    const def = getSystemDefaultState();
     setRawText(def.rawText);
     try {
       const result = parseTableText(def.rawText);
@@ -213,6 +276,8 @@ export default function App() {
       setSelectedField('外语单科成绩');
       setInputValue('117');
       setActiveChartTab('histogram');
+      // textarea 回到顶部
+      setTimeout(() => { textareaRef.current?.scrollTo({ top: 0 }); }, 0);
     } catch { /* 静默 */ }
   }, [rawText]);
 
@@ -289,9 +354,9 @@ export default function App() {
         <h1 style={styles.title}>成绩分析工具</h1>
         <p style={styles.subtitle}>粘贴表格数据，快速分析成绩分布与排名</p>
         <div style={styles.headerActions}>
-          <button style={styles.headerButton} onClick={handleSave}>保存当前输入</button>
-          <button style={styles.headerButton} onClick={() => { if (window.confirm('确定恢复默认设置？当前输入会被覆盖。')) handleReset(); }}>恢复默认</button>
-          <button style={{ ...styles.headerButton, color: '#fca5a5' }} onClick={() => { if (window.confirm('确定清空所有数据？')) handleClear(); }}>清空数据</button>
+          <button className="header-btn" style={styles.headerButton} onClick={handleSave}>保存当前输入</button>
+          <button className="header-btn" style={styles.headerButton} onClick={() => { if (window.confirm('确定恢复默认设置？当前输入会被覆盖。')) handleReset(); }}>恢复默认</button>
+          <button className="header-btn" style={{ ...styles.headerButton, color: '#fca5a5' }} onClick={() => { if (window.confirm('确定清空所有数据？')) handleClear(); }}>清空数据</button>
         </div>
         {saveMsg && <p style={styles.saveMsg}>{saveMsg}</p>}
       </header>
@@ -304,6 +369,7 @@ export default function App() {
           <p style={styles.hint}>建议直接从 Excel 复制整块表格后粘贴到下方文本框中。</p>
           <p style={styles.rowLimitHint}>建议单次粘贴数据量不超过 2 万行。数据量过大时，浏览器可能出现卡顿。</p>
           <textarea
+            ref={textareaRef}
             style={styles.textarea}
             placeholder="粘贴表格数据&#10;第一行为字段名，后续行为数据&#10;支持 Tab、逗号、多空格分隔"
             value={rawText}
@@ -311,8 +377,8 @@ export default function App() {
             rows={8}
           />
           <div style={styles.parseRow}>
-            <button style={styles.parseButton} onClick={handleParse}>解析数据</button>
-            <button style={styles.sampleButton} onClick={handleFillSample}>填入示例数据</button>
+            <button className="parse-btn" style={styles.parseButton} onClick={handleParse}>解析数据</button>
+            <button className="sample-btn" style={styles.sampleButton} onClick={handleFillSample}>填入示例数据</button>
           </div>
           {parseError && <p style={styles.error}>{parseError}</p>}
           {parseWarnings.map((w, i) => (
@@ -398,7 +464,7 @@ export default function App() {
               <section style={styles.section}>
                 <div style={styles.positionHeader}>
                   <h2 style={styles.sectionTitle}>排名定位</h2>
-                  <button style={styles.copyButton} onClick={handleCopySummary}>复制分析摘要</button>
+                  <button className="copy-btn" style={styles.copyButton} onClick={handleCopySummary}>复制分析摘要</button>
                 </div>
 
                 {summaryText && <div style={styles.summaryBox}>{summaryText}</div>}
@@ -439,6 +505,7 @@ export default function App() {
                     {activeChartTab === 'histogram' && <HistogramChart values={fieldValues} fieldName={selectedField} userValue={isNaN(inputNum) ? undefined : inputNum} />}
                     {activeChartTab === 'boxplot' && <BoxPlotChart values={fieldValues} fieldName={selectedField} stats={stats ? { min: stats.min, q25: stats.q25, median: stats.median, q75: stats.q75, max: stats.max } : undefined} userValue={isNaN(inputNum) ? undefined : inputNum} />}
                     {activeChartTab === 'cdf' && <CdfChart values={fieldValues} fieldName={selectedField} userValue={isNaN(inputNum) ? undefined : inputNum} />}
+                    {activeChartTab === 'quartile' && <QuartilePieChart values={fieldValues} fieldName={selectedField} userValue={isNaN(inputNum) ? undefined : inputNum} />}
                   </>
                 )}
 
@@ -480,7 +547,7 @@ export default function App() {
 
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
-    <div style={styles.statCard}>
+    <div className="stat-card-hover" style={styles.statCard}>
       <div style={styles.statLabel}>{label}</div>
       <div style={styles.statValue}>{value}</div>
     </div>
@@ -506,21 +573,21 @@ function formatComparisonText(input: number, ref: number): string {
 
 const styles: Record<string, React.CSSProperties> = {
   container: { minHeight: '100vh', background: '#f8fafc', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', color: '#1e293b' },
-  header: { background: 'linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%)', color: '#fff', padding: '32px 24px', textAlign: 'center' },
+  header: { background: 'linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%)', color: '#fff', padding: '28px 24px', textAlign: 'center' },
   title: { margin: '0 0 4px', fontSize: '28px', fontWeight: 700, letterSpacing: '-0.02em' },
-  subtitle: { margin: '0 0 16px', fontSize: '14px', opacity: 0.85, fontWeight: 400 },
-  headerActions: { display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' },
-  headerButton: { padding: '5px 14px', background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.3)', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', transition: 'background 0.15s' },
+  subtitle: { margin: '0 0 14px', fontSize: '14px', opacity: 0.85, fontWeight: 400 },
+  headerActions: { display: 'flex', gap: '6px', justifyContent: 'center', flexWrap: 'wrap' },
+  headerButton: { padding: '4px 12px', background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', transition: 'all 0.15s' },
   saveMsg: { margin: '8px 0 0', fontSize: '12px', color: '#86efac', fontWeight: 500 },
-  main: { maxWidth: '800px', margin: '0 auto', padding: '24px 16px' },
-  section: { background: '#fff', borderRadius: '12px', padding: '24px', marginBottom: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' },
-  sectionTitle: { margin: '0 0 16px', fontSize: '16px', fontWeight: 600, color: '#334155', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' },
-  hint: { margin: '0 0 12px', fontSize: '13px', color: '#64748b', background: '#f0f7ff', padding: '8px 12px', borderRadius: '6px', borderLeft: '3px solid #3b82f6' },
+  main: { maxWidth: '800px', margin: '0 auto', padding: '20px 16px' },
+  section: { background: '#fff', borderRadius: '12px', padding: '20px', marginBottom: '12px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s' },
+  sectionTitle: { margin: '0 0 14px', fontSize: '16px', fontWeight: 600, color: '#334155', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' },
+  hint: { margin: '0 0 10px', fontSize: '13px', color: '#64748b', background: '#f0f7ff', padding: '8px 12px', borderRadius: '6px', borderLeft: '3px solid #3b82f6' },
   textarea: { width: '100%', padding: '12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box', outline: 'none' },
   parseRow: { display: 'flex', gap: '10px', marginTop: '12px', alignItems: 'center' },
-  parseButton: { padding: '10px 24px', background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 8px rgba(37,99,235,0.3)' },
-  sampleButton: { padding: '10px 24px', background: '#f0f7ff', color: '#3b82f6', border: '1px solid #93c5fd', borderRadius: '8px', fontSize: '14px', fontWeight: 500, cursor: 'pointer' },
-  copyButton: { padding: '4px 12px', background: '#f0f7ff', color: '#3b82f6', border: '1px solid #93c5fd', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 500, whiteSpace: 'nowrap' },
+  parseButton: { padding: '10px 24px', background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 8px rgba(37,99,235,0.3)', transition: 'box-shadow 0.15s' },
+  sampleButton: { padding: '10px 24px', background: '#f0f7ff', color: '#3b82f6', border: '1px solid #93c5fd', borderRadius: '8px', fontSize: '14px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s' },
+  copyButton: { padding: '4px 12px', background: '#f0f7ff', color: '#3b82f6', border: '1px solid #93c5fd', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 500, whiteSpace: 'nowrap', transition: 'all 0.15s' },
   error: { margin: '8px 0 0', color: '#ef4444', fontSize: '14px' },
   warning: { margin: '8px 0 0', color: '#92400e', fontSize: '13px', background: '#fffbeb', padding: '6px 10px', borderRadius: '6px' },
   errorSection: { border: '1px solid #fecaca', background: '#fef2f2' },
@@ -537,7 +604,7 @@ const styles: Record<string, React.CSSProperties> = {
   select: { width: '100%', padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', background: '#fff', cursor: 'pointer', outline: 'none', boxSizing: 'border-box' },
   input: { width: '100%', padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '16px', boxSizing: 'border-box', outline: 'none' },
   statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '10px' },
-  statCard: { background: '#f8fafc', borderRadius: '8px', padding: '12px', textAlign: 'center' },
+  statCard: { background: '#f8fafc', borderRadius: '8px', padding: '12px', textAlign: 'center', transition: 'transform 0.15s, box-shadow 0.15s' },
   statLabel: { fontSize: '12px', color: '#64748b', marginBottom: '4px' },
   statValue: { fontSize: '18px', fontWeight: 700, color: '#1e293b', fontFamily: 'monospace' },
   positionHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' },
@@ -552,11 +619,11 @@ const styles: Record<string, React.CSSProperties> = {
   note: { margin: '8px 0 0', fontSize: '11px', color: '#94a3b8' },
   emptyHint: { textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '14px' },
   emptyChart: { textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '13px' },
-  radarSection: { marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' },
+  radarSection: { marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' },
   footer: { textAlign: 'center', padding: '24px', color: '#94a3b8', fontSize: '12px', borderTop: '1px solid #e2e8f0', marginTop: '16px' },
   footerVersion: { fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '12px' },
   footerSection: { marginBottom: '8px' },
   footerLabel: { fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginBottom: '2px' },
   footerText: { margin: 0, fontSize: '11px', color: '#94a3b8', lineHeight: 1.6 },
-  rowLimitHint: { margin: '0 0 12px', fontSize: '12px', color: '#92400e', background: '#fffbeb', padding: '6px 12px', borderRadius: '6px', borderLeft: '3px solid #f59e0b' },
+  rowLimitHint: { margin: '0 0 10px', fontSize: '12px', color: '#92400e', background: '#fffbeb', padding: '6px 12px', borderRadius: '6px', borderLeft: '3px solid #f59e0b' },
 };

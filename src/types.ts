@@ -30,7 +30,7 @@ export interface PositionResult {
   existsInData: boolean;
 }
 
-export type ChartTab = 'histogram' | 'boxplot' | 'cdf';
+export type ChartTab = 'histogram' | 'boxplot' | 'cdf' | 'quartile';
 
 export type ViewMode = 'bar' | 'radar';
 

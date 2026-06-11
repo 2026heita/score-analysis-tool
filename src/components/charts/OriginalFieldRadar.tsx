@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
 import { calculateFieldPercentile } from '../../utils/chartData';
+import { calculateQuantile } from '../../utils/stats';
 import type { OriginalFieldRadarState } from '../../types';
 
 interface FieldSelection {
@@ -86,9 +87,7 @@ export default function OriginalFieldRadar({
         const max = Math.max(...values);
         const min = Math.min(...values);
         const mean = values.reduce((a, b) => a + b, 0) / values.length;
-        const sorted = [...values].sort((a, b) => a - b);
-        const mid = Math.floor(sorted.length / 2);
-        const median = sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+        const median = calculateQuantile(values, 0.5);
         const percentile = calculateFieldPercentile(values, s.userValue);
 
         return { field: s.field, userValue: s.userValue, percentile, max, min, mean, median, count: values.length };
