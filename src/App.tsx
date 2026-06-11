@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { parseTableText } from './utils/parseTable';
 import { calculateStats, calculatePosition, formatNumber } from './utils/stats';
-import { saveState, loadSavedState, clearSavedState, getDefaultState, getSystemDefaultState } from './utils/storage';
+import { saveState, loadSavedState, clearSavedState, getSystemDefaultState } from './utils/storage';
 import type { ParsedTable, StatsResult, PositionResult, ChartTab, OriginalFieldRadarState, TraditionalSubjectEntry } from './types';
 import UsageGuide from './components/UsageGuide';
 import ChartTabs from './components/charts/ChartTabs';
