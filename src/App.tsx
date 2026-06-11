@@ -53,14 +53,14 @@ export default function App() {
 
   const savedState = useMemo(() => loadSavedState(), []);
 
-  const [rawText, setRawText] = useState(savedState?.rawText ?? '');
+  const [rawText, setRawText] = useState('');
   const [parsedData, setParsedData] = useState<ParsedTable | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
   const [parseWarnings, setParseWarnings] = useState<string[]>([]);
-  const [selectedField, setSelectedField] = useState(savedState?.selectedField ?? '');
-  const [inputValue, setInputValue] = useState(savedState?.inputValue ?? '');
-  const [showAllFields, setShowAllFields] = useState(savedState?.showAllFields ?? false);
-  const [activeChartTab, setActiveChartTab] = useState<ChartTab>((savedState?.activeChartTab as ChartTab) ?? 'histogram');
+  const [selectedField, setSelectedField] = useState('');
+  const [inputValue, setInputValue] = useState('');
+  const [showAllFields, setShowAllFields] = useState(false);
+  const [activeChartTab, setActiveChartTab] = useState<ChartTab>('histogram');
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -89,15 +89,25 @@ export default function App() {
     } catch { /* 静默 */ }
   }, [rawText, selectedField, inputValue, showAllFields, activeChartTab, originalFieldState, traditionalEntries]);
 
-  // ===== 页面加载后自动解析 =====
+  // ===== 页面加载后恢复保存状态并自动解析 =====
   useEffect(() => {
-    if (rawText.trim()) {
+    // 恢复保存的状态
+    if (savedState?.rawText) {
+      setRawText(savedState.rawText);
+      setSelectedField(savedState.selectedField ?? '');
+      setInputValue(savedState.inputValue ?? '');
+      setShowAllFields(savedState.showAllFields ?? false);
+      setActiveChartTab((savedState.activeChartTab as ChartTab) ?? 'histogram');
+    }
+
+    const textToParse = savedState?.rawText || rawText;
+    if (textToParse.trim()) {
       try {
-        const result = parseTableText(rawText);
+        const result = parseTableText(textToParse);
         setParsedData(result);
         setParseWarnings(result.warnings || []);
         setParseError(null);
-      } catch { /* 用户手动点击解析 */ }
+      } catch { /* 忽略 */ }
     }
   }, []);
 
@@ -150,25 +160,7 @@ export default function App() {
     // 自动选择字段：优先"外语单科成绩"，否则第一个
     const preferred = availableFields.includes('外语单科成绩') ? '外语单科成绩' : availableFields[0];
     setSelectedField(preferred);
-
-    // 如果 inputValue 为空，给一个合理默认值
-    if (!inputValue) {
-      if (preferred === '外语单科成绩') {
-        setInputValue('117');
-      } else {
-        // 取该字段中位数
-        const vals = parsedData.rows
-          .map(row => parseFloat(row[preferred]))
-          .filter(v => Number.isFinite(v))
-          .sort((a, b) => a - b);
-        if (vals.length > 0) {
-          const mid = Math.floor(vals.length / 2);
-          const median = vals.length % 2 === 0 ? (vals[mid - 1] + vals[mid]) / 2 : vals[mid];
-          setInputValue(Number.isInteger(median) ? median.toString() : median.toFixed(1));
-        }
-      }
-    }
-  }, [availableFields, selectedField, parsedData, inputValue]);
+  }, [availableFields, selectedField, parsedData]);
 
   // ===== 统计计算（先定义，供后续 useCallback 使用） =====
   const stats: StatsResult | null = useMemo(() => {
