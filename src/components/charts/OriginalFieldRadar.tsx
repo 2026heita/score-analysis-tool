@@ -144,14 +144,17 @@ export default function OriginalFieldRadar({
 
   const excluded = excludedKeywords ?? EXCLUDED_DEFAULT;
 
-  // 当 initialSelections 变化时同步状态
+  // 只在挂载时初始化状态，不监听 initialSelections 变化
+  // 这样可以避免用户输入时状态被父组件覆盖
   useEffect(() => {
-    if (initialSelections !== undefined) setSelections(initialSelections);
-  }, [initialSelections]);
+    if (initialSelections !== undefined && selections.length === 0) {
+      setSelections(initialSelections);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (initialViewMode !== undefined) setViewMode(initialViewMode);
-  }, [initialViewMode]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (onStateChange) {
@@ -470,19 +473,21 @@ export default function OriginalFieldRadar({
 
   // 填充学生数据
   const fillStudentData = useCallback((studentRow: Record<string, string>) => {
-    const filledCount = selections.reduce((count, sel) => {
+    let filledCount = 0;
+    
+    const updatedSelections = selections.map(sel => {
       const rawValue = studentRow[sel.field];
       if (rawValue !== undefined && rawValue !== null && rawValue !== '') {
         const parsed = parseNumericValue(rawValue);
         if (parsed.status === 'valid') {
-          sel.userValue = parsed.value;
-          return count + 1;
+          filledCount++;
+          return { ...sel, userValue: parsed.value };
         }
       }
-      return count;
-    }, 0);
+      return sel;
+    });
 
-    setSelections([...selections]);
+    setSelections(updatedSelections);
 
     if (filledCount > 0) {
       const nameField = headers.find(h => h.toLowerCase().includes('姓名'));
