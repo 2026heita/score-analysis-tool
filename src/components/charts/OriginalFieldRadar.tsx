@@ -3,6 +3,7 @@ import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
 import { calculateFieldPercentile } from '../../utils/chartData';
 import { calculateQuantile } from '../../utils/stats';
+import { parseNumericValue } from '../../utils/tableParser/numericParser';
 import type { OriginalFieldRadarState } from '../../types';
 
 interface FieldSelection {
@@ -137,6 +138,9 @@ export default function OriginalFieldRadar({
   const [showPasteModal, setShowPasteModal] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const [pasteErrors, setPasteErrors] = useState<string[]>([]);
+  const [studentSearchQuery, setStudentSearchQuery] = useState('');
+  const [matchedStudents, setMatchedStudents] = useState<Record<string, string>[]>([]);
+  const [showStudentPicker, setShowStudentPicker] = useState(false);
 
   const excluded = excludedKeywords ?? EXCLUDED_DEFAULT;
 
@@ -412,6 +416,90 @@ export default function OriginalFieldRadar({
     setPasteErrors([]);
     showToast(`成功填充 ${matchedFields.length} 个字段`);
   }, [pasteText, selections, showToast]);
+
+  // 搜索学生（按姓名或学号）
+  const searchStudent = useCallback((query: string) => {
+    setStudentSearchQuery(query);
+    const trimmed = query.trim().toLowerCase();
+    if (!trimmed) {
+      setMatchedStudents([]);
+      setShowStudentPicker(false);
+      return;
+    }
+
+    // 查找姓名和学号字段
+    const nameField = headers.find(h => {
+      const lower = h.toLowerCase();
+      return lower.includes('姓名') || lower.includes('学生姓名');
+    });
+    const studentIdField = headers.find(h => {
+      const lower = h.toLowerCase();
+      return lower.includes('学号') || lower.includes('考生号') || lower.includes('考号');
+    });
+
+    if (!nameField && !studentIdField) {
+      showToast('未找到姓名或学号字段');
+      return;
+    }
+
+    // 模糊匹配
+    const matches = rows.filter(row => {
+      const name = nameField ? (row[nameField] || '').toLowerCase() : '';
+      const studentId = studentIdField ? (row[studentIdField] || '').toLowerCase() : '';
+      return name.includes(trimmed) || studentId.includes(trimmed);
+    });
+
+    if (matches.length === 0) {
+      showToast('未找到该学生');
+      setMatchedStudents([]);
+      setShowStudentPicker(false);
+      return;
+    }
+
+    if (matches.length === 1) {
+      // 只有一个匹配，直接填充
+      fillStudentData(matches[0]);
+      setMatchedStudents([]);
+      setShowStudentPicker(false);
+    } else {
+      // 多个匹配，显示选择器
+      setMatchedStudents(matches);
+      setShowStudentPicker(true);
+    }
+  }, [headers, rows, showToast]);
+
+  // 填充学生数据
+  const fillStudentData = useCallback((studentRow: Record<string, string>) => {
+    const filledCount = selections.reduce((count, sel) => {
+      const rawValue = studentRow[sel.field];
+      if (rawValue !== undefined && rawValue !== null && rawValue !== '') {
+        const parsed = parseNumericValue(rawValue);
+        if (parsed.status === 'valid') {
+          sel.userValue = parsed.value;
+          return count + 1;
+        }
+      }
+      return count;
+    }, 0);
+
+    setSelections([...selections]);
+
+    if (filledCount > 0) {
+      const nameField = headers.find(h => h.toLowerCase().includes('姓名'));
+      const studentName = nameField ? studentRow[nameField] : '';
+      showToast(`已填充 ${studentName || '学生'} 的 ${filledCount} 个字段`);
+    } else {
+      showToast('未找到可填充的数值');
+    }
+  }, [selections, headers, showToast]);
+
+  // 选择学生
+  const selectStudent = useCallback((student: Record<string, string>) => {
+    fillStudentData(student);
+    setMatchedStudents([]);
+    setShowStudentPicker(false);
+    setStudentSearchQuery('');
+  }, [fillStudentData]);
 
   // 字段管理
   const addField = useCallback(() => {
@@ -709,6 +797,68 @@ export default function OriginalFieldRadar({
       )}
       {viewMode === 'radar' && radarOption && (
         <ReactECharts option={radarOption} style={{ height: '400px', width: '100%' }} />
+      )}
+
+      {/* 学生搜索框 */}
+      {selections.length > 0 && rows.length > 0 && (
+        <div style={styles.studentSearchContainer}>
+          <div style={styles.studentSearchRow}>
+            <div style={styles.studentSearchWrap}>
+              <svg style={styles.studentSearchIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8" />
+                <path d="M21 21l-4.35-4.35" />
+              </svg>
+              <input
+                type="text"
+                placeholder="输入姓名或学号快速填充..."
+                value={studentSearchQuery}
+                onChange={e => searchStudent(e.target.value)}
+                style={styles.studentSearchInput}
+              />
+            </div>
+          </div>
+
+          {/* 学生选择器 */}
+          {showStudentPicker && matchedStudents.length > 1 && (
+            <div style={styles.studentPicker}>
+              <div style={styles.studentPickerHeader}>
+                <span>找到 {matchedStudents.length} 个匹配学生，请选择：</span>
+                <button
+                  style={styles.studentPickerClose}
+                  onClick={() => {
+                    setShowStudentPicker(false);
+                    setMatchedStudents([]);
+                    setStudentSearchQuery('');
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+              <div style={styles.studentPickerList}>
+                {matchedStudents.map((student, idx) => {
+                  const nameField = headers.find(h => h.toLowerCase().includes('姓名'));
+                  const studentIdField = headers.find(h => h.toLowerCase().includes('学号'));
+                  const classField = headers.find(h => h.toLowerCase().includes('班级'));
+                  const name = nameField ? student[nameField] : '';
+                  const studentId = studentIdField ? student[studentIdField] : '';
+                  const className = classField ? student[classField] : '';
+
+                  return (
+                    <div
+                      key={idx}
+                      style={styles.studentPickerItem}
+                      onClick={() => selectStudent(student)}
+                    >
+                      <span style={styles.studentPickerName}>{name}</span>
+                      {studentId && <span style={styles.studentPickerId}>{studentId}</span>}
+                      {className && <span style={styles.studentPickerClass}>{className}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* 当前参与分析字段列表 */}
@@ -1255,6 +1405,95 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '12px',
     fontSize: '12px',
     fontWeight: 500,
+  },
+  // 学生搜索框样式
+  studentSearchContainer: {
+    marginBottom: '16px',
+    padding: '12px',
+    background: '#f8fafc',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+  },
+  studentSearchRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  },
+  studentSearchWrap: {
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+    flex: 1,
+  },
+  studentSearchIcon: {
+    position: 'absolute',
+    left: '10px',
+    color: '#94a3b8',
+    pointerEvents: 'none',
+  },
+  studentSearchInput: {
+    width: '100%',
+    padding: '8px 12px 8px 36px',
+    border: '1px solid #cbd5e1',
+    borderRadius: '6px',
+    fontSize: '13px',
+    outline: 'none',
+    transition: 'border-color 0.15s, box-shadow 0.15s',
+  },
+  // 学生选择器样式
+  studentPicker: {
+    marginTop: '12px',
+    background: '#fff',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+  },
+  studentPickerHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '10px 12px',
+    background: '#f1f5f9',
+    borderBottom: '1px solid #e2e8f0',
+    fontSize: '13px',
+    color: '#475569',
+    fontWeight: 500,
+  },
+  studentPickerClose: {
+    background: 'transparent',
+    border: 'none',
+    fontSize: '18px',
+    color: '#64748b',
+    cursor: 'pointer',
+    padding: '0 4px',
+    lineHeight: 1,
+  },
+  studentPickerList: {
+    maxHeight: '200px',
+    overflowY: 'auto',
+  },
+  studentPickerItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '10px 12px',
+    borderBottom: '1px solid #f1f5f9',
+    cursor: 'pointer',
+    transition: 'background 0.15s',
+  },
+  studentPickerName: {
+    fontSize: '13px',
+    fontWeight: 500,
+    color: '#0f172a',
+  },
+  studentPickerId: {
+    fontSize: '12px',
+    color: '#64748b',
+    fontFamily: 'monospace',
+  },
+  studentPickerClass: {
+    fontSize: '12px',
+    color: '#64748b',
   },
 };
 
