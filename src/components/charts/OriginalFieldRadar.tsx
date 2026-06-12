@@ -72,30 +72,57 @@ export default function OriginalFieldRadar({
     });
   }, []);
 
-  // 计算各字段的百分位，按百分位从高到低排序
-  const sortedStats = useMemo(() => {
-    return selections
-      .map(s => {
-        const values = rows
-          .map(r => parseFloat(r[s.field]))
-          .filter(v => Number.isFinite(v));
+  // 固定字段顺序：成绩字段优先级顺序
+  const FIXED_SUBJECT_ORDER = [
+    '总分', '总分（不含加分）',
+    '语文', '数学', '英语', '外语',
+    '物理', '化学', '生物', '政治', '历史', '地理',
+  ];
 
-        if (values.length === 0) {
-          return { field: s.field, userValue: s.userValue, percentile: 0, max: 0, min: 0, mean: 0, median: 0, count: 0 };
-        }
+  // 计算各字段的百分位（不排序）
+  const rawStats = useMemo(() => {
+    return selections.map(s => {
+      const values = rows
+        .map(r => parseFloat(r[s.field]))
+        .filter(v => Number.isFinite(v));
 
-        const max = Math.max(...values);
-        const min = Math.min(...values);
-        const mean = values.reduce((a, b) => a + b, 0) / values.length;
-        const median = calculateQuantile(values, 0.5);
-        const percentile = calculateFieldPercentile(values, s.userValue);
+      if (values.length === 0) {
+        return { field: s.field, userValue: s.userValue, percentile: 0, max: 0, min: 0, mean: 0, median: 0, count: 0 };
+      }
 
-        return { field: s.field, userValue: s.userValue, percentile, max, min, mean, median, count: values.length };
-      })
-      .sort((a, b) => b.percentile - a.percentile);
+      const max = Math.max(...values);
+      const min = Math.min(...values);
+      const mean = values.reduce((a, b) => a + b, 0) / values.length;
+      const median = calculateQuantile(values, 0.5);
+      const percentile = calculateFieldPercentile(values, s.userValue);
+
+      return { field: s.field, userValue: s.userValue, percentile, max, min, mean, median, count: values.length };
+    });
   }, [selections, rows]);
 
+  // 条形图和结论摘要：按百分位从高到低排序
+  const sortedStats = useMemo(() => {
+    return [...rawStats].sort((a, b) => b.percentile - a.percentile);
+  }, [rawStats]);
+
+  // 雷达图：使用稳定顺序（固定科目顺序 + 用户添加顺序）
+  const radarStats = useMemo(() => {
+    return [...rawStats].sort((a, b) => {
+      const aIdx = FIXED_SUBJECT_ORDER.findIndex(kw => a.field.includes(kw));
+      const bIdx = FIXED_SUBJECT_ORDER.findIndex(kw => b.field.includes(kw));
+      // 都在固定顺序中
+      if (aIdx >= 0 && bIdx >= 0) return aIdx - bIdx;
+      // 只有 a 在固定顺序中
+      if (aIdx >= 0) return -1;
+      // 只有 b 在固定顺序中
+      if (bIdx >= 0) return 1;
+      // 都不在固定顺序中，按用户添加顺序（selections 中的原始顺序）
+      return selections.findIndex(s => s.field === a.field) - selections.findIndex(s => s.field === b.field);
+    });
+  }, [rawStats, selections]);
+
   const validStats = sortedStats.filter(s => s.userValue > 0);
+  const validRadarStats = radarStats.filter(s => s.userValue > 0);
 
   // 条形图
   const barOption: EChartsOption | null = useMemo(() => {
@@ -158,10 +185,10 @@ export default function OriginalFieldRadar({
 
   // 雷达图（可选视图）
   const radarOption: EChartsOption | null = useMemo(() => {
-    if (validStats.length < 2) return null;
+    if (validRadarStats.length < 2) return null;
 
-    const indicator = validStats.map(s => ({ name: s.field, max: 100 }));
-    const data = validStats.map(s => s.percentile);
+    const indicator = validRadarStats.map(s => ({ name: s.field, max: 100 }));
+    const data = validRadarStats.map(s => s.percentile);
 
     return {
       title: {
@@ -173,7 +200,7 @@ export default function OriginalFieldRadar({
         trigger: 'item',
         formatter: (params: any) => {
           const idx = params.dataIndex;
-          const s = validStats[idx];
+          const s = validRadarStats[idx];
           return `字段：${s.field}<br/>你的输入值：${s.userValue}<br/>百分位：${s.percentile.toFixed(1)}%`;
         },
       },
@@ -197,7 +224,7 @@ export default function OriginalFieldRadar({
         },
       ],
     } as EChartsOption;
-  }, [validStats]);
+  }, [validRadarStats]);
 
   // 结论
   const conclusion = useMemo(() => {
