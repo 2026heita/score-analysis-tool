@@ -22,6 +22,7 @@ interface OriginalFieldRadarProps {
 }
 
 type ViewMode = 'bar' | 'radar';
+type QuickMode = 'recommended' | 'totalRank' | 'sectionTotal' | 'courseScore' | null;
 
 const EXCLUDED_DEFAULT = ['名次', '排名', '序号', '编号'];
 
@@ -62,10 +63,12 @@ export default function OriginalFieldRadar({
   const [tempSelections, setTempSelections] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [activeQuickMode, setActiveQuickMode] = useState<QuickMode>(null);
+  const [toastMessage, setToastMessage] = useState('');
 
   const excluded = excludedKeywords ?? EXCLUDED_DEFAULT;
 
-  // 当 initialSelections 变化时（如恢复默认后）同步状态
+  // 当 initialSelections 变化时同步状态
   useEffect(() => {
     if (initialSelections !== undefined) setSelections(initialSelections);
   }, [initialSelections]);
@@ -74,7 +77,6 @@ export default function OriginalFieldRadar({
     if (initialViewMode !== undefined) setViewMode(initialViewMode);
   }, [initialViewMode]);
 
-  // 状态变化时通知父组件
   useEffect(() => {
     if (onStateChange) {
       onStateChange({ selections, viewMode });
@@ -91,10 +93,8 @@ export default function OriginalFieldRadar({
     for (const g of FIELD_GROUP_CONFIG) {
       groups[g.key] = [];
     }
-    
     for (const field of numericFields) {
       const role = getFieldAnalysisRole ? getFieldAnalysisRole(field) : 'unknown';
-      // 找到第一个匹配角色所在的分组
       for (const g of FIELD_GROUP_CONFIG) {
         if (g.roles.includes(role)) {
           groups[g.key].push(field);
@@ -105,7 +105,7 @@ export default function OriginalFieldRadar({
     return groups;
   }, [numericFields, getFieldAnalysisRole]);
 
-  // 计算默认推荐的字段（最多 8-12 个高优先级字段，排除身份和调整项）
+  // 默认推荐字段（最多 12 个高优先级字段）
   const defaultRecommendedFields = useMemo(() => {
     const result: string[] = [];
     const priorityOrder = ['primaryTotal', 'rank', 'sectionTotal', 'courseScore'];
@@ -121,12 +121,18 @@ export default function OriginalFieldRadar({
     return result;
   }, [numericFields, getFieldAnalysisRole]);
 
+  // Toast 提示
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(''), 2000);
+  }, []);
+
   // 打开批量选择弹窗
   const openBatchModal = useCallback(() => {
     const current = new Set(selections.map(s => s.field));
     setTempSelections(current);
     setSearchQuery('');
-    // 初始化展开状态
+    setActiveQuickMode(null);
     const expanded = new Set<string>();
     for (const g of FIELD_GROUP_CONFIG) {
       if (g.defaultExpanded) expanded.add(g.key);
@@ -135,22 +141,20 @@ export default function OriginalFieldRadar({
     setShowBatchModal(true);
   }, [selections]);
 
-  // 关闭弹窗
   const closeBatchModal = useCallback(() => {
     setShowBatchModal(false);
     setSearchQuery('');
+    setActiveQuickMode(null);
   }, []);
 
   // 确认批量选择
   const confirmBatchSelection = useCallback(() => {
     const ordered: FieldSelection[] = [];
-    // 保持原有顺序
     for (const sel of selections) {
       if (tempSelections.has(sel.field)) {
         ordered.push(sel);
       }
     }
-    // 新增的字段
     for (const field of tempSelections) {
       if (!ordered.some(o => o.field === field)) {
         ordered.push({ field, userValue: 0 });
@@ -159,58 +163,100 @@ export default function OriginalFieldRadar({
     setSelections(ordered);
     setShowBatchModal(false);
     setSearchQuery('');
+    setActiveQuickMode(null);
   }, [tempSelections, selections]);
 
-  // 切换单个字段选中状态
+  // 切换单个字段
   const toggleTempField = useCallback((field: string) => {
+    setActiveQuickMode(null);
     setTempSelections(prev => {
       const next = new Set(prev);
-      if (next.has(field)) {
-        next.delete(field);
-      } else {
-        next.add(field);
-      }
+      if (next.has(field)) next.delete(field);
+      else next.add(field);
       return next;
     });
   }, []);
 
-  // 切换分组展开/折叠
+  // 从已选预览中移除字段
+  const removeFromTemp = useCallback((field: string) => {
+    setActiveQuickMode(null);
+    setTempSelections(prev => {
+      const next = new Set(prev);
+      next.delete(field);
+      return next;
+    });
+  }, []);
+
   const toggleGroup = useCallback((groupKey: string) => {
     setExpandedGroups(prev => {
       const next = new Set(prev);
-      if (next.has(groupKey)) {
-        next.delete(groupKey);
-      } else {
-        next.add(groupKey);
-      }
+      if (next.has(groupKey)) next.delete(groupKey);
+      else next.add(groupKey);
       return next;
     });
   }, []);
 
-  // 快捷操作
+  // 快捷操作：只改变面板内勾选状态，不直接应用
   const quickSelectRecommended = useCallback(() => {
-    setTempSelections(new Set(defaultRecommendedFields));
-  }, [defaultRecommendedFields]);
+    const fields = defaultRecommendedFields;
+    if (fields.length === 0) {
+      showToast('当前表格没有匹配的分析字段');
+      return;
+    }
+    setTempSelections(new Set(fields));
+    setActiveQuickMode('recommended');
+    showToast(`已选择 ${fields.length} 个推荐字段`);
+  }, [defaultRecommendedFields, showToast]);
 
   const quickSelectTotalAndRank = useCallback(() => {
     const fields = numericFields.filter(f => {
       const role = getFieldAnalysisRole ? getFieldAnalysisRole(f) : 'unknown';
       return role === 'primaryTotal' || role === 'rank';
     });
+    if (fields.length === 0) {
+      showToast('当前表格没有匹配的总分/排名字段');
+      return;
+    }
     setTempSelections(new Set(fields));
-  }, [numericFields, getFieldAnalysisRole]);
+    setActiveQuickMode('totalRank');
+    showToast(`已选择 ${fields.length} 个总分/排名字段`);
+  }, [numericFields, getFieldAnalysisRole, showToast]);
 
   const quickSelectSectionTotal = useCallback(() => {
-    setTempSelections(new Set(groupedFields['sectionTotal'] || []));
-  }, [groupedFields]);
+    const fields = groupedFields['sectionTotal'] || [];
+    if (fields.length === 0) {
+      showToast('当前表格没有匹配的模块合计字段');
+      return;
+    }
+    setTempSelections(new Set(fields));
+    setActiveQuickMode('sectionTotal');
+    showToast(`已选择 ${fields.length} 个模块合计字段`);
+  }, [groupedFields, showToast]);
 
   const quickSelectCourseScore = useCallback(() => {
-    setTempSelections(new Set(groupedFields['courseScore'] || []));
-  }, [groupedFields]);
+    const fields = groupedFields['courseScore'] || [];
+    if (fields.length === 0) {
+      showToast('当前表格没有匹配的课程成绩字段');
+      return;
+    }
+    setTempSelections(new Set(fields));
+    setActiveQuickMode('courseScore');
+    showToast(`已选择 ${fields.length} 个课程成绩字段`);
+  }, [groupedFields, showToast]);
 
   const quickClearAll = useCallback(() => {
     setTempSelections(new Set());
-  }, []);
+    setActiveQuickMode(null);
+    showToast('已清空所有选择');
+  }, [showToast]);
+
+  // 快捷模式标签
+  const quickModeLabel: Record<string, string> = {
+    recommended: '推荐字段',
+    totalRank: '总分 + 排名',
+    sectionTotal: '模块合计',
+    courseScore: '课程成绩',
+  };
 
   // 字段管理
   const addField = useCallback(() => {
@@ -244,14 +290,14 @@ export default function OriginalFieldRadar({
     setSelections(newSelections);
   }, [defaultRecommendedFields, selections]);
 
-  // 固定字段顺序：成绩字段优先级顺序
+  // 固定字段顺序
   const FIXED_SUBJECT_ORDER = [
     '总分', '总分（不含加分）',
     '语文', '数学', '英语', '外语',
     '物理', '化学', '生物', '政治', '历史', '地理',
   ];
 
-  // 计算各字段的百分位（不排序）
+  // 计算各字段的百分位
   const rawStats = useMemo(() => {
     return selections.map(s => {
       const values = rows
@@ -272,23 +318,17 @@ export default function OriginalFieldRadar({
     });
   }, [selections, rows]);
 
-  // 条形图和结论摘要：按百分位从高到低排序
   const sortedStats = useMemo(() => {
     return [...rawStats].sort((a, b) => b.percentile - a.percentile);
   }, [rawStats]);
 
-  // 雷达图：使用稳定顺序（固定科目顺序 + 用户添加顺序）
   const radarStats = useMemo(() => {
     return [...rawStats].sort((a, b) => {
       const aIdx = FIXED_SUBJECT_ORDER.findIndex(kw => a.field.includes(kw));
       const bIdx = FIXED_SUBJECT_ORDER.findIndex(kw => b.field.includes(kw));
-      // 都在固定顺序中
       if (aIdx >= 0 && bIdx >= 0) return aIdx - bIdx;
-      // 只有 a 在固定顺序中
       if (aIdx >= 0) return -1;
-      // 只有 b 在固定顺序中
       if (bIdx >= 0) return 1;
-      // 都不在固定顺序中，按用户添加顺序（selections 中的原始顺序）
       return selections.findIndex(s => s.field === a.field) - selections.findIndex(s => s.field === b.field);
     });
   }, [rawStats, selections]);
@@ -299,7 +339,6 @@ export default function OriginalFieldRadar({
   // 条形图
   const barOption: EChartsOption | null = useMemo(() => {
     if (validStats.length === 0) return null;
-
     const reversed = [...validStats].reverse();
     const fields = reversed.map(s => s.field);
     const percentiles = reversed.map(s => s.percentile);
@@ -321,56 +360,44 @@ export default function OriginalFieldRadar({
       },
       grid: { left: '3%', right: '8%', bottom: '3%', containLabel: true },
       xAxis: {
-        type: 'value',
-        min: 0,
-        max: 100,
-        name: '百分位 (%)',
+        type: 'value', min: 0, max: 100, name: '百分位 (%)',
         nameTextStyle: { fontSize: 11, color: '#94a3b8' },
         splitLine: { lineStyle: { type: 'dashed', color: '#e2e8f0' } },
       },
       yAxis: {
-        type: 'category',
-        data: fields,
+        type: 'category', data: fields,
         axisLabel: { fontSize: 11, width: 120, overflow: 'truncate' },
       },
-      series: [
-        {
-          type: 'bar',
-          data: percentiles.map(v => ({
-            value: v,
-            itemStyle: {
-              color: v >= 70 ? '#10b981' : v >= 40 ? '#3b82f6' : '#f59e0b',
-              borderRadius: [0, 4, 4, 0],
-            },
-          })),
-          label: {
-            show: true,
-            position: 'right',
-            formatter: (p: any) => `${p.value.toFixed(1)}%`,
-            fontSize: 11,
+      series: [{
+        type: 'bar',
+        data: percentiles.map(v => ({
+          value: v,
+          itemStyle: {
+            color: v >= 70 ? '#10b981' : v >= 40 ? '#3b82f6' : '#f59e0b',
+            borderRadius: [0, 4, 4, 0],
           },
-          barMaxWidth: 28,
+        })),
+        label: {
+          show: true, position: 'right',
+          formatter: (p: any) => `${p.value.toFixed(1)}%`, fontSize: 11,
         },
-      ],
+        barMaxWidth: 28,
+      }],
     } as EChartsOption;
   }, [validStats]);
 
-  // 雷达图（可选视图）
+  // 雷达图
   const radarOption: EChartsOption | null = useMemo(() => {
     if (validRadarStats.length < 2) return null;
-
     const indicator = validRadarStats.map(s => ({ name: s.field, max: 100 }));
     const data = validRadarStats.map(s => s.percentile);
-
-    // 构造包含所有字段的完整 tooltip
     const allFieldInfo = validRadarStats
       .map(s => `${s.field}: ${s.userValue} → ${s.percentile.toFixed(1)}%`)
       .join('<br/>');
 
     return {
       title: {
-        text: '原表字段相对位置分析',
-        left: 'center',
+        text: '原表字段相对位置分析', left: 'center',
         textStyle: { fontSize: 14, fontWeight: 600, color: '#334155' },
       },
       tooltip: {
@@ -381,37 +408,36 @@ export default function OriginalFieldRadar({
           return `当前悬停字段：${hovered.field}<br/>你的输入值：${hovered.userValue}<br/>百分位：${hovered.percentile.toFixed(1)}%<br/><br/>该图同时包含其他字段，见下方字段列表。<br/>──────────────<br/>${allFieldInfo}`;
         },
       },
-      radar: {
-        indicator,
-        radius: '65%',
-        axisName: { fontSize: 11 },
-      },
-      series: [
-        {
-          type: 'radar',
-          data: [
-            {
-              value: data,
-              name: '你的百分位',
-              areaStyle: { color: 'rgba(59, 130, 246, 0.2)' },
-              lineStyle: { color: '#3b82f6', width: 2 },
-              itemStyle: { color: '#3b82f6' },
-            },
-          ],
-        },
-      ],
+      radar: { indicator, radius: '65%', axisName: { fontSize: 11 } },
+      series: [{
+        type: 'radar',
+        data: [{
+          value: data, name: '你的百分位',
+          areaStyle: { color: 'rgba(59, 130, 246, 0.2)' },
+          lineStyle: { color: '#3b82f6', width: 2 },
+          itemStyle: { color: '#3b82f6' },
+        }],
+      }],
     } as EChartsOption;
   }, [validRadarStats]);
 
-  // 结论
   const conclusion = useMemo(() => {
     if (validStats.length < 2) return null;
-
     const advantages = validStats.slice(0, 2);
     const weaknesses = validStats.slice(-2).reverse();
-
     return { advantages, weaknesses };
   }, [validStats]);
+
+  // 已选字段预览列表（保持分组顺序）
+  const selectedFieldsPreview = useMemo(() => {
+    const result: string[] = [];
+    for (const g of FIELD_GROUP_CONFIG) {
+      for (const f of groupedFields[g.key] || []) {
+        if (tempSelections.has(f)) result.push(f);
+      }
+    }
+    return result;
+  }, [tempSelections, groupedFields]);
 
   return (
     <div>
@@ -435,20 +461,37 @@ export default function OriginalFieldRadar({
             <button style={styles.removeButton} onClick={() => removeField(index)}>×</button>
           </div>
         ))}
-        <div style={styles.buttonRow}>
-          <button style={styles.addButton} onClick={addField}>
-            + 添加字段
-          </button>
-          <button style={styles.batchButton} onClick={openBatchModal}>
+
+        {/* 统一操作按钮行 */}
+        <div style={styles.actionRow}>
+          <button style={styles.btnPrimary} onClick={openBatchModal}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="7" height="7" />
+              <rect x="14" y="3" width="7" height="7" />
+              <rect x="3" y="14" width="7" height="7" />
+              <rect x="14" y="14" width="7" height="7" />
+            </svg>
             批量选择字段
+          </button>
+          <button style={styles.btnSecondary} onClick={addField}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            添加字段
           </button>
           {selections.length > 0 && (
             <>
-              <button style={styles.restoreButton} onClick={restoreRecommended}>
-                恢复推荐字段
+              <button style={styles.btnSecondary} onClick={restoreRecommended}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                </svg>
+                恢复推荐
               </button>
-              <button style={styles.clearButton} onClick={clearAllFields}>
-                一键清空
+              <button style={styles.btnDanger} onClick={clearAllFields}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                </svg>
+                清空
               </button>
             </>
           )}
@@ -474,7 +517,7 @@ export default function OriginalFieldRadar({
         百分位口径：低于该值人数 / 有效数值数量 × 100%。
       </div>
 
-      {/* 视图切换按钮 */}
+      {/* 视图切换 */}
       {validStats.length > 0 && (
         <div style={styles.toggleRow}>
           <button
@@ -543,133 +586,170 @@ export default function OriginalFieldRadar({
 
       {/* 批量选择弹窗 */}
       {showBatchModal && (
-        <div style={batchStyles.overlay} onClick={closeBatchModal}>
-          <div style={batchStyles.modal} onClick={e => e.stopPropagation()}>
+        <div style={bs.overlay} onClick={closeBatchModal}>
+          <div style={bs.modal} onClick={e => e.stopPropagation()}>
             {/* 头部 */}
-            <div style={batchStyles.header}>
-              <div style={batchStyles.headerContent}>
-                <h3 style={batchStyles.title}>批量选择分析字段</h3>
-                <p style={batchStyles.subtitle}>选择 5-10 个核心字段更适合雷达图展示</p>
+            <div style={bs.header}>
+              <div style={bs.headerContent}>
+                <h3 style={bs.title}>批量选择分析字段</h3>
+                <p style={bs.subtitle}>选择 5-10 个核心字段更适合雷达图展示</p>
               </div>
-              <button style={batchStyles.closeBtn} onClick={closeBatchModal}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <button style={bs.closeBtn} onClick={closeBatchModal}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M18 6L6 18M6 6l12 12" />
                 </svg>
               </button>
             </div>
 
-            {/* 搜索和统计 */}
-            <div style={batchStyles.searchSection}>
-              <div style={batchStyles.searchWrap}>
-                <svg style={batchStyles.searchIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="11" cy="11" r="8" />
-                  <path d="M21 21l-4.35-4.35" />
-                </svg>
-                <input
-                  type="text"
-                  placeholder="搜索字段名..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  style={batchStyles.searchInput}
-                />
-                {searchQuery && (
-                  <button style={batchStyles.clearSearch} onClick={() => setSearchQuery('')}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M18 6L6 18M6 6l12 12" />
-                    </svg>
-                  </button>
-                )}
+            {/* 搜索 + 已选数量 + 当前模式 */}
+            <div style={bs.searchSection}>
+              <div style={bs.searchRow}>
+                <div style={bs.searchWrap}>
+                  <svg style={bs.searchIcon} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="M21 21l-4.35-4.35" />
+                  </svg>
+                  <input
+                    type="text"
+                    placeholder="搜索字段名..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    style={bs.searchInput}
+                  />
+                  {searchQuery && (
+                    <button style={bs.clearSearch} onClick={() => setSearchQuery('')}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+                <div style={bs.selectedCount}>
+                  <span style={bs.countNumber}>{tempSelections.size}</span>
+                  <span style={bs.countLabel}> 个字段已选择</span>
+                  {tempSelections.size > 10 && (
+                    <span style={bs.countWarning}>（建议 5-10 个）</span>
+                  )}
+                </div>
               </div>
-              <div style={batchStyles.selectedCount}>
-                <span style={batchStyles.countNumber}>{tempSelections.size}</span>
-                <span style={batchStyles.countLabel}> 个字段已选择</span>
-                {tempSelections.size > 10 && (
-                  <span style={batchStyles.countWarning}>（建议 5-10 个）</span>
-                )}
-              </div>
+
+              {/* 当前选择模式提示 */}
+              {activeQuickMode && (
+                <div style={bs.modeIndicator}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
+                    <path d="M20 6L9 17l-5-5" />
+                  </svg>
+                  <span>当前选择：<strong>{quickModeLabel[activeQuickMode]}</strong></span>
+                </div>
+              )}
             </div>
 
             {/* 快捷操作 */}
-            <div style={batchStyles.quickActions}>
-              <button style={batchStyles.quickBtn} onClick={quickSelectRecommended}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                </svg>
-                推荐字段
-              </button>
-              <button style={batchStyles.quickBtn} onClick={quickSelectTotalAndRank}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 20V10M18 20V4M6 20v-4" />
-                </svg>
-                总分+排名
-              </button>
-              <button style={batchStyles.quickBtn} onClick={quickSelectSectionTotal}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                  <path d="M9 9h6v6H9z" />
-                </svg>
-                模块合计
-              </button>
-              <button style={batchStyles.quickBtn} onClick={quickSelectCourseScore}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
-                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
-                </svg>
-                课程成绩
-              </button>
-              <button style={batchStyles.quickBtnDanger} onClick={quickClearAll}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-                </svg>
-                清空
-              </button>
+            <div style={bs.quickSection}>
+              <span style={bs.quickLabel}>快捷选择：</span>
+              <div style={bs.quickBtnGroup}>
+                <button
+                  style={{ ...bs.quickBtn, ...(activeQuickMode === 'recommended' ? bs.quickBtnActive : {}) }}
+                  onClick={quickSelectRecommended}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                  </svg>
+                  推荐字段
+                </button>
+                <button
+                  style={{ ...bs.quickBtn, ...(activeQuickMode === 'totalRank' ? bs.quickBtnActive : {}) }}
+                  onClick={quickSelectTotalAndRank}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 20V10M18 20V4M6 20v-4" />
+                  </svg>
+                  总分+排名
+                </button>
+                <button
+                  style={{ ...bs.quickBtn, ...(activeQuickMode === 'sectionTotal' ? bs.quickBtnActive : {}) }}
+                  onClick={quickSelectSectionTotal}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <path d="M9 9h6v6H9z" />
+                  </svg>
+                  模块合计
+                </button>
+                <button
+                  style={{ ...bs.quickBtn, ...(activeQuickMode === 'courseScore' ? bs.quickBtnActive : {}) }}
+                  onClick={quickSelectCourseScore}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
+                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
+                  </svg>
+                  课程成绩
+                </button>
+                <button style={bs.quickBtnDanger} onClick={quickClearAll}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                  </svg>
+                  清空
+                </button>
+              </div>
             </div>
 
+            {/* 已选字段预览 */}
+            {selectedFieldsPreview.length > 0 && (
+              <div style={bs.previewSection}>
+                <span style={bs.previewLabel}>已选字段：</span>
+                <div style={bs.previewPills}>
+                  {selectedFieldsPreview.map(field => (
+                    <span key={field} style={bs.pill}>
+                      {field}
+                      <button style={bs.pillRemove} onClick={() => removeFromTemp(field)}>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                          <path d="M18 6L6 18M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* 字段分组列表 */}
-            <div style={batchStyles.body}>
+            <div style={bs.body}>
               {FIELD_GROUP_CONFIG.map(group => {
                 const fields = groupedFields[group.key] || [];
-                // 搜索过滤
                 const filteredFields = searchQuery
                   ? fields.filter(f => f.toLowerCase().includes(searchQuery.toLowerCase()))
                   : fields;
-                
+
                 if (filteredFields.length === 0) return null;
-                
+
                 const isExpanded = expandedGroups.has(group.key);
                 const selectedInGroup = filteredFields.filter(f => tempSelections.has(f)).length;
 
                 return (
-                  <div key={group.key} style={batchStyles.group}>
-                    <div
-                      style={batchStyles.groupHeader}
-                      onClick={() => toggleGroup(group.key)}
-                    >
-                      <div style={batchStyles.groupHeaderLeft}>
+                  <div key={group.key} style={bs.group}>
+                    <div style={bs.groupHeader} onClick={() => toggleGroup(group.key)}>
+                      <div style={bs.groupHeaderLeft}>
                         <svg
                           style={{
-                            ...batchStyles.groupArrow,
+                            ...bs.groupArrow,
                             transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
                           }}
-                          width="12"
-                          height="12"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
+                          width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
                         >
                           <path d="M9 18l6-6-6-6" />
                         </svg>
-                        <span style={batchStyles.groupTitle}>{group.label}</span>
-                        <span style={batchStyles.groupCount}>{filteredFields.length}</span>
+                        <span style={bs.groupTitle}>{group.label}</span>
+                        <span style={bs.groupCount}>{filteredFields.length}</span>
                         {selectedInGroup > 0 && (
-                          <span style={batchStyles.groupSelectedBadge}>{selectedInGroup} 已选</span>
+                          <span style={bs.groupSelectedBadge}>{selectedInGroup} 已选</span>
                         )}
                       </div>
                     </div>
-                    
+
                     {isExpanded && (
-                      <div style={batchStyles.groupContent}>
+                      <div style={bs.groupContent}>
                         {filteredFields.map(field => {
                           const role = getFieldAnalysisRole ? getFieldAnalysisRole(field) : 'unknown';
                           const badge = ROLE_BADGE_MAP[role] || ROLE_BADGE_MAP.unknown;
@@ -680,32 +760,33 @@ export default function OriginalFieldRadar({
                             <div
                               key={field}
                               style={{
-                                ...batchStyles.fieldCard,
-                                ...(isSelected ? batchStyles.fieldCardSelected : {}),
+                                ...bs.fieldCard,
+                                ...(isSelected ? bs.fieldCardSelected : {}),
                               }}
                               onClick={() => toggleTempField(field)}
                             >
-                              <div style={batchStyles.fieldCheckbox}>
-                                {isSelected ? (
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
+                              <div style={{
+                                ...bs.fieldCheckbox,
+                                ...(isSelected ? {} : bs.fieldCheckboxOff),
+                              }}>
+                                {isSelected && (
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
                                     <path d="M20 6L9 17l-5-5" />
                                   </svg>
-                                ) : (
-                                  <div style={batchStyles.checkboxEmpty} />
                                 )}
                               </div>
-                              <div style={batchStyles.fieldInfo}>
-                                <span style={batchStyles.fieldName}>{field}</span>
-                                <div style={batchStyles.fieldBadges}>
+                              <div style={bs.fieldInfo}>
+                                <span style={bs.fieldCardName}>{field}</span>
+                                <div style={bs.fieldBadges}>
                                   <span style={{
-                                    ...batchStyles.badge,
+                                    ...bs.badge,
                                     color: badge.color,
                                     background: badge.bg,
                                   }}>
                                     {badge.label}
                                   </span>
                                   {isRecommended && (
-                                    <span style={batchStyles.recommendedBadge}>推荐</span>
+                                    <span style={bs.recommendedBadge}>推荐</span>
                                   )}
                                 </div>
                               </div>
@@ -720,20 +801,32 @@ export default function OriginalFieldRadar({
             </div>
 
             {/* 底部操作 */}
-            <div style={batchStyles.footer}>
-              <button style={batchStyles.cancelBtn} onClick={closeBatchModal}>取消</button>
-              <button style={batchStyles.confirmBtn} onClick={confirmBatchSelection}>
-                应用选择
-                <span style={batchStyles.confirmCount}>({tempSelections.size})</span>
+            <div style={bs.footer}>
+              <button style={bs.cancelBtn} onClick={closeBatchModal}>取消</button>
+              <button style={bs.confirmBtn} onClick={confirmBatchSelection}>
+                应用选择（已选 {tempSelections.size} 个）
               </button>
             </div>
           </div>
+
+          {/* Toast 提示 */}
+          {toastMessage && (
+            <div style={bs.toast}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2">
+                <path d="M20 6L9 17l-5-5" />
+              </svg>
+              {toastMessage}
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
 
+// ============================================================
+// 主组件样式
+// ============================================================
 const styles: Record<string, React.CSSProperties> = {
   fieldList: {
     display: 'flex',
@@ -789,15 +882,51 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  addButton: {
+  // 统一操作按钮行
+  actionRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+    marginTop: '4px',
+  },
+  btnPrimary: {
     padding: '8px 16px',
-    background: '#eff6ff',
-    color: '#3b82f6',
-    border: '1px dashed #93c5fd',
+    border: 'none',
     borderRadius: '8px',
-    fontSize: '14px',
+    background: '#3b82f6',
+    color: '#fff',
+    fontSize: '13px',
+    fontWeight: 500,
     cursor: 'pointer',
-    alignSelf: 'flex-start',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+  },
+  btnSecondary: {
+    padding: '8px 16px',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
+    background: '#fff',
+    color: '#475569',
+    fontSize: '13px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+  },
+  btnDanger: {
+    padding: '8px 16px',
+    border: '1px solid #fecaca',
+    borderRadius: '8px',
+    background: '#fef2f2',
+    color: '#dc2626',
+    fontSize: '13px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
   },
   noteBox: {
     background: '#fffbeb',
@@ -817,6 +946,15 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#1e40af',
     marginBottom: '12px',
   },
+  warningBox: {
+    background: '#fef3c7',
+    border: '1px solid #fde68a',
+    borderRadius: '6px',
+    padding: '8px 12px',
+    fontSize: '12px',
+    color: '#92400e',
+    marginBottom: '8px',
+  },
   toggleRow: {
     display: 'flex',
     gap: '8px',
@@ -830,7 +968,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#64748b',
     fontSize: '13px',
     cursor: 'pointer',
-    transition: 'all 0.15s',
   },
   toggleActive: {
     background: '#3b82f6',
@@ -886,14 +1023,13 @@ const styles: Record<string, React.CSSProperties> = {
   },
 };
 
+// ============================================================
 // 批量选择弹窗样式
-const batchStyles: Record<string, React.CSSProperties> = {
+// ============================================================
+const bs: Record<string, React.CSSProperties> = {
   overlay: {
     position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    top: 0, left: 0, right: 0, bottom: 0,
     background: 'rgba(0, 0, 0, 0.5)',
     display: 'flex',
     alignItems: 'center',
@@ -919,9 +1055,7 @@ const batchStyles: Record<string, React.CSSProperties> = {
     justifyContent: 'space-between',
     gap: '16px',
   },
-  headerContent: {
-    flex: 1,
-  },
+  headerContent: { flex: 1 },
   title: {
     fontSize: '18px',
     fontWeight: 600,
@@ -944,42 +1078,49 @@ const batchStyles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     color: '#64748b',
-    transition: 'all 0.15s',
     flexShrink: 0,
   },
   searchSection: {
-    padding: '16px 24px',
+    padding: '12px 24px',
     borderBottom: '1px solid #e2e8f0',
     display: 'flex',
     flexDirection: 'column',
+    gap: '8px',
+  },
+  searchRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: '12px',
+    flexWrap: 'wrap',
   },
   searchWrap: {
     position: 'relative',
     display: 'flex',
     alignItems: 'center',
+    flex: 1,
+    minWidth: '200px',
   },
   searchIcon: {
     position: 'absolute',
-    left: '12px',
+    left: '10px',
     color: '#94a3b8',
     pointerEvents: 'none',
   },
   searchInput: {
     width: '100%',
-    padding: '10px 36px 10px 36px',
+    padding: '8px 32px 8px 32px',
     border: '1px solid #e2e8f0',
     borderRadius: '8px',
-    fontSize: '14px',
+    fontSize: '13px',
     outline: 'none',
-    transition: 'all 0.15s',
     background: '#f8fafc',
   },
   clearSearch: {
     position: 'absolute',
-    right: '8px',
-    width: '24px',
-    height: '24px',
+    right: '6px',
+    width: '22px',
+    height: '22px',
     border: 'none',
     background: 'transparent',
     borderRadius: '4px',
@@ -992,120 +1133,189 @@ const batchStyles: Record<string, React.CSSProperties> = {
   selectedCount: {
     fontSize: '13px',
     color: '#64748b',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
   },
   countNumber: {
     fontWeight: 600,
     color: '#3b82f6',
     fontSize: '15px',
   },
-  countLabel: {
-    color: '#64748b',
-  },
+  countLabel: { color: '#64748b' },
   countWarning: {
     color: '#f59e0b',
     fontSize: '12px',
-    marginLeft: '8px',
+    marginLeft: '6px',
   },
-  quickActions: {
-    padding: '12px 24px',
+  // 当前选择模式提示
+  modeIndicator: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '6px 10px',
+    background: '#eff6ff',
+    border: '1px solid #bfdbfe',
+    borderRadius: '6px',
+    fontSize: '12px',
+    color: '#1e40af',
+  },
+  // 快捷操作
+  quickSection: {
+    padding: '10px 24px',
     borderBottom: '1px solid #e2e8f0',
     display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
     flexWrap: 'wrap',
-    gap: '8px',
+  },
+  quickLabel: {
+    fontSize: '12px',
+    color: '#94a3b8',
+    fontWeight: 500,
+    flexShrink: 0,
+  },
+  quickBtnGroup: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px',
   },
   quickBtn: {
-    padding: '6px 12px',
+    padding: '5px 10px',
     border: '1px solid #e2e8f0',
     borderRadius: '6px',
     background: '#fff',
     color: '#475569',
-    fontSize: '13px',
+    fontSize: '12px',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
-    gap: '6px',
+    gap: '5px',
     transition: 'all 0.15s',
   },
+  quickBtnActive: {
+    background: '#3b82f6',
+    color: '#fff',
+    border: '1px solid #3b82f6',
+  },
   quickBtnDanger: {
-    padding: '6px 12px',
+    padding: '5px 10px',
     border: '1px solid #fecaca',
     borderRadius: '6px',
     background: '#fef2f2',
     color: '#dc2626',
-    fontSize: '13px',
+    fontSize: '12px',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
-    gap: '6px',
-    transition: 'all 0.15s',
+    gap: '5px',
   },
+  // 已选字段预览
+  previewSection: {
+    padding: '10px 24px',
+    borderBottom: '1px solid #e2e8f0',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    background: '#f8fafc',
+  },
+  previewLabel: {
+    fontSize: '12px',
+    color: '#64748b',
+    fontWeight: 500,
+  },
+  previewPills: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '4px',
+  },
+  pill: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '3px 8px',
+    background: '#dbeafe',
+    color: '#1e40af',
+    borderRadius: '12px',
+    fontSize: '11px',
+    fontWeight: 500,
+  },
+  pillRemove: {
+    width: '14px',
+    height: '14px',
+    border: 'none',
+    background: 'transparent',
+    borderRadius: '50%',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#3b82f6',
+    padding: 0,
+  },
+  // 字段列表
   body: {
     flex: 1,
     overflowY: 'auto',
-    padding: '16px 24px',
+    padding: '12px 24px',
   },
-  group: {
-    marginBottom: '12px',
-  },
+  group: { marginBottom: '8px' },
   groupHeader: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: '10px 12px',
+    padding: '8px 10px',
     background: '#f8fafc',
     borderRadius: '8px',
     cursor: 'pointer',
-    transition: 'all 0.15s',
     userSelect: 'none',
   },
   groupHeaderLeft: {
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
+    gap: '6px',
   },
   groupArrow: {
     color: '#64748b',
     transition: 'transform 0.2s',
   },
   groupTitle: {
-    fontSize: '14px',
+    fontSize: '13px',
     fontWeight: 500,
     color: '#334155',
   },
   groupCount: {
-    fontSize: '12px',
+    fontSize: '11px',
     color: '#94a3b8',
     background: '#e2e8f0',
-    padding: '2px 6px',
+    padding: '1px 6px',
     borderRadius: '10px',
   },
   groupSelectedBadge: {
     fontSize: '11px',
     color: '#3b82f6',
     background: '#dbeafe',
-    padding: '2px 6px',
+    padding: '1px 6px',
     borderRadius: '10px',
     fontWeight: 500,
   },
   groupContent: {
-    padding: '8px 0 0 0',
+    padding: '6px 0 0 0',
     display: 'flex',
     flexDirection: 'column',
-    gap: '6px',
+    gap: '4px',
   },
   fieldCard: {
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
-    padding: '10px 12px',
+    gap: '10px',
+    padding: '8px 10px',
     border: '1px solid #e2e8f0',
     borderRadius: '8px',
     cursor: 'pointer',
-    transition: 'all 0.15s',
     background: '#fff',
   },
   fieldCardSelected: {
-    border: '1px solid #3b82f6',
+    border: '1px solid #93c5fd',
     background: '#eff6ff',
   },
   fieldCheckbox: {
@@ -1118,22 +1328,19 @@ const batchStyles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     flexShrink: 0,
   },
-  checkboxEmpty: {
-    width: '16px',
-    height: '16px',
-    borderRadius: '3px',
-    border: '2px solid #cbd5e1',
+  fieldCheckboxOff: {
     background: '#fff',
+    border: '2px solid #cbd5e1',
   },
   fieldInfo: {
     flex: 1,
     display: 'flex',
     flexDirection: 'column',
-    gap: '4px',
+    gap: '3px',
     minWidth: 0,
   },
-  fieldName: {
-    fontSize: '14px',
+  fieldCardName: {
+    fontSize: '13px',
     color: '#1e293b',
     fontWeight: 500,
     overflow: 'hidden',
@@ -1142,57 +1349,68 @@ const batchStyles: Record<string, React.CSSProperties> = {
   },
   fieldBadges: {
     display: 'flex',
-    gap: '6px',
+    gap: '4px',
     flexWrap: 'wrap',
   },
   badge: {
-    fontSize: '11px',
-    padding: '2px 6px',
-    borderRadius: '4px',
+    fontSize: '10px',
+    padding: '1px 5px',
+    borderRadius: '3px',
     fontWeight: 500,
   },
   recommendedBadge: {
-    fontSize: '11px',
-    padding: '2px 6px',
-    borderRadius: '4px',
+    fontSize: '10px',
+    padding: '1px 5px',
+    borderRadius: '3px',
     fontWeight: 500,
     color: '#059669',
     background: '#d1fae5',
   },
+  // 底部
   footer: {
-    padding: '16px 24px',
+    padding: '14px 24px',
     borderTop: '1px solid #e2e8f0',
     display: 'flex',
     justifyContent: 'flex-end',
-    gap: '12px',
+    gap: '10px',
+    flexShrink: 0,
   },
   cancelBtn: {
-    padding: '10px 20px',
+    padding: '9px 18px',
     border: '1px solid #e2e8f0',
     borderRadius: '8px',
     background: '#fff',
     color: '#64748b',
-    fontSize: '14px',
+    fontSize: '13px',
     fontWeight: 500,
     cursor: 'pointer',
-    transition: 'all 0.15s',
   },
   confirmBtn: {
-    padding: '10px 20px',
+    padding: '9px 18px',
     border: 'none',
     borderRadius: '8px',
     background: '#3b82f6',
     color: '#fff',
-    fontSize: '14px',
+    fontSize: '13px',
     fontWeight: 500,
     cursor: 'pointer',
+  },
+  // Toast
+  toast: {
+    position: 'fixed',
+    bottom: '40px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    padding: '10px 20px',
+    background: '#fff',
+    border: '1px solid #d1fae5',
+    borderRadius: '8px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+    fontSize: '13px',
+    color: '#065f46',
     display: 'flex',
     alignItems: 'center',
-    gap: '6px',
-    transition: 'all 0.15s',
-  },
-  confirmCount: {
-    fontSize: '13px',
-    opacity: 0.9,
+    gap: '8px',
+    zIndex: 1001,
   },
 };
