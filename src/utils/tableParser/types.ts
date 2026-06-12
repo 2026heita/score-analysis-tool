@@ -18,6 +18,7 @@ export type FieldType =
   | 'score'      // 总分、语文、数学、英语、外语、物理、化学、生物、政治、历史、地理
   | 'rank'       // 名次、排名、位次
   | 'bonus'      // 加分、区内加分、区外加分、政策加分
+  | 'penalty'    // 扣分
   | 'category'   // 组合、组合简称、科类、选科、类别
   | 'status'     // 缺考、弃考、转班、转到、无成绩等
   | 'text'       // 大部分是文本且不适合统计
@@ -72,6 +73,10 @@ export interface HeaderDetectionResult {
   headers: string[];
   dataRows: unknown[][];
   confidence: number;
+  /** 是否为多级表头 */
+  isMultiRow?: boolean;
+  /** 多级表头的行范围 [startRow, endRow] */
+  headerRowRange?: [number, number];
 }
 
 /**
@@ -88,6 +93,12 @@ export interface ParseSummary {
   recommendedField: string | null;
   recommendedFieldPriority?: number;
   fieldTypes: FieldMeta[];
+  /** 是否为多级表头 */
+  isMultiRow?: boolean;
+  /** 多级表头行范围描述，如 "第 2-3 行" */
+  headerRowRangeText?: string;
+  /** 数据起始行号（人类可读） */
+  dataStartRowText?: string;
 }
 
 /**

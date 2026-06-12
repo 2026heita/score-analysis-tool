@@ -62,6 +62,17 @@ export {
   ParseError,
 } from './errors';
 
+// 多级表头扁平化
+export {
+  detectAndFlattenMultiRowHeaders,
+  getMergedHeaders,
+  extractSingleRowHeader,
+} from './headerFlattener';
+export type {
+  MergeRange,
+  MultiRowHeaderDetection,
+} from './headerFlattener';
+
 // ============================================================
 // 向后兼容：导出旧接口
 // ============================================================
