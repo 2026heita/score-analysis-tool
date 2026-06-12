@@ -69,7 +69,7 @@ export default function App() {
     savedState?.originalFieldRadar ?? { selections: [], viewMode: 'bar' }
   );
   const [traditionalEntries, setTraditionalEntries] = useState<TraditionalSubjectEntry[]>(
-    savedState?.traditionalSubjectRadar?.entries ?? getSystemDefaultState().traditionalSubjectRadar.entries
+    savedState?.traditionalSubjectRadar?.entries ?? []
   );
 
   // ===== 自动保存 =====
@@ -89,27 +89,29 @@ export default function App() {
     } catch { /* 静默 */ }
   }, [rawText, selectedField, inputValue, showAllFields, activeChartTab, originalFieldState, traditionalEntries]);
 
-  // ===== 页面加载后恢复保存状态并自动解析 =====
+  // ===== 页面加载后恢复保存状态 =====
   useEffect(() => {
-    // 恢复保存的状态
     if (savedState?.rawText) {
       setRawText(savedState.rawText);
       setSelectedField(savedState.selectedField ?? '');
       setInputValue(savedState.inputValue ?? '');
       setShowAllFields(savedState.showAllFields ?? false);
       setActiveChartTab((savedState.activeChartTab as ChartTab) ?? 'histogram');
-    }
-
-    const textToParse = savedState?.rawText || rawText;
-    if (textToParse.trim()) {
-      try {
-        const result = parseTableText(textToParse);
-        setParsedData(result);
-        setParseWarnings(result.warnings || []);
-        setParseError(null);
-      } catch { /* 忽略 */ }
+      setOriginalFieldState(savedState.originalFieldRadar ?? { selections: [], viewMode: 'bar' });
+      setTraditionalEntries(savedState.traditionalSubjectRadar?.entries ?? []);
     }
   }, []);
+
+  // ===== 自动解析已粘贴的数据 =====
+  useEffect(() => {
+    if (!rawText.trim()) return;
+    try {
+      const result = parseTableText(rawText);
+      setParsedData(result);
+      setParseWarnings(result.warnings || []);
+      setParseError(null);
+    } catch { /* 忽略 */ }
+  }, [rawText]);
 
   // ===== 字段值提取 =====
   const rawFieldValues = useMemo(() => {
@@ -148,19 +150,6 @@ export default function App() {
     if (showAllFields) return parsedData.headers.filter(h => isNumericField(h));
     return parsedData.headers.filter(h => isNumericField(h) && !shouldExclude(h));
   }, [parsedData, showAllFields, isNumericField, shouldExclude]);
-
-  // ===== 自动选中字段 =====
-  useEffect(() => {
-    if (!parsedData) return;
-    if (availableFields.length === 0) { setSelectedField(''); return; }
-
-    // 如果用户已保存了有效字段，不覆盖
-    if (selectedField && availableFields.includes(selectedField)) return;
-
-    // 自动选择字段：优先"外语单科成绩"，否则第一个
-    const preferred = availableFields.includes('外语单科成绩') ? '外语单科成绩' : availableFields[0];
-    setSelectedField(preferred);
-  }, [availableFields, selectedField, parsedData]);
 
   // ===== 统计计算（先定义，供后续 useCallback 使用） =====
   const stats: StatsResult | null = useMemo(() => {
@@ -251,7 +240,7 @@ export default function App() {
     setSelectedField(''); setInputValue(''); setShowAllFields(false);
     setActiveChartTab('histogram');
     setOriginalFieldState({ selections: [], viewMode: 'bar' });
-    setTraditionalEntries(getSystemDefaultState().traditionalSubjectRadar.entries);
+    setTraditionalEntries([]);
     setSaveMsg('已清空数据');
     setTimeout(() => setSaveMsg(null), 2000);
   }, []);
@@ -265,9 +254,10 @@ export default function App() {
       setParsedData(result);
       setParseWarnings(result.warnings || []);
       setParseError(null);
-      setSelectedField('外语单科成绩');
-      setInputValue('117');
-      setActiveChartTab('histogram');
+      setSelectedField(def.selectedField);
+      setInputValue(def.inputValue);
+      setActiveChartTab(def.activeChartTab as ChartTab);
+      setTraditionalEntries(def.traditionalSubjectRadar.entries);
       // textarea 回到顶部
       setTimeout(() => { textareaRef.current?.scrollTo({ top: 0 }); }, 0);
     } catch { /* 静默 */ }
