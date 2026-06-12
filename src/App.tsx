@@ -523,7 +523,7 @@ export default function App() {
       </main>
 
       <footer style={styles.footer}>
-        <div style={styles.footerVersion}>版本：v0.1.0 本地 Demo</div>
+        <div style={styles.footerVersion}>版本：v0.1.1</div>
         <div style={styles.footerSection}>
           <div style={styles.footerLabel}>说明：</div>
           <p style={styles.footerText}>本工具仅基于用户粘贴的数据进行统计分析，不代表官方排名结果。若输入数据不是完整全量数据，百分位、名次区间和图表结果可能失真。</p>
