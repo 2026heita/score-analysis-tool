@@ -190,6 +190,11 @@ export default function OriginalFieldRadar({
     const indicator = validRadarStats.map(s => ({ name: s.field, max: 100 }));
     const data = validRadarStats.map(s => s.percentile);
 
+    // 构造包含所有字段的完整 tooltip
+    const allFieldInfo = validRadarStats
+      .map(s => `${s.field}: ${s.userValue} → ${s.percentile.toFixed(1)}%`)
+      .join('<br/>');
+
     return {
       title: {
         text: '原表字段相对位置分析',
@@ -200,8 +205,8 @@ export default function OriginalFieldRadar({
         trigger: 'item',
         formatter: (params: any) => {
           const idx = params.dataIndex;
-          const s = validRadarStats[idx];
-          return `字段：${s.field}<br/>你的输入值：${s.userValue}<br/>百分位：${s.percentile.toFixed(1)}%`;
+          const hovered = validRadarStats[idx];
+          return `当前悬停字段：${hovered.field}<br/>你的输入值：${hovered.userValue}<br/>百分位：${hovered.percentile.toFixed(1)}%<br/><br/>该图同时包含其他字段，见下方字段列表。<br/>──────────────<br/>${allFieldInfo}`;
         },
       },
       radar: {
@@ -268,6 +273,8 @@ export default function OriginalFieldRadar({
         该图表示你在原表各字段中的相对位置，不代表真实单科强弱。
       </div>
       <div style={styles.noteBox2}>
+        雷达图每个轴代表一个字段，鼠标悬停时仅显示当前字段详情。
+        <br />
         如果当前表格不是完整全量数据，字段百分位可能失真。
         <br />
         百分位口径：低于该值人数 / 有效数值数量 × 100%。
@@ -302,6 +309,18 @@ export default function OriginalFieldRadar({
       )}
       {viewMode === 'radar' && radarOption && (
         <ReactECharts option={radarOption} style={{ height: '400px', width: '100%' }} />
+      )}
+
+      {/* 当前参与分析字段列表 */}
+      {validRadarStats.length > 0 && (
+        <div style={styles.fieldTagContainer}>
+          <span style={styles.fieldTagLabel}>当前参与分析字段：</span>
+          {validRadarStats.map(s => (
+            <span key={s.field} style={styles.fieldTag}>
+              {s.field}（{s.percentile.toFixed(1)}%）
+            </span>
+          ))}
+        </div>
       )}
 
       {/* 结论 */}
@@ -456,5 +475,29 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '20px',
     color: '#94a3b8',
     fontSize: '13px',
+  },
+  fieldTagContainer: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px',
+    alignItems: 'center',
+    padding: '10px 12px',
+    background: '#f8fafc',
+    borderRadius: '8px',
+    marginTop: '12px',
+  },
+  fieldTagLabel: {
+    fontSize: '13px',
+    color: '#64748b',
+    fontWeight: 500,
+  },
+  fieldTag: {
+    display: 'inline-block',
+    padding: '3px 10px',
+    background: '#eff6ff',
+    color: '#1e40af',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: 500,
   },
 };
