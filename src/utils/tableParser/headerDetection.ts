@@ -33,27 +33,65 @@ const EXPLANATION_KEYWORDS = [
 // 表头检测主函数（支持多级表头）
 // ============================================================
 export function detectHeaderRow(rawRows: unknown[][], merges?: MergeRange[]): HeaderDetectionResult {
-  // 首先尝试多级表头检测
-  const multiRowResult = detectAndFlattenMultiRowHeaders(rawRows, merges);
+  // 多级表头检测仅在有 merges 信息时启用（即 Excel 上传场景）
+  if (merges && merges.length > 0) {
+    const multiRowResult = detectAndFlattenMultiRowHeaders(rawRows, merges);
 
-  if (multiRowResult.isMultiRow) {
-    // 多级表头：使用扁平化后的字段名
-    const headers = multiRowResult.headers;
-    const dataStartRow = multiRowResult.headerRows[1] + 1;
-    const dataRows = rawRows.slice(dataStartRow);
+    if (multiRowResult.isMultiRow) {
+      // 二次校验：检查扁平化后的字段名是否合法
+      const invalidCount = multiRowResult.headers.filter(h => isInvalidFieldName(h)).length;
+      const totalNonEmpty = multiRowResult.headers.filter(h => h && h.trim() !== '').length;
 
-    return {
-      headerRowIndex: multiRowResult.headerRows[0],
-      headers,
-      dataRows,
-      confidence: 30, // 多级表头置信度
-      isMultiRow: true,
-      headerRowRange: multiRowResult.headerRows,
-    };
+      // 如果非法字段超过阈值的 30%，回退到单行表头
+      if (totalNonEmpty > 0 && invalidCount / totalNonEmpty > 0.3) {
+        return detectSingleHeaderRow(rawRows);
+      }
+
+      // 多级表头：使用扁平化后的字段名
+      const headers = multiRowResult.headers;
+      const dataStartRow = multiRowResult.headerRows[1] + 1;
+      const dataRows = rawRows.slice(dataStartRow);
+
+      return {
+        headerRowIndex: multiRowResult.headerRows[0],
+        headers,
+        dataRows,
+        confidence: 30, // 多级表头置信度
+        isMultiRow: true,
+        headerRowRange: multiRowResult.headerRows,
+      };
+    }
   }
 
-  // 不是多级表头，使用原来的单行表头检测
+  // 不是多级表头（或无 merges），使用原来的单行表头检测
   return detectSingleHeaderRow(rawRows);
+}
+
+// ============================================================
+// 字段名合法性校验
+// ============================================================
+
+/**
+ * 判断字段名是否非法（主要由数字、下划线、小数点组成）
+ * 例如：93_80、0_0、101.60_91.60、202409602096_202409602084
+ */
+function isInvalidFieldName(name: string): boolean {
+  if (!name || name.trim() === '') return false; // 空字段不算非法
+
+  const trimmed = name.trim();
+
+  // 移除下划线和小数点后，检查剩余内容是否主要是数字
+  const withoutSeparators = trimmed.replace(/[_\.\s]/g, '');
+  if (withoutSeparators.length === 0) return true;
+
+  // 检查去除分隔符后是否全是数字
+  if (/^\d+$/.test(withoutSeparators)) return true;
+
+  // 检查是否数字字符占比超过 80%
+  const digitCount = (withoutSeparators.match(/\d/g) || []).length;
+  if (digitCount / withoutSeparators.length > 0.8) return true;
+
+  return false;
 }
 
 /**

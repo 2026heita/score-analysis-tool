@@ -113,14 +113,21 @@ export function detectAndFlattenMultiRowHeaders(
     const nonEmpty = row.filter(c => c !== '' && c !== '-').length;
     if (nonEmpty < 2) continue;
 
-    // 检查是否像表头（非数字、包含关键词等）
-    const textCells = row.filter(c => {
-      if (!c || c === '-') return false;
+    // 统计文本单元格和数值单元格
+    let textCells = 0;
+    let numericCells = 0;
+    for (const c of row) {
+      if (!c || c === '-') continue;
       const n = parseFloat(c);
-      return isNaN(n) || !Number.isFinite(n);
-    }).length;
+      if (isNaN(n) || !Number.isFinite(n)) {
+        textCells++;
+      } else {
+        numericCells++;
+      }
+    }
 
-    if (textCells >= 2) {
+    // 表头行应该以文本为主，数值单元格不应超过文本单元格
+    if (textCells >= 2 && textCells >= numericCells) {
       headerCandidates.push(i);
     }
   }

@@ -84,7 +84,7 @@ export async function parseWorkbook(
   }
 
   // 解析选定的 sheet
-  const result = parseSheetData(selectedCandidate.sheetName, selectedCandidate.rawData, candidates);
+  const result = parseSheetData(selectedCandidate.sheetName, selectedCandidate.rawData, selectedCandidate.merges, candidates);
 
   // 添加 sheet 信息
   result.availableSheets = getAvailableSheetNames(candidates);
@@ -98,6 +98,7 @@ export async function parseWorkbook(
 function parseSheetData(
   sheetName: string,
   rawData: unknown[][],
+  merges: MergeRange[],
   allCandidates?: WorkbookCandidate[],
 ): ParsedTableResult {
   // 限制行数
@@ -108,7 +109,7 @@ function parseSheetData(
   }
 
   // 表头识别（支持多级表头）
-  const detection = detectHeaderRow(trimmedData);
+  const detection = detectHeaderRow(trimmedData, merges);
 
   if (detection.headerRowIndex < 0) {
     throwNoHeader();
