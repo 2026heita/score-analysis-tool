@@ -40,15 +40,19 @@ const SUBJECTS: TraditionalSubject[] = [
 ];
 
 export default function TraditionalSubjectRadar({ initialEntries, onStateChange }: TraditionalSubjectRadarProps) {
+  const defaultEntries = useMemo(() =>
+    SUBJECTS.map(s => ({ name: s.defaultOption || s.label, score: 0, maxScore: s.defaultMax })),
+  []);
+
   const [entries, setEntries] = useState<SubjectEntry[]>(() =>
-    (initialEntries ?? SUBJECTS.map(s => ({ name: s.defaultOption || s.label, score: 0, maxScore: s.defaultMax })))
+    (initialEntries && initialEntries.length > 0) ? initialEntries : defaultEntries
   );
   // 分析模式：得分率模式（当前默认），预留科目百分位模式（percentile）和标准分模式（zScore）
   const modeLabel = '得分率模式';
 
-  // 当 initialEntries 变化时同步
+  // 当 initialEntries 有实际数据时同步
   useEffect(() => {
-    if (initialEntries !== undefined) {
+    if (initialEntries && initialEntries.length > 0) {
       setEntries(initialEntries);
     }
   }, [initialEntries]);
