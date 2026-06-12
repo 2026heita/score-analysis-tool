@@ -9,6 +9,7 @@ interface RadarAnalysisProps {
   headers: string[];
   rows: Record<string, string>[];
   isNumericField: (header: string) => boolean;
+  getFieldAnalysisRole?: (header: string) => string;
   originalFieldState?: OriginalFieldRadarState;
   traditionalEntries?: TraditionalSubjectEntry[];
   onOriginalFieldChange?: (state: OriginalFieldRadarState) => void;
@@ -21,7 +22,7 @@ const TABS: { key: RadarTab; label: string }[] = [
 ];
 
 export default function RadarAnalysis({
-  headers, rows, isNumericField,
+  headers, rows, isNumericField, getFieldAnalysisRole,
   originalFieldState, traditionalEntries,
   onOriginalFieldChange, onTraditionalChange,
 }: RadarAnalysisProps) {
@@ -50,6 +51,7 @@ export default function RadarAnalysis({
             headers={headers}
             rows={rows}
             isNumericField={isNumericField}
+            getFieldAnalysisRole={getFieldAnalysisRole}
             initialSelections={originalFieldState?.selections}
             initialViewMode={originalFieldState?.viewMode}
             onStateChange={onOriginalFieldChange}

@@ -3,6 +3,7 @@
 // ============================================================
 
 import type { SheetCandidate, WorkbookCandidate } from './types';
+import type { MergeRange } from './headerFlattener';
 import { detectHeaderRow } from './headerDetection';
 
 // 主成绩表关键词（加分关键词，不硬编码具体表名）
@@ -38,7 +39,7 @@ const HEADER_SCAN_ROWS = 30;
  * @returns 排序后的候选列表，置信度最高的排在最前
  */
 export function detectMainWorksheet(
-  workbookSheets: { name: string; data: unknown[][] }[],
+  workbookSheets: { name: string; data: unknown[][]; merges: MergeRange[] }[],
 ): WorkbookCandidate[] {
   if (workbookSheets.length === 0) {
     return [];
@@ -47,10 +48,11 @@ export function detectMainWorksheet(
   // 如果只有一个 sheet，直接返回
   if (workbookSheets.length === 1) {
     const sheet = workbookSheets[0];
-    const candidate = evaluateSheetCandidate(sheet.name, sheet.data);
+    const candidate = evaluateSheetCandidate(sheet.name, sheet.data, sheet.merges);
     return [{
       sheetName: sheet.name,
       rawData: sheet.data,
+      merges: sheet.merges,
       candidate,
     }];
   }
@@ -59,7 +61,8 @@ export function detectMainWorksheet(
   const candidates: WorkbookCandidate[] = workbookSheets.map(sheet => ({
     sheetName: sheet.name,
     rawData: sheet.data,
-    candidate: evaluateSheetCandidate(sheet.name, sheet.data),
+    merges: sheet.merges,
+    candidate: evaluateSheetCandidate(sheet.name, sheet.data, sheet.merges),
   }));
 
   // 按置信度降序排序
@@ -71,7 +74,7 @@ export function detectMainWorksheet(
 /**
  * 评估单个工作表的候选分数
  */
-function evaluateSheetCandidate(name: string, data: unknown[][]): SheetCandidate {
+function evaluateSheetCandidate(name: string, data: unknown[][], merges: MergeRange[]): SheetCandidate {
   const rowCount = data.length;
   const colCount = data.length > 0 ? Math.max(...data.map(r => Array.isArray(r) ? r.length : 1)) : 0;
 
@@ -155,7 +158,7 @@ function evaluateSheetCandidate(name: string, data: unknown[][]): SheetCandidate
   score += numericColCount * 2;
 
   // 10. 检测表头有效性
-  const headerResult = detectHeaderRow(data);
+  const headerResult = detectHeaderRow(data, merges);
   if (headerResult.headerRowIndex >= 0) {
     score += 20;
     // 如果表头后有多行数据，额外加分

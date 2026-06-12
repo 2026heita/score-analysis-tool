@@ -25,11 +25,27 @@ export type FieldType =
   | 'unknown';   // 无法识别
 
 /**
+ * 字段分析价值分层（比 FieldType 更精细，用于下拉框过滤和推荐）
+ */
+export type AnalysisRole =
+  | 'primaryTotal'   // 总分、总成绩、综合成绩、总评、最终成绩
+  | 'rank'           // 排名、名次、位次
+  | 'sectionTotal'   // 合计、总计、小计、模块合计
+  | 'courseScore'    // 具体课程成绩
+  | 'adjustment'     // 加分、扣分、政策加分、奖励分、惩罚分
+  | 'identity'       // 姓名、学号、班级、考号、学校代码
+  | 'textMeta'       // 签名、备注、说明、状态、组合、类别
+  | 'unknown'        // 未知字段
+  | 'invalid';       // 未命名字段、非法字段名
+
+/**
  * 字段元数据
  */
 export interface FieldMeta {
   header: string;
   type: FieldType;
+  /** 分析价值分层（用于下拉框过滤和推荐优先级） */
+  analysisRole: AnalysisRole;
   validCount: number;       // 有效数值数量
   emptyCount: number;       // 空值数量
   invalidCount: number;     // 无效值（缺考等）数量
@@ -123,5 +139,6 @@ export interface ParsedTableResult {
 export interface WorkbookCandidate {
   sheetName: string;
   rawData: unknown[][];
+  merges: import('./headerFlattener').MergeRange[];
   candidate: SheetCandidate;
 }

@@ -2,7 +2,7 @@
 // 成绩表智能解析器 - 字段分类
 // ============================================================
 
-import type { FieldMeta, FieldType } from './types';
+import type { FieldMeta, FieldType, AnalysisRole } from './types';
 import { parseNumericValue } from './numericParser';
 
 // ============================================================
@@ -38,11 +38,14 @@ const CATEGORY_KEYWORDS = [
   '选考', '首选', '再选',
 ];
 
-// 不要推荐为分析字段的关键词
-const EXCLUDED_FROM_RECOMMENDATION = [
-  '学校代码', '学校名称', '姓名', '考号', '座号', '学号', '考生号', '准考证',
-  '班级', '组合简称', '科类', '类别', '性别', '民族', '身份证号',
-  '签名',
+// 总分相关关键词（用于 primaryTotal 识别）
+const PRIMARY_TOTAL_KEYWORDS = [
+  '总分', '总成绩', '综合成绩', '总评', '最终成绩',
+];
+
+// 合计相关关键词（用于 sectionTotal 识别）
+const SECTION_TOTAL_KEYWORDS = [
+  '合计', '总计', '小计', '模块合计',
 ];
 
 /**
@@ -74,11 +77,13 @@ export function classifyFields(
   return headers.map(header => {
     const columnValues = rows.map(row => row[header] ?? '');
     const type = classifyField(header, columnValues);
+    const analysisRole = classifyAnalysisRole(header, type);
     const counts = countColumnValues(columnValues);
 
     return {
       header,
       type,
+      analysisRole,
       validCount: counts.valid,
       emptyCount: counts.empty,
       invalidCount: counts.invalid,
@@ -115,14 +120,7 @@ function classifyField(header: string, columnValues: string[]): FieldType {
     }
   }
 
-  // 3. rank 检查
-  for (const kw of RANK_KEYWORDS) {
-    if (headerLower.includes(kw.toLowerCase())) {
-      return 'rank';
-    }
-  }
-
-  // 4. category 检查
+  // 3. category 检查
   for (const kw of CATEGORY_KEYWORDS) {
     if (headerLower.includes(kw.toLowerCase())) {
       return 'category';
@@ -154,9 +152,104 @@ function classifyField(header: string, columnValues: string[]): FieldType {
   // 如果大部分是文本，分类为 text
   if (textRatio > 0.6) return 'text';
 
-  // 如果大部分是有效数值，但字段名不匹配 → unknown（让后续逻辑处理）
-  if (validRatio > 0.5) return 'unknown';
+  // 如果大部分是有效数值，需要进一步判断字段名
+  if (validRatio > 0.5) {
+    // 先检查字段名是否包含身份关键词（避免班级代码、班级名称等被误判）
+    for (const kw of IDENTITY_KEYWORDS) {
+      if (headerLower.includes(kw.toLowerCase())) {
+        return 'identity';
+      }
+    }
+    
+    // 检查字段名是否包含"成绩"或"分数"
+    if (headerLower.includes('成绩') || headerLower.includes('分数')) {
+      return 'score';
+    }
+    
+    // 检查字段名是否包含"合计"、"总计"、"小计"（合计也是成绩）
+    if (headerLower.includes('合计') || headerLower.includes('总计') || headerLower.includes('小计')) {
+      return 'score';
+    }
+    
+    // 检查字段名是否看起来像编码（纯数字或数字比例过高）
+    const digitsOnly = headerLower.replace(/[_\-\s]/g, '');
+    if (/^\d+$/.test(digitsOnly)) {
+      return 'unknown'; // 纯数字字段名，像学号、编码
+    }
+    
+    // 检查字段名中数字比例是否过高（超过 50%）
+    const digitCount = (headerLower.match(/\d/g) || []).length;
+    if (digitCount / headerLower.length > 0.5) {
+      return 'unknown'; // 数字比例过高，可能是编码
+    }
+    
+    // 通用规则：如果字段名包含中文字符，视为成绩字段
+    // 这样可以覆盖所有课程字段，包括多级表头展开的字段
+    if (/[\u4e00-\u9fa5]/.test(headerLower)) {
+      return 'score';
+    }
+    
+    // 默认不归类为 score，避免误判
+    return 'unknown';
+  }
 
+  return 'unknown';
+}
+
+/**
+ * 对字段进行分析价值分层（AnalysisRole）
+ */
+function classifyAnalysisRole(header: string, type: FieldType): AnalysisRole {
+  const headerLower = header.toLowerCase().trim();
+
+  // 1. 未命名字段 → invalid
+  if (headerLower.startsWith('未命名字段') || headerLower === '' || /^[\s_\-\.]+$/.test(headerLower)) {
+    return 'invalid';
+  }
+
+  // 2. 总分相关 → primaryTotal
+  for (const kw of PRIMARY_TOTAL_KEYWORDS) {
+    if (headerLower.includes(kw.toLowerCase())) {
+      // 排除纯加分字段
+      if (!isPureBonusField(headerLower)) {
+        return 'primaryTotal';
+      }
+    }
+  }
+
+  // 3. 排名相关 → rank
+  if (type === 'rank') {
+    return 'rank';
+  }
+
+  // 4. 合计相关 → sectionTotal
+  for (const kw of SECTION_TOTAL_KEYWORDS) {
+    if (headerLower.includes(kw.toLowerCase())) {
+      return 'sectionTotal';
+    }
+  }
+
+  // 5. 加分/扣分 → adjustment
+  if (type === 'bonus' || type === 'penalty') {
+    return 'adjustment';
+  }
+
+  // 6. 身份字段 → identity
+  if (type === 'identity') {
+    return 'identity';
+  }
+
+  // 7. 文本/备注字段 → textMeta
+  if (type === 'text' || type === 'category' || type === 'status') {
+    return 'textMeta';
+  }
+
+  // 8. 具体课程成绩 → courseScore
+  if (type === 'score') {
+    return 'courseScore';
+  }
+
+  // 9. 其他 → unknown
   return 'unknown';
 }
 
@@ -208,75 +301,53 @@ function computeConfidence(type: FieldType, counts: { valid: number; text: numbe
 /**
  * 推荐最佳分析字段
  * 
- * 推荐优先级：
- * 1. 总分 / 总成绩 / 总分（不含加分）
- * 2. 班级排名 / 排名
- * 3. 智育_合计 / 德育_合计 / 体育_合计 / 美育_合计 / 劳育_合计（综合测评表）
- * 4. 语文、数学、英语/外语
- * 5. 物理、历史、化学、生物、政治、地理
- * 6. 其他具体课程成绩
- * 7. 其他数值字段
+ * 推荐优先级（基于 analysisRole）：
+ * 1. primaryTotal：总分 / 总成绩 / 综合成绩 / 总评 / 最终成绩
+ * 2. rank：排名 / 名次 / 位次
+ * 3. sectionTotal：合计 / 总计 / 小计 / 模块合计
+ * 4. courseScore：具体课程成绩
+ * 5. 其他数值字段
  * 
- * 不推荐：学校代码、班级、加分字段、扣分、字典表字段、姓名、学校名称、组合简称、签名
+ * 绝对不推荐：
+ * - adjustment（加分、扣分）
+ * - identity（学号、姓名、班级）
+ * - textMeta（签名、备注、说明）
+ * - unknown（未知字段）
+ * - invalid（未命名字段、非法字段名）
  */
 export function recommendAnalysisField(fieldMetas: FieldMeta[]): { field: string | null; priority: number } {
-  // 优先级 1: 总分（排除纯加分字段，但保留"不含加分"类字段）
+  // 优先级 1: primaryTotal（总分相关）
   for (const meta of fieldMetas) {
-    const lower = meta.header.toLowerCase();
-    if ((lower.includes('总分') || lower.includes('总成绩')) && meta.validCount > 0) {
-      if (isPureBonusField(lower)) continue;
+    if (meta.analysisRole === 'primaryTotal' && meta.validCount > 0) {
       return { field: meta.header, priority: 1 };
     }
   }
 
-  // 优先级 2: 班级排名 / 排名
+  // 优先级 2: rank（排名相关）
   for (const meta of fieldMetas) {
-    if (meta.type === 'rank' && meta.validCount > 0) {
+    if (meta.analysisRole === 'rank' && meta.validCount > 0) {
       return { field: meta.header, priority: 2 };
     }
   }
 
-  // 优先级 3: 综合测评合计字段（智育_合计、德育_合计 等）
-  const compositeTotals = ['智育_合计', '德育_合计', '体育_合计', '美育_合计', '劳育_合计'];
-  for (const kw of compositeTotals) {
-    for (const meta of fieldMetas) {
-      if (meta.header.includes(kw) && meta.validCount > 0) {
-        return { field: meta.header, priority: 3 };
-      }
-    }
-  }
-
-  // 优先级 4: 主科
-  const mainSubjects = ['语文', '数学', '英语', '外语'];
-  for (const subject of mainSubjects) {
-    for (const meta of fieldMetas) {
-      if (meta.header.includes(subject) && meta.validCount > 0) {
-        return { field: meta.header, priority: 4 };
-      }
-    }
-  }
-
-  // 优先级 5: 其他学科
-  const otherSubjects = ['物理', '历史', '化学', '生物', '政治', '地理'];
-  for (const subject of otherSubjects) {
-    for (const meta of fieldMetas) {
-      if (meta.header.includes(subject) && meta.validCount > 0) {
-        return { field: meta.header, priority: 5 };
-      }
-    }
-  }
-
-  // 优先级 6: 具体课程成绩（智育_XXX、德育_XXX 等）
+  // 优先级 3: sectionTotal（合计相关）
   for (const meta of fieldMetas) {
-    if (meta.type === 'score' && meta.validCount > 0 && meta.header.includes('_')) {
-      return { field: meta.header, priority: 6 };
+    if (meta.analysisRole === 'sectionTotal' && meta.validCount > 0) {
+      return { field: meta.header, priority: 3 };
     }
   }
 
-  // 优先级 7: 其他数值字段（排除不推荐的）
+  // 优先级 4: courseScore（具体课程成绩）
   for (const meta of fieldMetas) {
-    if (meta.validCount > 0 && shouldIncludeInRecommendation(meta.header)) {
-      return { field: meta.header, priority: 7 };
+    if (meta.analysisRole === 'courseScore' && meta.validCount > 0) {
+      return { field: meta.header, priority: 4 };
+    }
+  }
+
+  // 优先级 5: 其他数值字段（排除不推荐的类型）
+  for (const meta of fieldMetas) {
+    if (meta.validCount > 0 && shouldIncludeInRecommendationByRole(meta.analysisRole)) {
+      return { field: meta.header, priority: 5 };
     }
   }
 
@@ -285,27 +356,25 @@ export function recommendAnalysisField(fieldMetas: FieldMeta[]): { field: string
 }
 
 /**
- * 判断字段是否应该包含在推荐中
+ * 判断字段是否应该包含在推荐中（基于 analysisRole）
  */
-function shouldIncludeInRecommendation(header: string): boolean {
-  const lower = header.toLowerCase();
-  for (const kw of EXCLUDED_FROM_RECOMMENDATION) {
-    if (lower.includes(kw.toLowerCase())) {
-      return false;
-    }
-  }
-  // 排除纯加分字段
-  if (isPureBonusField(lower)) return false;
-  // 排除扣分字段
-  if (lower.includes('扣分')) return false;
-  return true;
+function shouldIncludeInRecommendationByRole(role: AnalysisRole): boolean {
+  // 只推荐 primaryTotal、rank、sectionTotal、courseScore
+  return role === 'primaryTotal' || role === 'rank' || role === 'sectionTotal' || role === 'courseScore';
 }
 
 /**
- * 获取所有可用于分析的字段（数值字段）
+ * 获取所有可用于分析的字段（基于 analysisRole）
  */
 export function getAnalyzableFields(fieldMetas: FieldMeta[], showAll: boolean = false): string[] {
+  if (showAll) {
+    // 显示全部字段时，只排除 invalid
+    return fieldMetas
+      .filter(meta => meta.analysisRole !== 'invalid')
+      .map(meta => meta.header);
+  }
+  // 默认只显示推荐分析字段
   return fieldMetas
-    .filter(meta => meta.validCount > 0 && (showAll || shouldIncludeInRecommendation(meta.header)))
+    .filter(meta => meta.validCount > 0 && shouldIncludeInRecommendationByRole(meta.analysisRole))
     .map(meta => meta.header);
 }

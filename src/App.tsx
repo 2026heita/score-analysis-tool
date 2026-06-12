@@ -151,11 +151,57 @@ export default function App() {
     return EXCLUDED_KEYWORDS.some(kw => header.includes(kw));
   }, []);
 
+  // 获取字段的 analysisRole（从 parseSummary.fieldTypes）
+  const getFieldAnalysisRole = useCallback((header: string): string => {
+    if (!parseSummary?.fieldTypes) return 'unknown';
+    const meta = parseSummary.fieldTypes.find(f => f.header === header);
+    return meta?.analysisRole || 'unknown';
+  }, [parseSummary]);
+
+  // 判断是否为推荐分析字段（基于 analysisRole）
+  const isRecommendedField = useCallback((header: string): boolean => {
+    const role = getFieldAnalysisRole(header);
+    // 只推荐 primaryTotal、rank、sectionTotal、courseScore
+    return role === 'primaryTotal' || role === 'rank' || role === 'sectionTotal' || role === 'courseScore';
+  }, [getFieldAnalysisRole]);
+
   const availableFields = useMemo(() => {
     if (!parsedData) return [];
-    if (showAllFields) return parsedData.headers.filter(h => isNumericField(h));
-    return parsedData.headers.filter(h => isNumericField(h) && !shouldExclude(h));
-  }, [parsedData, showAllFields, isNumericField, shouldExclude]);
+    if (showAllFields) {
+      // 显示全部字段时，返回所有字段（用于分组显示）
+      return parsedData.headers;
+    }
+    // 默认视图：只显示推荐分析字段
+    return parsedData.headers.filter(h => isRecommendedField(h) && !shouldExclude(h));
+  }, [parsedData, showAllFields, isRecommendedField, shouldExclude]);
+
+  // 分组字段（用于"显示全部字段"时的 optgroup）
+  const groupedFields = useMemo(() => {
+    if (!parsedData || !showAllFields) return null;
+    
+    const recommended: string[] = [];
+    const adjustment: string[] = [];
+    const identity: string[] = [];
+    const textMeta: string[] = [];
+    const others: string[] = [];
+    
+    for (const header of parsedData.headers) {
+      const role = getFieldAnalysisRole(header);
+      if (role === 'primaryTotal' || role === 'rank' || role === 'sectionTotal' || role === 'courseScore') {
+        recommended.push(header);
+      } else if (role === 'adjustment') {
+        adjustment.push(header);
+      } else if (role === 'identity') {
+        identity.push(header);
+      } else if (role === 'textMeta') {
+        textMeta.push(header);
+      } else {
+        others.push(header);
+      }
+    }
+    
+    return { recommended, adjustment, identity, textMeta, others };
+  }, [parsedData, showAllFields, getFieldAnalysisRole]);
 
   // ===== 统计计算（先定义，供后续 useCallback 使用） =====
   const stats: StatsResult | null = useMemo(() => {
@@ -517,9 +563,49 @@ export default function App() {
                 <div style={styles.settingItem}>
                   <label style={styles.settingLabel}>分析字段</label>
                   <select style={styles.select} value={selectedField} onChange={e => setSelectedField(e.target.value)}>
-                    {availableFields.map(header => (
-                      <option key={header} value={header}>{header}</option>
-                    ))}
+                    {showAllFields && groupedFields ? (
+                      <>
+                        {groupedFields.recommended.length > 0 && (
+                          <optgroup label="推荐分析字段">
+                            {groupedFields.recommended.map(header => (
+                              <option key={header} value={header}>{header}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {groupedFields.adjustment.length > 0 && (
+                          <optgroup label="加扣分/调整项">
+                            {groupedFields.adjustment.map(header => (
+                              <option key={header} value={header}>{header}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {groupedFields.identity.length > 0 && (
+                          <optgroup label="身份信息">
+                            {groupedFields.identity.map(header => (
+                              <option key={header} value={header}>{header}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {groupedFields.textMeta.length > 0 && (
+                          <optgroup label="文本/备注字段">
+                            {groupedFields.textMeta.map(header => (
+                              <option key={header} value={header}>{header}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {groupedFields.others.length > 0 && (
+                          <optgroup label="其他字段">
+                            {groupedFields.others.map(header => (
+                              <option key={header} value={header}>{header}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </>
+                    ) : (
+                      availableFields.map(header => (
+                        <option key={header} value={header}>{header}</option>
+                      ))
+                    )}
                   </select>
                 </div>
                 <div style={styles.settingItem}>
