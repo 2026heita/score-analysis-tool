@@ -1,7 +1,7 @@
 import type { SavedState } from '../types';
 
 const STORAGE_KEY = 'score_analyzer_state';
-const CURRENT_VERSION = 1;
+const CURRENT_VERSION = 2;
 
 export const DEFAULT_TRADITIONAL_ENTRIES = [
   { name: '语文', score: 110, maxScore: 150 },
@@ -118,10 +118,18 @@ export function loadSavedState(): SavedState {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return getDefaultState();
     const parsed = safeJsonParse<SavedState>(raw, getDefaultState());
-    if (typeof parsed !== 'object' || parsed === null) return getDefaultState();
-    if (parsed.version !== CURRENT_VERSION) return getDefaultState();
+    if (typeof parsed !== 'object' || parsed === null) {
+      localStorage.removeItem(STORAGE_KEY);
+      return getDefaultState();
+    }
+    if (parsed.version !== CURRENT_VERSION) {
+      // 旧版本数据污染，清除并返回空白初始状态
+      localStorage.removeItem(STORAGE_KEY);
+      return getDefaultState();
+    }
     return parsed;
   } catch {
+    localStorage.removeItem(STORAGE_KEY);
     return getDefaultState();
   }
 }
