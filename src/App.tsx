@@ -1,9 +1,10 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { parseTableText } from './utils/parseTable';
-import { parseTableFile } from './utils/fileImport';
+import { parseTableFile, type ParsedFileResult } from './utils/fileImport';
 import { calculateStats, calculatePosition, formatNumber } from './utils/stats';
 import { saveState, loadSavedState, clearSavedState, getSystemDefaultState } from './utils/storage';
 import type { ParsedTable, StatsResult, PositionResult, ChartTab, OriginalFieldRadarState, TraditionalSubjectEntry } from './types';
+import type { ParseSummary } from './utils/tableParser/types';
 import UsageGuide from './components/UsageGuide';
 import ChartTabs from './components/charts/ChartTabs';
 import HistogramChart from './components/charts/HistogramChart';
@@ -59,6 +60,9 @@ export default function App() {
   const [parseError, setParseError] = useState<string | null>(null);
   const [parseWarnings, setParseWarnings] = useState<string[]>([]);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [parseSummary, setParseSummary] = useState<ParseSummary | null>(null);
+  const [availableSheets, setAvailableSheets] = useState<string[] | null>(null);
+  const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
   const [selectedField, setSelectedField] = useState('');
   const [inputValue, setInputValue] = useState('');
   const [showAllFields, setShowAllFields] = useState(false);
@@ -269,25 +273,65 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
     setFileError(null);
+    setParseSummary(null);
+    setAvailableSheets(null);
+    setSelectedSheet(null);
     parseTableFile(file)
       .then(result => {
         setParsedData(result);
         setParseWarnings(result.warnings || []);
         setParseError(null);
+        // 保存解析摘要
+        if (result.summary) {
+          setParseSummary(result.summary);
+          // 自动选择推荐字段
+          if (result.summary.recommendedField) {
+            setSelectedField(result.summary.recommendedField);
+          }
+        }
+        // 保存可用 sheet 列表
+        if (result.availableSheets && result.availableSheets.length > 1) {
+          setAvailableSheets(result.availableSheets);
+        }
         // 将文件内容也转为文本填入 textarea，方便保存
         const text = [result.headers.join('\t'), ...result.rows.map(r => result.headers.map(h => r[h] ?? '').join('\t'))].join('\n');
         setRawText(text);
-        // 不自动设置 inputValue，保留用户已选择的字段
         setActiveChartTab('histogram');
       })
       .catch(err => {
         setFileError(err instanceof Error ? err.message : '文件解析失败');
         setParsedData(null);
         setParseWarnings([]);
+        setParseSummary(null);
       });
     // 重置 input，允许重复选择同一文件
     e.target.value = '';
   }, []);
+
+  // 切换 sheet 重新解析
+  const handleSheetChange = useCallback((sheetName: string) => {
+    setSelectedSheet(sheetName);
+    // 需要重新上传文件来解析不同 sheet，这里提示用户
+    if (parsedData && (parsedData as ParsedFileResult).reparseSheet) {
+      (parsedData as ParsedFileResult).reparseSheet!(sheetName)
+        .then(result => {
+          setParsedData(result);
+          setParseWarnings(result.warnings || []);
+          setParseError(null);
+          if (result.summary) {
+            setParseSummary(result.summary);
+            if (result.summary.recommendedField) {
+              setSelectedField(result.summary.recommendedField);
+            }
+          }
+          const text = [result.headers.join('\t'), ...result.rows.map(r => result.headers.map(h => r[h] ?? '').join('\t'))].join('\n');
+          setRawText(text);
+        })
+        .catch(err => {
+          setFileError(err instanceof Error ? err.message : '切换工作表失败');
+        });
+    }
+  }, [parsedData]);
 
   const fallbackCopy = useCallback((text: string) => {
     try {
@@ -419,6 +463,44 @@ export default function App() {
 
         {parsedData && availableFields.length > 0 && (
           <>
+            {parseSummary && (
+              <section style={styles.section}>
+                <h2 style={styles.sectionTitle}>识别摘要</h2>
+                <div style={styles.summaryGrid}>
+                  <SummaryItem label="已识别主表" value={parseSummary.sheetName} />
+                  <SummaryItem label="识别字段" value={`${parseSummary.fieldCount} 个`} />
+                  <SummaryItem label="有效数据行" value={`${parseSummary.validDataRows} 行`} />
+                  {parseSummary.emptyRows > 0 && <SummaryItem label="跳过空行" value={`${parseSummary.emptyRows} 行`} />}
+                  {parseSummary.summaryRows > 0 && <SummaryItem label="跳过统计行" value={`${parseSummary.summaryRows} 行`} />}
+                  {parseSummary.statusRows > 0 && <SummaryItem label="状态/无效行" value={`${parseSummary.statusRows} 行`} />}
+                  {parseSummary.recommendedField && (
+                    <SummaryItem label="推荐分析字段" value={parseSummary.recommendedField} highlight />
+                  )}
+                </div>
+              </section>
+            )}
+
+            {availableSheets && availableSheets.length > 1 && (
+              <section style={styles.section}>
+                <h2 style={styles.sectionTitle}>工作表选择</h2>
+                <div style={styles.sheetSelector}>
+                  {availableSheets.map(sheet => (
+                    <button
+                      key={sheet}
+                      style={{
+                        ...styles.sheetButton,
+                        ...(selectedSheet === sheet ? styles.sheetButtonActive : {}),
+                        ...(parseSummary?.sheetName === sheet && !selectedSheet ? styles.sheetButtonActive : {}),
+                      }}
+                      onClick={() => handleSheetChange(sheet)}
+                    >
+                      {sheet}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+
             <section style={styles.section}>
               <h2 style={styles.sectionTitle}>解析结果</h2>
               <div style={styles.infoRow}>
@@ -584,6 +666,15 @@ function PositionItem({ label, value }: { label: string; value: string }) {
   );
 }
 
+function SummaryItem({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <div style={styles.summaryItem}>
+      <span style={styles.summaryLabel}>{label}：</span>
+      <span style={{ ...styles.summaryValue, ...(highlight ? styles.summaryHighlight : {}) }}>{value}</span>
+    </div>
+  );
+}
+
 function formatComparisonText(input: number, ref: number): string {
   if (!Number.isFinite(input) || !Number.isFinite(ref)) return '-';
   const diff = input - ref;
@@ -652,4 +743,12 @@ const styles: Record<string, React.CSSProperties> = {
   fileInput: { display: 'none' },
   fileUploadButton: { padding: '8px 16px', background: '#f0f7ff', color: '#3b82f6', border: '1px solid #93c5fd', borderRadius: '8px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s', whiteSpace: 'nowrap' },
   fileUploadNote: { fontSize: '12px', color: '#94a3b8', fontStyle: 'italic' },
+  summaryGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '8px' },
+  summaryItem: { display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 10px', background: '#f8fafc', borderRadius: '6px', fontSize: '13px' },
+  summaryLabel: { color: '#64748b', fontSize: '12px' },
+  summaryValue: { color: '#1e293b', fontWeight: 600, fontSize: '13px' },
+  summaryHighlight: { color: '#2563eb' },
+  sheetSelector: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
+  sheetButton: { padding: '8px 16px', background: '#f0f7ff', color: '#3b82f6', border: '1px solid #93c5fd', borderRadius: '8px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s' },
+  sheetButtonActive: { background: '#2563eb', color: '#fff', borderColor: '#2563eb' },
 };
