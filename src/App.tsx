@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { parseTableText } from './utils/parseTable';
+import { parseTableFile } from './utils/fileImport';
 import { calculateStats, calculatePosition, formatNumber } from './utils/stats';
 import { saveState, loadSavedState, clearSavedState, getSystemDefaultState } from './utils/storage';
 import type { ParsedTable, StatsResult, PositionResult, ChartTab, OriginalFieldRadarState, TraditionalSubjectEntry } from './types';
@@ -57,6 +58,7 @@ export default function App() {
   const [parsedData, setParsedData] = useState<ParsedTable | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
   const [parseWarnings, setParseWarnings] = useState<string[]>([]);
+  const [fileError, setFileError] = useState<string | null>(null);
   const [selectedField, setSelectedField] = useState('');
   const [inputValue, setInputValue] = useState('');
   const [showAllFields, setShowAllFields] = useState(false);
@@ -76,7 +78,7 @@ export default function App() {
   useEffect(() => {
     try {
       saveState({
-        version: 1,
+        version: 2,
         rawText,
         selectedField,
         inputValue,
@@ -263,6 +265,30 @@ export default function App() {
     } catch { /* 静默 */ }
   }, [rawText]);
 
+  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileError(null);
+    parseTableFile(file)
+      .then(result => {
+        setParsedData(result);
+        setParseWarnings(result.warnings || []);
+        setParseError(null);
+        // 将文件内容也转为文本填入 textarea，方便保存
+        const text = [result.headers.join('\t'), ...result.rows.map(r => result.headers.map(h => r[h] ?? '').join('\t'))].join('\n');
+        setRawText(text);
+        // 不自动设置 inputValue，保留用户已选择的字段
+        setActiveChartTab('histogram');
+      })
+      .catch(err => {
+        setFileError(err instanceof Error ? err.message : '文件解析失败');
+        setParsedData(null);
+        setParseWarnings([]);
+      });
+    // 重置 input，允许重复选择同一文件
+    e.target.value = '';
+  }, []);
+
   const fallbackCopy = useCallback((text: string) => {
     try {
       const textarea = document.createElement('textarea');
@@ -350,6 +376,18 @@ export default function App() {
           <UsageGuide />
           <p style={styles.hint}>建议直接从 Excel 复制整块表格后粘贴到下方文本框中。</p>
           <p style={styles.rowLimitHint}>建议单次粘贴数据量不超过 2 万行。数据量过大时，浏览器可能出现卡顿。</p>
+          <div style={styles.fileUploadRow}>
+            <label style={styles.fileUploadLabel}>
+              <input
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                style={styles.fileInput}
+                onChange={handleFileUpload}
+              />
+              <span style={styles.fileUploadButton}>上传 CSV / Excel 文件</span>
+            </label>
+            <span style={styles.fileUploadNote}>文件只在浏览器本地解析，不上传服务器。</span>
+          </div>
           <textarea
             ref={textareaRef}
             style={styles.textarea}
@@ -363,6 +401,7 @@ export default function App() {
             <button className="sample-btn" style={styles.sampleButton} onClick={handleFillSample}>填入示例数据</button>
           </div>
           {parseError && <p style={styles.error}>{parseError}</p>}
+          {fileError && <p style={styles.error}>{fileError}</p>}
           {parseWarnings.map((w, i) => (
             <p key={i} style={styles.warning}>{w}</p>
           ))}
@@ -513,7 +552,7 @@ export default function App() {
       </main>
 
       <footer style={styles.footer}>
-        <div style={styles.footerVersion}>版本：v0.1.1</div>
+        <div style={styles.footerVersion}>版本：v0.1.2</div>
         <div style={styles.footerSection}>
           <div style={styles.footerLabel}>说明：</div>
           <p style={styles.footerText}>本工具仅基于用户粘贴的数据进行统计分析，不代表官方排名结果。若输入数据不是完整全量数据，百分位、名次区间和图表结果可能失真。</p>
@@ -608,4 +647,9 @@ const styles: Record<string, React.CSSProperties> = {
   footerLabel: { fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginBottom: '2px' },
   footerText: { margin: 0, fontSize: '11px', color: '#94a3b8', lineHeight: 1.6 },
   rowLimitHint: { margin: '0 0 10px', fontSize: '12px', color: '#92400e', background: '#fffbeb', padding: '6px 12px', borderRadius: '6px', borderLeft: '3px solid #f59e0b' },
+  fileUploadRow: { display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap' },
+  fileUploadLabel: { display: 'inline-flex', alignItems: 'center', cursor: 'pointer' },
+  fileInput: { display: 'none' },
+  fileUploadButton: { padding: '8px 16px', background: '#f0f7ff', color: '#3b82f6', border: '1px solid #93c5fd', borderRadius: '8px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s', whiteSpace: 'nowrap' },
+  fileUploadNote: { fontSize: '12px', color: '#94a3b8', fontStyle: 'italic' },
 };
