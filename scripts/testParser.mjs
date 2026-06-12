@@ -277,8 +277,9 @@ const IDENTITY_KEYWORDS = ['学校代码', '学校名称', '姓名', '班级', '
 const SCORE_KEYWORDS = ['总分', '语文', '数学', '英语', '外语', '物理', '化学', '生物', '政治', '历史', '地理', '成绩', '分数', '得分', '总分（不含加分）', '原始总分', '标准总分', '综合', '文科综合', '理科综合'];
 const RANK_KEYWORDS = ['名次', '排名', '位次', '年级名次', '班级名次'];
 const BONUS_KEYWORDS = ['加分', '区内加分', '区外加分', '政策加分', '优惠加分', '特长加分'];
+const PENALTY_KEYWORDS = ['扣分'];
 const CATEGORY_KEYWORDS = ['组合', '组合简称', '科类', '选科', '类别', '文理', '科类名称', '选考', '首选', '再选'];
-const EXCLUDED_FROM_RECOMMENDATION = ['学校代码', '学校名称', '姓名', '考号', '座号', '学号', '考生号', '准考证', '班级', '组合简称', '科类', '类别', '性别', '民族', '身份证号'];
+const EXCLUDED_FROM_RECOMMENDATION = ['学校代码', '学校名称', '姓名', '考号', '座号', '学号', '考生号', '准考证', '班级', '组合简称', '科类', '类别', '性别', '民族', '身份证号', '签名'];
 
 function isPureBonusField(headerLower) {
   if (headerLower.includes('不含')) return false;
@@ -287,12 +288,14 @@ function isPureBonusField(headerLower) {
 
 function classifyField(header) {
   const lower = header.toLowerCase().trim();
+  // rank 在 identity 之前，因为"班级排名"包含"班级"但本质是排名字段
+  for (const kw of RANK_KEYWORDS) if (lower.includes(kw.toLowerCase())) return 'rank';
   for (const kw of IDENTITY_KEYWORDS) if (lower.includes(kw.toLowerCase())) return 'identity';
   // score 在 bonus 之前，避免"总分（不含加分）"被误判
   for (const kw of SCORE_KEYWORDS) if (lower.includes(kw.toLowerCase())) return 'score';
-  for (const kw of RANK_KEYWORDS) if (lower.includes(kw.toLowerCase())) return 'rank';
   for (const kw of CATEGORY_KEYWORDS) if (lower.includes(kw.toLowerCase())) return 'category';
   for (const kw of BONUS_KEYWORDS) if (lower.includes(kw.toLowerCase())) return 'bonus';
+  for (const kw of PENALTY_KEYWORDS) if (lower.includes(kw.toLowerCase())) return 'penalty';
   return 'unknown';
 }
 
@@ -319,21 +322,36 @@ function recommendAnalysisField(fieldMetas) {
       return { field: meta.header, priority: 1 };
     }
   }
+  // 排名/班级排名
+  for (const meta of fieldMetas) {
+    if (meta.type === 'rank' && meta.validCount > 0) return { field: meta.header, priority: 2 };
+  }
+  // 综合测评合计字段
+  const compositeTotals = ['智育_合计', '德育_合计', '体育_合计', '美育_合计', '劳育_合计'];
+  for (const kw of compositeTotals) {
+    for (const meta of fieldMetas) {
+      if (meta.header.includes(kw) && meta.validCount > 0) {
+        return { field: meta.header, priority: 3 };
+      }
+    }
+  }
   for (const subject of ['语文', '数学', '英语', '外语']) {
     for (const meta of fieldMetas) {
-      if (meta.header.includes(subject) && meta.validCount > 0) return { field: meta.header, priority: 2 };
+      if (meta.header.includes(subject) && meta.validCount > 0) return { field: meta.header, priority: 4 };
     }
   }
   for (const subject of ['物理', '历史', '化学', '生物', '政治', '地理']) {
     for (const meta of fieldMetas) {
-      if (meta.header.includes(subject) && meta.validCount > 0) return { field: meta.header, priority: 3 };
+      if (meta.header.includes(subject) && meta.validCount > 0) return { field: meta.header, priority: 5 };
     }
   }
   for (const meta of fieldMetas) {
-    if (meta.type === 'rank' && meta.validCount > 0) return { field: meta.header, priority: 4 };
+    if (meta.type === 'score' && meta.validCount > 0 && meta.header.includes('_')) {
+      return { field: meta.header, priority: 6 };
+    }
   }
   for (const meta of fieldMetas) {
-    if (meta.validCount > 0 && shouldIncludeInRecommendation(meta.header)) return { field: meta.header, priority: 5 };
+    if (meta.validCount > 0 && shouldIncludeInRecommendation(meta.header)) return { field: meta.header, priority: 7 };
   }
   return { field: null, priority: 99 };
 }
@@ -342,10 +360,156 @@ function shouldIncludeInRecommendation(header) {
   const lower = header.toLowerCase();
   for (const kw of EXCLUDED_FROM_RECOMMENDATION) if (lower.includes(kw.toLowerCase())) return false;
   if (isPureBonusField(lower)) return false;
+  if (lower.includes('扣分')) return false;
   return true;
 }
 
-// ---- sheetDetection.ts ----
+// ---- headerFlattener.ts ----
+
+const STANDALONE_FIELDS = [
+  '班级', '学号', '姓名', '总分', '班级排名', '签名',
+  '考号', '座号', '序号', '编号',
+  '名次', '排名', '位次',
+];
+
+function removeWeightSuffix(name) {
+  return name.replace(/（\d+%）/g, '').replace(/\(\d+%\)/g, '').trim();
+}
+
+function isStandalone(name) {
+  const cleaned = removeWeightSuffix(name).trim();
+  return STANDALONE_FIELDS.some(kw => cleaned === kw || cleaned.includes(kw));
+}
+
+function flattenMultiRowHeaders(rawRows) {
+  return detectAndFlattenMultiRowHeaders(rawRows);
+}
+
+function getMergedHeaders(rawRows, merges) {
+  if (!merges || merges.length === 0) {
+    return rawRows.map(row => row.map(v => String(v ?? '').trim()));
+  }
+
+  const rowCount = rawRows.length;
+  const colCount = Math.max(...rawRows.map(r => r.length));
+  const grid = [];
+
+  for (let r = 0; r < rowCount; r++) {
+    const row = rawRows[r] || [];
+    grid[r] = [];
+    for (let c = 0; c < colCount; c++) {
+      grid[r][c] = String((row[c] ?? '')).trim();
+    }
+  }
+
+  for (const merge of merges) {
+    const parentValue = String((rawRows[merge.s.r]?.[merge.s.c] ?? '')).trim();
+    if (!parentValue) continue;
+
+    for (let r = merge.s.r; r <= merge.e.r; r++) {
+      for (let c = merge.s.c; c <= merge.e.c; c++) {
+        if (r < grid.length && c < (grid[r]?.length ?? 0)) {
+          if (!grid[r][c]) {
+            grid[r][c] = parentValue;
+          }
+        }
+      }
+    }
+  }
+
+  return grid;
+}
+
+function detectAndFlattenMultiRowHeaders(rawRows, merges) {
+  const grid = getMergedHeaders(rawRows, merges);
+  const scanLimit = Math.min(5, rawRows.length);
+  const headerCandidates = [];
+
+  for (let i = 0; i < scanLimit; i++) {
+    const row = grid[i];
+    if (!row) continue;
+    const nonEmpty = row.filter(c => c !== '' && c !== '-').length;
+    if (nonEmpty < 2) continue;
+    const textCells = row.filter(c => {
+      if (!c || c === '-') return false;
+      const n = parseFloat(c);
+      return isNaN(n) || !Number.isFinite(n);
+    }).length;
+    if (textCells >= 2) headerCandidates.push(i);
+  }
+
+  // Find consecutive header rows
+  let bestGroup = null;
+  for (let i = 0; i < headerCandidates.length; i++) {
+    const group = [headerCandidates[i]];
+    for (let j = i + 1; j < headerCandidates.length; j++) {
+      if (headerCandidates[j] === headerCandidates[j - 1] + 1) group.push(headerCandidates[j]);
+      else break;
+    }
+    if (group.length >= 2 && (!bestGroup || group.length > bestGroup.length)) bestGroup = group;
+  }
+
+  if (!bestGroup || bestGroup.length < 2) {
+    return {
+      isMultiRow: false,
+      headerRows: [0, 0],
+      headers: grid[0] ? grid[0].map(c => removeWeightSuffix(String(c ?? '').trim())) : [],
+    };
+  }
+
+  // Flatten multi-row headers
+  const colCount = Math.max(...bestGroup.map(r => grid[r]?.length ?? 0));
+  const headers = [];
+
+  for (let col = 0; col < colCount; col++) {
+    const childValue = grid[bestGroup[bestGroup.length - 1]]?.[col] ?? '';
+    const childCleaned = removeWeightSuffix(childValue);
+
+    // 收集所有父级行中的值（跳过标题行）
+    let parentValue = '';
+    for (let rowIdx = 0; rowIdx < bestGroup.length - 1; rowIdx++) {
+      const cellValue = grid[bestGroup[rowIdx]]?.[col] ?? '';
+      const cleaned = removeWeightSuffix(cellValue);
+      if (!cleaned) continue;
+
+      // 跳过标题行（如"数据Q243班综合测评表"）
+      const rowNonEmpty = (grid[bestGroup[rowIdx]] ?? []).filter(c => c && c !== '-').length;
+      if (rowNonEmpty === 1 && colCount > 5) continue;
+
+      parentValue = cleaned;
+    }
+
+    // 决定最终字段名
+    if (childCleaned) {
+      // 子级有值：判断是否需要拼接父级
+      if (isStandalone(childCleaned)) {
+        // 独立字段不拼接
+        headers.push(childCleaned);
+      } else if (parentValue) {
+        // 拼接父级 + 子级
+        headers.push(`${parentValue}_${childCleaned}`);
+      } else {
+        headers.push(childCleaned);
+      }
+    } else if (parentValue) {
+      // 子级为空，父级有值（如班级、学号、姓名等独立字段）
+      if (isStandalone(parentValue)) {
+        headers.push(parentValue);
+      } else {
+        headers.push(parentValue);
+      }
+    } else {
+      // 父子级都为空
+      headers.push('');
+    }
+  }
+
+  return {
+    isMultiRow: true,
+    headerRows: [bestGroup[0], bestGroup[bestGroup.length - 1]],
+    headers,
+  };
+}
 
 const MAIN_SHEET_KEYWORDS = ['成绩', '分数', '得分', '考试', '测评', '测试', '成绩收集', '成绩统计', '成绩汇总', '考试结果'];
 const DICT_SHEET_KEYWORDS = ['代码', '字典', '组合名称', '科目代码', '学校代码', '说明', '备注', '参数', '配置', '对照', '映射', 'code', 'dict', 'dictionary', 'mapping', 'reference'];
@@ -698,6 +862,243 @@ const transferResult = parseRowsToTableTest(dataWithTransfer);
 const transferRows = transferResult.rows;
 assert('转到7班行存在', transferRows[1]['总分'], '转到7班');
 assert('转到7班解析为 invalid', parseNumericValue('转到7班').status, 'invalid');
+
+// ============================================================
+// 新升级的表头检测（支持多级表头）
+// ============================================================
+
+function detectHeaderRowV2(rawRows, merges) {
+  const multiRowResult = detectAndFlattenMultiRowHeaders(rawRows, merges);
+
+  if (multiRowResult.isMultiRow) {
+    const headers = multiRowResult.headers;
+    const dataStartRow = multiRowResult.headerRows[1] + 1;
+    const dataRows = rawRows.slice(dataStartRow);
+
+    return {
+      headerRowIndex: multiRowResult.headerRows[0],
+      headers,
+      dataRows,
+      confidence: 30,
+      isMultiRow: true,
+      headerRowRange: multiRowResult.headerRows,
+    };
+  }
+
+  // 不是多级表头，使用原来的单行表头检测
+  return detectHeaderRow(rawRows);
+}
+
+// ============================================================
+// 多级表头测试（A-I）
+// ============================================================
+
+// 测试 A：单行表头普通成绩表
+console.log('\n=== 测试 A：单行表头普通成绩表 ===\n');
+
+const testDataA = [
+  ['名次', '姓名', '班级', '总分', '语文', '数学', '英语'],
+  [1, '张三', '5班', 550, 120, 130, 140],
+  [2, '李四', '5班', 520, 110, 125, 135],
+];
+let resultA = detectHeaderRowV2(testDataA);
+assert('单行表头不是多级表头', resultA.isMultiRow !== true, true);
+assert('单行表头识别正确', resultA.headers.includes('总分'), true);
+
+// 测试 B：表头前有说明行
+console.log('\n=== 测试 B：表头前有说明行 ===\n');
+
+const testDataB = [
+  ['2024年9省联考成绩表'],
+  ['说明：本表包含所有学生的成绩信息'],
+  ['名次', '姓名', '班级', '总分', '语文', '数学'],
+  [1, '张三', '5班', 550, 120, 130],
+];
+let resultB = detectHeaderRowV2(testDataB);
+assert('说明行不影响单行表头识别', resultB.isMultiRow !== true, true);
+assert('表头识别正确', resultB.headers.includes('名次'), true);
+
+// 测试 C：多 sheet 成绩表
+console.log('\n=== 测试 C：多 sheet 成绩表 ===\n');
+
+const testSheets = [
+  {
+    name: '成绩收集信息表',
+    data: [
+      ['名次', '姓名', '班级', '总分', '语文', '数学', '英语'],
+      [1, '张三', '5班', 550, 120, 130, 140],
+      [2, '李四', '5班', 520, 110, 125, 135],
+    ]
+  },
+  {
+    name: '学校代码',
+    data: [
+      ['代码', '名称'],
+      ['001', '第一中学'],
+    ]
+  }
+];
+const testCandidates = detectMainWorksheet(testSheets);
+const testPrimaryName = getPrimarySheetName(testCandidates);
+assert('多 sheet 选择成绩表', testPrimaryName, '成绩收集信息表');
+
+// 测试 D：多级表头综合测评表
+console.log('\n=== 测试 D：多级表头综合测评表 ===\n');
+
+const multiRowTestData = [
+  ['数据Q243班综合测评表25-26-1'],
+  ['班级', '学号', '姓名', '德育', '德育', '德育', '德育', '德育', '德育', '智育', '智育', '智育', '智育', '智育', '智育', '智育', '智育', '智育', '智育', '体育', '体育', '体育', '体育', '美育', '美育', '美育', '劳育', '劳育', '劳育', '总分', '班级排名', '签名'],
+  ['', '', '', '马克思主义基本原理', '创新创业基础', '平时成绩', '加分', '扣分', '合计', 'Python及其应用', '大学英语A3', '计算机组成原理和汇编语言', '数据结构与算法', '数据结构与算法课程实践', '大学物理B', '大学物理实验B', '加分', '扣分', '合计', '体育A3', '加分', '扣分', '合计', '加分', '扣分', '合计', '加分', '扣分', '合计', '', '', ''],
+  ['5班', '202401', '张三', '85', '90', '95', '5', '0', '92', '90', '85', '88', '92', '95', '80', '85', '3', '0', '88', '90', '2', '0', '92', '5', '0', '95', '3', '0', '98', '580', '1', ''],
+];
+
+let resultD = detectHeaderRowV2(multiRowTestData);
+assert('识别多级表头', resultD.isMultiRow === true, true);
+assert('表头行范围 1-2（索引）', resultD.headerRowRange[0] === 1 && resultD.headerRowRange[1] === 2, true);
+assert('数据起始行索引 3', resultD.headerRowIndex, 1);
+assert('数据行数 1', resultD.dataRows.length, 1);
+assert('字段数 >= 30', resultD.headers.length >= 30, true);
+
+// 测试 D1：多级表头扁平化正确
+assert('德育_马克思主义基本原理', resultD.headers.includes('德育_马克思主义基本原理'), true);
+assert('德育_创新创业基础', resultD.headers.includes('德育_创新创业基础'), true);
+assert('德育_加分', resultD.headers.includes('德育_加分'), true);
+assert('德育_扣分', resultD.headers.includes('德育_扣分'), true);
+assert('德育_合计', resultD.headers.includes('德育_合计'), true);
+assert('智育_Python及其应用', resultD.headers.includes('智育_Python及其应用'), true);
+assert('智育_大学英语A3', resultD.headers.includes('智育_大学英语A3'), true);
+assert('智育_计算机组成原理和汇编语言', resultD.headers.includes('智育_计算机组成原理和汇编语言'), true);
+assert('智育_数据结构与算法', resultD.headers.includes('智育_数据结构与算法'), true);
+assert('智育_数据结构与算法课程实践', resultD.headers.includes('智育_数据结构与算法课程实践'), true);
+assert('智育_大学物理B', resultD.headers.includes('智育_大学物理B'), true);
+assert('智育_大学物理实验B', resultD.headers.includes('智育_大学物理实验B'), true);
+assert('智育_加分', resultD.headers.includes('智育_加分'), true);
+assert('智育_扣分', resultD.headers.includes('智育_扣分'), true);
+assert('智育_合计', resultD.headers.includes('智育_合计'), true);
+assert('体育_体育A3', resultD.headers.includes('体育_体育A3'), true);
+assert('体育_加分', resultD.headers.includes('体育_加分'), true);
+assert('体育_扣分', resultD.headers.includes('体育_扣分'), true);
+assert('体育_合计', resultD.headers.includes('体育_合计'), true);
+assert('美育_加分', resultD.headers.includes('美育_加分'), true);
+assert('美育_扣分', resultD.headers.includes('美育_扣分'), true);
+assert('美育_合计', resultD.headers.includes('美育_合计'), true);
+assert('劳育_加分', resultD.headers.includes('劳育_加分'), true);
+assert('劳育_扣分', resultD.headers.includes('劳育_扣分'), true);
+assert('劳育_合计', resultD.headers.includes('劳育_合计'), true);
+
+// 测试 D2：独立字段保留
+assert('班级保留', resultD.headers.includes('班级'), true);
+assert('学号保留', resultD.headers.includes('学号'), true);
+assert('姓名保留', resultD.headers.includes('姓名'), true);
+assert('总分保留', resultD.headers.includes('总分'), true);
+assert('班级排名保留', resultD.headers.includes('班级排名'), true);
+assert('签名保留', resultD.headers.includes('签名'), true);
+
+// 测试 E：合并单元格横向父级表头
+console.log('\n=== 测试 E：合并单元格横向父级表头 ===\n');
+
+const mergeTestData = [
+  ['班级', '学号', '姓名', '德育（20%）', '德育（20%）', '德育（20%）', '德育（20%）', '德育（20%）', '德育（20%）', '智育（50%）', '智育（50%）', '智育（50%）'],
+  ['', '', '', '马原', '双创', '平时', '加分', '扣分', '合计', 'Python', '英语', '合计'],
+  ['5班', '202401', '张三', '85', '90', '95', '5', '0', '92', '90', '85', '88'],
+];
+
+const testMerges = [
+  { s: { r: 0, c: 3 }, e: { r: 0, c: 8 } }, // 德育横跨 6 列
+  { s: { r: 0, c: 9 }, e: { r: 0, c: 11 } }, // 智育横跨 3 列
+];
+
+let resultE = detectHeaderRowV2(mergeTestData, testMerges);
+assert('合并单元格识别多级表头', resultE.isMultiRow === true, true);
+assert('德育_马原', resultE.headers.includes('德育_马原'), true);
+assert('德育_双创', resultE.headers.includes('德育_双创'), true);
+assert('德育_平时', resultE.headers.includes('德育_平时'), true);
+assert('德育_加分', resultE.headers.includes('德育_加分'), true);
+assert('德育_扣分', resultE.headers.includes('德育_扣分'), true);
+assert('德育_合计', resultE.headers.includes('德育_合计'), true);
+assert('智育_Python', resultE.headers.includes('智育_Python'), true);
+assert('智育_英语', resultE.headers.includes('智育_英语'), true);
+assert('智育_合计', resultE.headers.includes('智育_合计'), true);
+
+// 测试 F：重复子字段正确命名
+console.log('\n=== 测试 F：重复子字段正确命名 ===\n');
+
+assert('德育_加分 存在', resultD.headers.includes('德育_加分'), true);
+assert('智育_加分 存在', resultD.headers.includes('智育_加分'), true);
+assert('体育_加分 存在', resultD.headers.includes('体育_加分'), true);
+assert('美育_加分 存在', resultD.headers.includes('美育_加分'), true);
+assert('劳育_加分 存在', resultD.headers.includes('劳育_加分'), true);
+
+assert('德育_扣分 存在', resultD.headers.includes('德育_扣分'), true);
+assert('智育_扣分 存在', resultD.headers.includes('智育_扣分'), true);
+assert('体育_扣分 存在', resultD.headers.includes('体育_扣分'), true);
+assert('美育_扣分 存在', resultD.headers.includes('美育_扣分'), true);
+assert('劳育_扣分 存在', resultD.headers.includes('劳育_扣分'), true);
+
+// 测试 G：学号为纯数字但不能推荐
+console.log('\n=== 测试 G：学号不能推荐为分析字段 ===\n');
+
+const multiRowHeaders = resultD.headers;
+const multiRowDataRows = resultD.dataRows;
+const multiRowObjs = multiRowDataRows.map(row => {
+  const obj = {};
+  for (let i = 0; i < multiRowHeaders.length; i++) {
+    obj[multiRowHeaders[i]] = i < row.length ? String(row[i] ?? '').trim() : '';
+  }
+  return obj;
+});
+const multiRowMetas = classifyFields(multiRowHeaders, multiRowObjs);
+const multiRowRec = recommendAnalysisField(multiRowMetas);
+
+// 学号应识别为 identity
+const test学号Meta = multiRowMetas.find(m => m.header === '学号');
+assert('学号识别为 identity', test学号Meta?.type, 'identity');
+// 学号不应被推荐
+assert('推荐字段不是学号', multiRowRec.field !== '学号', true);
+
+// 测试 H：总分应优先推荐
+console.log('\n=== 测试 H：总分应优先推荐 ===\n');
+
+assert('推荐字段是总分', multiRowRec.field === '总分', true);
+assert('推荐优先级为 1', multiRowRec.priority, 1);
+
+// 测试 I：班级排名识别为 rank
+console.log('\n=== 测试 I：班级排名识别为 rank ===\n');
+
+const test班级排名Meta = multiRowMetas.find(m => m.header === '班级排名');
+assert('班级排名识别为 rank', test班级排名Meta?.type, 'rank');
+
+// 额外测试：数值解析 - 小数正常解析
+console.log('\n=== 额外测试：小数正常解析 ===\n');
+
+assert('98.87 正常解析', parseNumericValue('98.87').status, 'valid');
+assert('98.87 值正确', parseNumericValue('98.87').value, 98.87);
+assert('105.40 正常解析', parseNumericValue('105.40').status, 'valid');
+assert('95.43 正常解析', parseNumericValue('95.43').status, 'valid');
+
+// 额外测试：字段分类升级
+console.log('\n=== 额外测试：字段分类升级 ===\n');
+
+const penaltyHeaders = ['德育_加分', '德育_扣分', '智育_加分', '智育_扣分', '体育_加分'];
+const penaltyTypes = penaltyHeaders.map(h => classifyField(h));
+assert('德育_加分 分类为 bonus', penaltyTypes[0], 'bonus');
+assert('德育_扣分 分类为 penalty', penaltyTypes[1], 'penalty');
+assert('智育_加分 分类为 bonus', penaltyTypes[2], 'bonus');
+assert('智育_扣分 分类为 penalty', penaltyTypes[3], 'penalty');
+assert('体育_加分 分类为 bonus', penaltyTypes[4], 'bonus');
+
+// 额外测试：推荐字段不应包含加分、扣分
+console.log('\n=== 额外测试：推荐字段不应包含加分扣分 ===\n');
+
+const testRecMetas = [
+  { header: '德育_加分', type: 'bonus', validCount: 10 },
+  { header: '德育_扣分', type: 'penalty', validCount: 10 },
+  { header: '智育_合计', type: 'score', validCount: 10 },
+];
+const testRecResult = recommendAnalysisField(testRecMetas);
+assert('不推荐加分', testRecResult.field !== '德育_加分', true);
+assert('不推荐扣分', testRecResult.field !== '德育_扣分', true);
+assert('推荐智育_合计', testRecResult.field, '智育_合计');
 
 // ============================================================
 // 测试结果

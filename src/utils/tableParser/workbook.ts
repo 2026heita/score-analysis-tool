@@ -4,6 +4,7 @@
 
 import { read, utils } from 'xlsx';
 import type { ParsedTableResult, WorkbookCandidate, ParseSummary } from './types';
+import type { MergeRange } from './headerFlattener';
 import { detectMainWorksheet, getPrimarySheetName, getAvailableSheetNames } from './sheetDetection';
 import { detectHeaderRow, dedupeHeaders } from './headerDetection';
 import { classifyFields, recommendAnalysisField } from './fieldClassifier';
@@ -17,7 +18,7 @@ const MAX_ROWS = 20000;
 const MAX_COLS = 200;
 
 /**
- * 解析 Excel 工作簿（多 sheet 支持）
+ * 解析 Excel 工作簿（多 sheet 支持，支持多级表头和合并单元格）
  * 
  * @param arrayBuffer - 文件 ArrayBuffer
  * @param fileName - 文件名（用于日志，非必需）
@@ -37,16 +38,21 @@ export async function parseWorkbook(
     throwNoSheet();
   }
 
-  // 将每个 sheet 转为二维数组
-  const sheetsData: { name: string; data: unknown[][] }[] = sheetNames.map(name => {
+  // 将每个 sheet 转为二维数组，同时提取合并单元格信息
+  const sheetsData: { name: string; data: unknown[][]; merges: MergeRange[] }[] = sheetNames.map(name => {
     const sheet = workbook.Sheets[name];
     const data = utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '', raw: false });
+    // 提取合并单元格信息
+    const merges: MergeRange[] = (sheet['!merges'] || []).map((m: any) => ({
+      s: { r: m.s.r, c: m.s.c },
+      e: { r: m.e.r, c: m.e.c },
+    }));
     // 限制列数
     const trimmed = data.map(row => {
       if (!Array.isArray(row)) return [String(row ?? '')];
       return row.slice(0, MAX_COLS);
     });
-    return { name, data: trimmed };
+    return { name, data: trimmed, merges };
   });
 
   // 检测主工作表
@@ -57,7 +63,7 @@ export async function parseWorkbook(
   if (targetSheetName) {
     selectedCandidate = candidates.find(c => c.sheetName === targetSheetName);
     if (!selectedCandidate) {
-      // 指定的 sheet 不存在，回退到自动选择
+      // 指定的 sheet 不存在，回退到自选择
       targetSheetName = undefined;
     }
   }
@@ -101,7 +107,7 @@ function parseSheetData(
     throwEmptyFile();
   }
 
-  // 表头识别
+  // 表头识别（支持多级表头）
   const detection = detectHeaderRow(trimmedData);
 
   if (detection.headerRowIndex < 0) {
@@ -136,6 +142,16 @@ function parseSheetData(
   // 推荐分析字段
   const recommendation = recommendAnalysisField(fieldMetas);
 
+  // 构建多级表头信息
+  const isMultiRow = detection.isMultiRow === true;
+  let headerRowRangeText: string | undefined;
+  let dataStartRowText: string | undefined;
+  if (isMultiRow && detection.headerRowRange) {
+    const [start, end] = detection.headerRowRange;
+    headerRowRangeText = `第 ${start + 1}-${end + 1} 行`;
+    dataStartRowText = `第 ${end + 2} 行`;
+  }
+
   // 构建解析摘要
   const summary: ParseSummary = {
     sheetName,
@@ -148,6 +164,9 @@ function parseSheetData(
     recommendedField: recommendation.field,
     recommendedFieldPriority: recommendation.priority,
     fieldTypes: fieldMetas,
+    isMultiRow,
+    headerRowRangeText,
+    dataStartRowText,
   };
 
   // 构建最终结果

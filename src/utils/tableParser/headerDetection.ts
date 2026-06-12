@@ -1,8 +1,9 @@
 // ============================================================
-// 成绩表智能解析器 - 表头检测（增强版）
+// 成绩表智能解析器 - 表头检测（支持多级表头）
 // ============================================================
 
 import type { HeaderDetectionResult } from './types';
+import { detectAndFlattenMultiRowHeaders, MergeRange } from './headerFlattener';
 
 // ============================================================
 // 常量
@@ -20,6 +21,7 @@ const HEADER_KEYWORDS = [
   '单科', '两科', '之和', '最高成绩', '次高', '得分率',
   '合计', '标准分', '原始分',
   '姓名', '班级', '学校', '考号', '座号', '学号',
+  '德育', '智育', '体育', '美育', '劳育', '综合',
 ];
 
 const EXPLANATION_KEYWORDS = [
@@ -28,9 +30,36 @@ const EXPLANATION_KEYWORDS = [
 ];
 
 // ============================================================
-// 表头检测主函数
+// 表头检测主函数（支持多级表头）
 // ============================================================
-export function detectHeaderRow(rawRows: unknown[][]): HeaderDetectionResult {
+export function detectHeaderRow(rawRows: unknown[][], merges?: MergeRange[]): HeaderDetectionResult {
+  // 首先尝试多级表头检测
+  const multiRowResult = detectAndFlattenMultiRowHeaders(rawRows, merges);
+
+  if (multiRowResult.isMultiRow) {
+    // 多级表头：使用扁平化后的字段名
+    const headers = multiRowResult.headers;
+    const dataStartRow = multiRowResult.headerRows[1] + 1;
+    const dataRows = rawRows.slice(dataStartRow);
+
+    return {
+      headerRowIndex: multiRowResult.headerRows[0],
+      headers,
+      dataRows,
+      confidence: 30, // 多级表头置信度
+      isMultiRow: true,
+      headerRowRange: multiRowResult.headerRows,
+    };
+  }
+
+  // 不是多级表头，使用原来的单行表头检测
+  return detectSingleHeaderRow(rawRows);
+}
+
+/**
+ * 原有的单行表头检测逻辑
+ */
+function detectSingleHeaderRow(rawRows: unknown[][]): HeaderDetectionResult {
   const scanLimit = Math.min(rawRows.length, HEADER_SCAN_ROWS);
   let bestScore = -Infinity;
   let bestIdx = -1;
