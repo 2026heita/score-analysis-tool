@@ -134,6 +134,9 @@ export default function OriginalFieldRadar({
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [activeQuickMode, setActiveQuickMode] = useState<QuickMode>(null);
   const [toastMessage, setToastMessage] = useState('');
+  const [showPasteModal, setShowPasteModal] = useState(false);
+  const [pasteText, setPasteText] = useState('');
+  const [pasteErrors, setPasteErrors] = useState<string[]>([]);
 
   const excluded = excludedKeywords ?? EXCLUDED_DEFAULT;
 
@@ -337,6 +340,78 @@ export default function OriginalFieldRadar({
     sectionTotal: '模块合计',
     courseScore: '课程成绩',
   };
+
+  // 打开粘贴弹窗
+  const openPasteModal = useCallback(() => {
+    setPasteText('');
+    setPasteErrors([]);
+    setShowPasteModal(true);
+  }, []);
+
+  // 关闭粘贴弹窗
+  const closePasteModal = useCallback(() => {
+    setShowPasteModal(false);
+    setPasteText('');
+    setPasteErrors([]);
+  }, []);
+
+  // 解析粘贴文本并填充字段
+  const handlePaste = useCallback(() => {
+    if (!pasteText.trim()) {
+      setPasteErrors(['请输入数据']);
+      return;
+    }
+
+    // 分割粘贴文本（支持制表符、逗号、空格分隔）
+    const values = pasteText.split(/[\t,，\s]+/).filter(v => v.trim() !== '');
+    const errors: string[] = [];
+    const matchedFields: { field: string; value: number }[] = [];
+
+    // 尝试匹配字段和数值
+    for (let i = 0; i < values.length; i++) {
+      const value = values[i].trim();
+      const numValue = parseFloat(value);
+
+      // 如果当前索引对应一个已选字段
+      if (i < selections.length) {
+        const field = selections[i].field;
+        if (isNaN(numValue)) {
+          errors.push(`${field}: "${value}" 不是有效数字`);
+        } else {
+          matchedFields.push({ field, value: numValue });
+        }
+      } else {
+        // 超出已选字段数量
+        errors.push(`多余值: "${value}" (第 ${i + 1} 列)`);
+      }
+    }
+
+    // 检查是否有遗漏的字段
+    if (matchedFields.length < selections.length) {
+      const missingFields = selections
+        .filter(s => !matchedFields.some(m => m.field === s.field))
+        .map(s => s.field);
+      errors.push(`缺少字段: ${missingFields.join(', ')}`);
+    }
+
+    if (errors.length > 0) {
+      setPasteErrors(errors);
+      return;
+    }
+
+    // 更新字段值
+    setSelections(prev =>
+      prev.map(s => {
+        const matched = matchedFields.find(m => m.field === s.field);
+        return matched ? { ...s, userValue: matched.value } : s;
+      })
+    );
+
+    setShowPasteModal(false);
+    setPasteText('');
+    setPasteErrors([]);
+    showToast(`成功填充 ${matchedFields.length} 个字段`);
+  }, [pasteText, selections, showToast]);
 
   // 字段管理
   const addField = useCallback(() => {
@@ -553,6 +628,14 @@ export default function OriginalFieldRadar({
             </svg>
             批量选择字段
           </button>
+          {selections.length > 0 && (
+            <button style={styles.btnSecondary} onClick={openPasteModal}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+              粘贴整行成绩
+            </button>
+          )}
           <button style={styles.btnSecondary} onClick={addField}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M12 5v14M5 12h14" />
@@ -898,6 +981,78 @@ export default function OriginalFieldRadar({
               {toastMessage}
             </div>
           )}
+        </div>
+      )}
+
+      {/* 粘贴整行成绩弹窗 */}
+      {showPasteModal && (
+        <div style={pm.overlay} onClick={closePasteModal}>
+          <div style={pm.modal} onClick={e => e.stopPropagation()}>
+            <div style={pm.header}>
+              <h3 style={pm.title}>粘贴整行成绩</h3>
+              <button style={pm.closeBtn} onClick={closePasteModal}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div style={pm.body}>
+              <div style={pm.hint}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 16v-4M12 8h.01" />
+                </svg>
+                <span>从 Excel 或 CSV 复制一行数据，粘贴到下方输入框。系统将按字段顺序自动填充。</span>
+              </div>
+
+              <div style={pm.fieldOrder}>
+                <span style={pm.fieldOrderLabel}>当前字段顺序：</span>
+                <div style={pm.fieldOrderList}>
+                  {selections.map((s, i) => (
+                    <span key={s.field} style={pm.fieldOrderItem}>
+                      {i + 1}. {s.field}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <textarea
+                style={pm.textarea}
+                placeholder="粘贴数据，例如：&#10;张三	1班	85	90	88	92	87	537	5	10"
+                value={pasteText}
+                onChange={e => setPasteText(e.target.value)}
+                rows={6}
+              />
+
+              {pasteErrors.length > 0 && (
+                <div style={pm.errorBox}>
+                  <div style={pm.errorTitle}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M12 8v4M12 16h.01" />
+                    </svg>
+                    <span>填充失败，请检查以下问题：</span>
+                  </div>
+                  <ul style={pm.errorList}>
+                    {pasteErrors.map((err, i) => (
+                      <li key={i}>{err}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            <div style={pm.footer}>
+              <button style={pm.cancelBtn} onClick={closePasteModal}>取消</button>
+              <button style={pm.confirmBtn} onClick={handlePaste}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M20 6L9 17l-5-5" />
+                </svg>
+                填充字段
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -1492,5 +1647,162 @@ const bs: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '8px',
     zIndex: 1001,
+  },
+};
+
+// ============================================================
+// 粘贴弹窗样式
+// ============================================================
+const pm: Record<string, React.CSSProperties> = {
+  overlay: {
+    position: 'fixed',
+    top: 0, left: 0, right: 0, bottom: 0,
+    background: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+    padding: '20px',
+  },
+  modal: {
+    background: '#fff',
+    borderRadius: '12px',
+    width: '100%',
+    maxWidth: '600px',
+    maxHeight: '80vh',
+    display: 'flex',
+    flexDirection: 'column',
+    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+  },
+  header: {
+    padding: '20px 24px',
+    borderBottom: '1px solid #e2e8f0',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  title: {
+    fontSize: '18px',
+    fontWeight: 600,
+    color: '#0f172a',
+    margin: 0,
+  },
+  closeBtn: {
+    width: '32px',
+    height: '32px',
+    border: 'none',
+    background: '#f1f5f9',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#64748b',
+  },
+  body: {
+    flex: 1,
+    overflowY: 'auto',
+    padding: '20px 24px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px',
+  },
+  hint: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '8px',
+    padding: '12px',
+    background: '#eff6ff',
+    border: '1px solid #bfdbfe',
+    borderRadius: '8px',
+    fontSize: '13px',
+    color: '#1e40af',
+    lineHeight: 1.5,
+  },
+  fieldOrder: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  fieldOrderLabel: {
+    fontSize: '13px',
+    fontWeight: 500,
+    color: '#475569',
+  },
+  fieldOrderList: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px',
+  },
+  fieldOrderItem: {
+    padding: '4px 10px',
+    background: '#f1f5f9',
+    border: '1px solid #e2e8f0',
+    borderRadius: '6px',
+    fontSize: '12px',
+    color: '#475569',
+  },
+  textarea: {
+    width: '100%',
+    padding: '12px',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
+    fontSize: '13px',
+    fontFamily: 'monospace',
+    resize: 'vertical',
+    outline: 'none',
+    minHeight: '120px',
+  },
+  errorBox: {
+    padding: '12px',
+    background: '#fef2f2',
+    border: '1px solid #fecaca',
+    borderRadius: '8px',
+  },
+  errorTitle: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    fontSize: '13px',
+    fontWeight: 500,
+    color: '#dc2626',
+    marginBottom: '8px',
+  },
+  errorList: {
+    margin: 0,
+    paddingLeft: '20px',
+    fontSize: '12px',
+    color: '#991b1b',
+    lineHeight: 1.6,
+  },
+  footer: {
+    padding: '16px 24px',
+    borderTop: '1px solid #e2e8f0',
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '10px',
+  },
+  cancelBtn: {
+    padding: '9px 18px',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
+    background: '#fff',
+    color: '#64748b',
+    fontSize: '13px',
+    fontWeight: 500,
+    cursor: 'pointer',
+  },
+  confirmBtn: {
+    padding: '9px 18px',
+    border: 'none',
+    borderRadius: '8px',
+    background: '#3b82f6',
+    color: '#fff',
+    fontSize: '13px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
   },
 };
