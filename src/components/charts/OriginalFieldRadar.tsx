@@ -53,6 +53,75 @@ const ROLE_BADGE_MAP: Record<string, { label: string; color: string; bg: string 
 // 是否推荐分析
 const RECOMMENDED_ROLES = new Set(['primaryTotal', 'rank', 'sectionTotal', 'courseScore']);
 
+// 本地字段分类函数（基于字段名关键词）
+function classifyFieldLocally(header: string): string {
+  const headerLower = header.toLowerCase().trim();
+
+  // 1. 未命名字段 → invalid
+  if (headerLower.startsWith('未命名字段') || headerLower === '' || /^[\s_\-\.]+$/.test(headerLower)) {
+    return 'invalid';
+  }
+
+  // 2. 总分相关 → primaryTotal
+  const PRIMARY_TOTAL_KEYWORDS = ['总分', '总成绩', '综合成绩', '总评', '最终成绩'];
+  for (const kw of PRIMARY_TOTAL_KEYWORDS) {
+    if (headerLower.includes(kw.toLowerCase())) {
+      // 排除纯加分字段
+      if (!headerLower.includes('不含加分') && !headerLower.includes('不含优惠')) {
+        return 'primaryTotal';
+      }
+    }
+  }
+
+  // 3. 排名相关 → rank
+  const RANK_KEYWORDS = ['名次', '排名', '位次', '年级名次', '班级名次'];
+  for (const kw of RANK_KEYWORDS) {
+    if (headerLower.includes(kw.toLowerCase())) {
+      return 'rank';
+    }
+  }
+
+  // 4. 合计相关 → sectionTotal
+  const SECTION_TOTAL_KEYWORDS = ['合计', '总计', '小计', '模块合计'];
+  for (const kw of SECTION_TOTAL_KEYWORDS) {
+    if (headerLower.includes(kw.toLowerCase())) {
+      return 'sectionTotal';
+    }
+  }
+
+  // 5. 加分/扣分 → adjustment
+  const BONUS_KEYWORDS = ['加分', '区内加分', '区外加分', '政策加分', '优惠加分', '特长加分'];
+  const PENALTY_KEYWORDS = ['扣分'];
+  for (const kw of BONUS_KEYWORDS) {
+    if (headerLower.includes(kw.toLowerCase())) {
+      return 'adjustment';
+    }
+  }
+  for (const kw of PENALTY_KEYWORDS) {
+    if (headerLower.includes(kw.toLowerCase())) {
+      return 'adjustment';
+    }
+  }
+
+  // 6. 身份字段 → identity
+  const IDENTITY_KEYWORDS = ['学校代码', '学校名称', '姓名', '班级', '考号', '座号', '学号',
+    '考生号', '准考证', '考生姓名', '身份证号', '性别', '民族'];
+  for (const kw of IDENTITY_KEYWORDS) {
+    if (headerLower.includes(kw.toLowerCase())) {
+      return 'identity';
+    }
+  }
+
+  // 7. 课程成绩 → courseScore（排除已匹配的字段）
+  // 如果字段名包含中文字符且是数值字段，认为是课程成绩
+  if (/[\u4e00-\u9fa5]/.test(headerLower)) {
+    return 'courseScore';
+  }
+
+  // 8. 其他 → unknown
+  return 'unknown';
+}
+
 export default function OriginalFieldRadar({
   headers, rows, isNumericField, getFieldAnalysisRole, excludedKeywords,
   initialSelections, initialViewMode, onStateChange,
@@ -87,6 +156,17 @@ export default function OriginalFieldRadar({
     return headers.filter(h => isNumericField(h) && !excluded.some(kw => h.includes(kw)));
   }, [headers, isNumericField, excluded]);
 
+  // 获取字段角色的辅助函数（优先使用传入的函数，否则使用本地分类）
+  const getFieldRole = useCallback((header: string): string => {
+    if (getFieldAnalysisRole) {
+      const role = getFieldAnalysisRole(header);
+      // 如果返回的不是 'unknown'，使用传入的函数结果
+      if (role !== 'unknown') return role;
+    }
+    // 否则使用本地分类
+    return classifyFieldLocally(header);
+  }, [getFieldAnalysisRole]);
+
   // 按 analysisRole 分组字段，每个字段只属于一个分组
   const groupedFields = useMemo(() => {
     const groups: Record<string, string[]> = {};
@@ -94,7 +174,7 @@ export default function OriginalFieldRadar({
       groups[g.key] = [];
     }
     for (const field of numericFields) {
-      const role = getFieldAnalysisRole ? getFieldAnalysisRole(field) : 'unknown';
+      const role = getFieldRole(field);
       for (const g of FIELD_GROUP_CONFIG) {
         if (g.roles.includes(role)) {
           groups[g.key].push(field);
@@ -103,7 +183,7 @@ export default function OriginalFieldRadar({
       }
     }
     return groups;
-  }, [numericFields, getFieldAnalysisRole]);
+  }, [numericFields, getFieldRole]);
 
   // 默认推荐字段（最多 12 个高优先级字段）
   const defaultRecommendedFields = useMemo(() => {
@@ -112,14 +192,14 @@ export default function OriginalFieldRadar({
     for (const role of priorityOrder) {
       for (const field of numericFields) {
         if (result.length >= 12) break;
-        const fieldRole = getFieldAnalysisRole ? getFieldAnalysisRole(field) : 'unknown';
+        const fieldRole = getFieldRole(field);
         if (fieldRole === role && !result.includes(field)) {
           result.push(field);
         }
       }
     }
     return result;
-  }, [numericFields, getFieldAnalysisRole]);
+  }, [numericFields, getFieldRole]);
 
   // Toast 提示
   const showToast = useCallback((msg: string) => {
@@ -210,7 +290,7 @@ export default function OriginalFieldRadar({
 
   const quickSelectTotalAndRank = useCallback(() => {
     const fields = numericFields.filter(f => {
-      const role = getFieldAnalysisRole ? getFieldAnalysisRole(f) : 'unknown';
+      const role = getFieldRole(f);
       return role === 'primaryTotal' || role === 'rank';
     });
     if (fields.length === 0) {
@@ -220,7 +300,7 @@ export default function OriginalFieldRadar({
     setTempSelections(new Set(fields));
     setActiveQuickMode('totalRank');
     showToast(`已选择 ${fields.length} 个总分/排名字段`);
-  }, [numericFields, getFieldAnalysisRole, showToast]);
+  }, [numericFields, getFieldRole, showToast]);
 
   const quickSelectSectionTotal = useCallback(() => {
     const fields = groupedFields['sectionTotal'] || [];
@@ -751,7 +831,7 @@ export default function OriginalFieldRadar({
                     {isExpanded && (
                       <div style={bs.groupContent}>
                         {filteredFields.map(field => {
-                          const role = getFieldAnalysisRole ? getFieldAnalysisRole(field) : 'unknown';
+                          const role = getFieldRole(field);
                           const badge = ROLE_BADGE_MAP[role] || ROLE_BADGE_MAP.unknown;
                           const isSelected = tempSelections.has(field);
                           const isRecommended = RECOMMENDED_ROLES.has(role);
