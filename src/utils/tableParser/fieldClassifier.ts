@@ -38,8 +38,18 @@ const CATEGORY_KEYWORDS = [
 const EXCLUDED_FROM_RECOMMENDATION = [
   '学校代码', '学校名称', '姓名', '考号', '座号', '学号', '考生号', '准考证',
   '班级', '组合简称', '科类', '类别', '性别', '民族', '身份证号',
-  '加分', '区内加分', '区外加分', '政策加分', '优惠加分', '特长加分',
 ];
+
+/**
+ * 判断是否为纯加分字段（如"加分"、"政策加分"）
+ * 排除"不含加分"、"原始分"等场景
+ */
+function isPureBonusField(headerLower: string): boolean {
+  // 如果包含"不含加分"、"不含优惠"，不是纯加分字段
+  if (headerLower.includes('不含')) return false;
+  // 否则匹配加分关键词
+  return BONUS_KEYWORDS.some(kw => headerLower.includes(kw.toLowerCase()));
+}
 
 // ============================================================
 // 字段分类主函数
@@ -86,10 +96,10 @@ function classifyField(header: string, columnValues: string[]): FieldType {
     }
   }
 
-  // 2. bonus 检查（需在 score 之前，因为"加分"可能被误判）
-  for (const kw of BONUS_KEYWORDS) {
+  // 2. score 检查（需在 bonus 之前，因为"总分（不含加分）"包含"加分"但本质是成绩字段）
+  for (const kw of SCORE_KEYWORDS) {
     if (headerLower.includes(kw.toLowerCase())) {
-      return 'bonus';
+      return 'score';
     }
   }
 
@@ -107,10 +117,10 @@ function classifyField(header: string, columnValues: string[]): FieldType {
     }
   }
 
-  // 5. score 检查
-  for (const kw of SCORE_KEYWORDS) {
+  // 5. bonus 检查（在 score 之后，避免"总分（不含加分）"被误判为 bonus）
+  for (const kw of BONUS_KEYWORDS) {
     if (headerLower.includes(kw.toLowerCase())) {
-      return 'score';
+      return 'bonus';
     }
   }
 
@@ -189,14 +199,13 @@ function computeConfidence(type: FieldType, counts: { valid: number; text: numbe
  * 不推荐：学校代码、班级、加分字段、字典表字段、姓名、学校名称、组合简称
  */
 export function recommendAnalysisField(fieldMetas: FieldMeta[]): { field: string | null; priority: number } {
-  // 优先级 1: 总分
+  // 优先级 1: 总分（排除纯加分字段，但保留"不含加分"类字段）
   for (const meta of fieldMetas) {
     const lower = meta.header.toLowerCase();
     if ((lower.includes('总分') || lower.includes('总成绩')) && meta.validCount > 0) {
-      // 排除加分字段
-      if (!BONUS_KEYWORDS.some(kw => lower.includes(kw.toLowerCase()))) {
-        return { field: meta.header, priority: 1 };
-      }
+      // "不含加分"、"不含优惠"等仍然推荐，只有纯加分字段排除
+      if (isPureBonusField(lower)) continue;
+      return { field: meta.header, priority: 1 };
     }
   }
 
@@ -248,6 +257,8 @@ function shouldIncludeInRecommendation(header: string): boolean {
       return false;
     }
   }
+  // 排除纯加分字段
+  if (isPureBonusField(lower)) return false;
   return true;
 }
 
