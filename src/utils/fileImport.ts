@@ -1,8 +1,14 @@
-import { read, utils } from 'xlsx';
-import { parseRowsToTable, validateFile } from './tableParser';
+import { parseWorkbook } from './tableParser/workbook';
+import type { ParsedTableResult } from './tableParser/types';
 import type { ParsedTable } from '../types';
 
-export function parseTableFile(file: File): Promise<ParsedTable> {
+export interface ParsedFileResult extends ParsedTable {
+  summary?: ParsedTableResult['summary'];
+  availableSheets?: string[];
+  reparseSheet?: (sheetName: string) => Promise<ParsedFileResult>;
+}
+
+export function parseTableFile(file: File, targetSheetName?: string): Promise<ParsedFileResult> {
   const validationError = validateFile(file);
   if (validationError) {
     return Promise.reject(new Error(validationError));
@@ -13,7 +19,7 @@ export function parseTableFile(file: File): Promise<ParsedTable> {
 
     reader.onerror = () => reject(new Error('文件读取失败，请重试。'));
 
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const data = e.target?.result;
         if (!data) {
@@ -21,25 +27,21 @@ export function parseTableFile(file: File): Promise<ParsedTable> {
           return;
         }
 
-        const workbook = read(data, { type: 'array', cellFormula: false, cellHTML: false });
-        const sheetName = workbook.SheetNames[0];
-        if (!sheetName) {
-          reject(new Error('文件中没有工作表。'));
-          return;
-        }
+        const result = await parseWorkbook(data as ArrayBuffer, file.name, targetSheetName);
 
-        const sheet = workbook.Sheets[sheetName];
-        // sheet_to_json with header:1 返回 [][] 格式，不执行公式
-        const sheetData = utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '', raw: false });
+        // 转换为 ParsedFileResult
+        const parsedResult: ParsedFileResult = {
+          headers: result.headers,
+          rows: result.rows,
+          warnings: result.warnings,
+          summary: result.summary,
+          availableSheets: result.availableSheets,
+          reparseSheet: async (sheetName: string) => {
+            return parseTableFile(file, sheetName);
+          },
+        };
 
-        if (!sheetData || sheetData.length === 0) {
-          reject(new Error('文件中没有数据。'));
-          return;
-        }
-
-        // 使用统一解析模块
-        const result = parseRowsToTable(sheetData);
-        resolve(result);
+        resolve(parsedResult);
       } catch (err: any) {
         if (err instanceof Error && err.message) {
           reject(err);
@@ -51,4 +53,20 @@ export function parseTableFile(file: File): Promise<ParsedTable> {
 
     reader.readAsArrayBuffer(file);
   });
+}
+
+// ============================================================
+// 文件安全校验
+// ============================================================
+const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+
+export function validateFile(file: File): string | null {
+  if (file.size > MAX_FILE_SIZE) {
+    return `文件过大（${(file.size / 1024 / 1024).toFixed(1)}MB），最大支持 ${MAX_FILE_SIZE / 1024 / 1024}MB。`;
+  }
+  const ext = file.name.split('.').pop()?.toLowerCase();
+  if (!ext || !['csv', 'xlsx', 'xls'].includes(ext)) {
+    return '仅支持 .csv、.xlsx、.xls 格式的文件。';
+  }
+  return null;
 }
