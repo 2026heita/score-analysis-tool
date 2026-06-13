@@ -39,6 +39,21 @@ export type AnalysisRole =
   | 'invalid';       // 未命名字段、非法字段名
 
 /**
+ * 字段内容特征（用于辅助分类）
+ */
+export interface ContentFeature {
+  numericRatio: number;      // 数值比例 (0-1)
+  integerRatio: number;      // 整数比例 (0-1)，基于有效数值
+  decimalRatio: number;      // 小数比例 (0-1)，基于有效数值
+  uniqueRatio: number;       // 唯一值比例 (0-1)
+  min: number | null;        // 最小值
+  max: number | null;        // 最大值
+  mean: number | null;       // 平均值
+  avgStringLength: number;   // 平均字符串长度
+  valuePattern: 'chineseName' | 'longNumber' | 'classLabel' | 'rankLike' | 'scoreLike' | 'mixed' | 'unknown';
+}
+
+/**
  * 字段元数据
  */
 export interface FieldMeta {
@@ -51,6 +66,8 @@ export interface FieldMeta {
   invalidCount: number;     // 无效值（缺考等）数量
   textCount: number;        // 纯文本数量
   confidence: number;       // 分类置信度 0-1
+  reason: string;           // 分类原因说明
+  contentFeature?: ContentFeature;  // 内容特征（可选）
 }
 
 /**

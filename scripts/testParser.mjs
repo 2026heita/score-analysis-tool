@@ -274,8 +274,9 @@ function classifyDataRows(rows, headers) {
 // ---- fieldClassifier.ts ----
 
 const IDENTITY_KEYWORDS = ['学校代码', '学校名称', '姓名', '班级', '考号', '座号', '学号', '考生号', '准考证', '考生姓名', '身份证号', '性别', '民族'];
-const SCORE_KEYWORDS = ['总分', '语文', '数学', '英语', '外语', '物理', '化学', '生物', '政治', '历史', '地理', '成绩', '分数', '得分', '总分（不含加分）', '原始总分', '标准总分', '综合', '文科综合', '理科综合'];
-const RANK_KEYWORDS = ['名次', '排名', '位次', '年级名次', '班级名次'];
+const SCORE_KEYWORDS = ['总分', '语文', '数学', '英语', '外语', '物理', '化学', '生物', '政治', '历史', '地理', '成绩', '分数', '得分', '总分（不含加分）', '原始总分', '标准总分', '综合', '文科综合', '理科综合',
+  '高考成绩', '赋分后成绩', '语数英总', '等级分', '标准分'];
+const RANK_KEYWORDS = ['名次', '排名', '位次', '年级名次', '班级名次', '校排', '班排', '年排', '级排'];
 const BONUS_KEYWORDS = ['加分', '区内加分', '区外加分', '政策加分', '优惠加分', '特长加分'];
 const PENALTY_KEYWORDS = ['扣分'];
 const CATEGORY_KEYWORDS = ['组合', '组合简称', '科类', '选科', '类别', '文理', '科类名称', '选考', '首选', '再选'];
@@ -285,8 +286,28 @@ function isPureBonusField(headerLower) {
   return BONUS_KEYWORDS.some(kw => headerLower.includes(kw.toLowerCase()));
 }
 
+// 判断字段名是否非法（数据行误识别为表头）
+function isInvalidHeaderName(headerLower) {
+  if (!headerLower || /^[\s]+$/.test(headerLower)) return true;
+  if (headerLower.startsWith('未命名字段')) return true;
+  if (/^[\s_\-\.]+$/.test(headerLower)) return true;
+  // 类似 93_80、0_0、101.60_91.60 这种数据行拼接
+  if (/^\d+[\._]\d+/.test(headerLower) || /^\d+_\d+/.test(headerLower)) return true;
+  // 纯数字字段名（长度>=4）
+  const digitsOnly = headerLower.replace(/[_\-\s\.]/g, '');
+  if (/^\d{4,}$/.test(digitsOnly)) return true;
+  // 字段名中数字+符号占比超过80%且长度>=6
+  if (headerLower.length >= 6) {
+    const nonDigitNonAlpha = headerLower.replace(/[\d_\-\.\s]/g, '');
+    if (nonDigitNonAlpha.length / headerLower.length < 0.2) return true;
+  }
+  return false;
+}
+
 function classifyField(header, columnValues = []) {
   const lower = header.toLowerCase().trim();
+  // 0. 非法字段名（优先级最高）
+  if (isInvalidHeaderName(lower)) return 'unknown';
   // rank 在 identity 之前，因为"班级排名"包含"班级"但本质是排名字段
   for (const kw of RANK_KEYWORDS) if (lower.includes(kw.toLowerCase())) return 'rank';
   for (const kw of IDENTITY_KEYWORDS) if (lower.includes(kw.toLowerCase())) return 'identity';
@@ -361,13 +382,14 @@ function classifyField(header, columnValues = []) {
 function classifyAnalysisRole(header, type) {
   const lower = header.toLowerCase().trim();
   
-  // 未命名字段
-  if (lower.startsWith('未命名字段') || lower === '' || /^[\s_\-\.]+$/.test(lower)) {
+  // 未命名字段/非法字段名
+  if (isInvalidHeaderName(lower)) {
     return 'invalid';
   }
   
   // 总分相关
-  const PRIMARY_TOTAL_KEYWORDS = ['总分', '总成绩', '综合成绩', '总评', '最终成绩'];
+  const PRIMARY_TOTAL_KEYWORDS = ['总分', '总成绩', '综合成绩', '总评', '最终成绩',
+    '高考成绩', '赋分后成绩', '语数英总', '等级分', '标准分'];
   for (const kw of PRIMARY_TOTAL_KEYWORDS) {
     if (lower.includes(kw.toLowerCase())) {
       if (!isPureBonusField(lower)) return 'primaryTotal';
@@ -376,6 +398,10 @@ function classifyAnalysisRole(header, type) {
   
   // 排名相关
   if (type === 'rank') return 'rank';
+  const RANK_KEYWORDS_LOCAL = ['名次', '排名', '位次', '年级名次', '班级名次', '校排', '班排', '年排', '级排'];
+  for (const kw of RANK_KEYWORDS_LOCAL) {
+    if (lower.includes(kw.toLowerCase())) return 'rank';
+  }
   
   // 合计相关
   const SECTION_TOTAL_KEYWORDS = ['合计', '总计', '小计', '模块合计'];
@@ -1775,6 +1801,108 @@ assert('场景10: 总分在默认字段', scene10Default.includes('总分'), tru
 assert('场景10: 不生成93_80这种字段', !scene10Parsed.headers.some(h => /^\d+_\d+$/.test(h)), true);
 assert('场景10: 不生成0_0这种字段', !scene10Parsed.headers.some(h => /^0_0$/.test(h)), true);
 assert('场景10: 不生成101.60_91.60这种字段', !scene10Parsed.headers.some(h => /^\d+\.\d+_\d+\.\d+$/.test(h)), true);
+
+// ============================================================
+// 非标准字段识别测试
+// ============================================================
+
+console.log('\n=== 非标准字段识别测试 ===\n');
+
+// 测试 1：高考成绩、综合成绩、赋分后成绩、语数英总、等级分、标准分
+console.log('测试 1：非标准总分字段识别');
+const nonStandardTotalHeaders = ['高考成绩', '综合成绩', '赋分后成绩', '语数英总', '等级分', '标准分'];
+const nonStandardTotalRows = [
+  { '高考成绩': 650, '综合成绩': 88.5, '赋分后成绩': 92, '语数英总': 380, '等级分': 85, '标准分': 720 },
+  { '高考成绩': 640, '综合成绩': 86.2, '赋分后成绩': 90, '语数英总': 370, '等级分': 82, '标准分': 710 },
+];
+const nonStandardTotalMetas = classifyFields(nonStandardTotalHeaders, nonStandardTotalRows);
+const nonStandardTotalDefault = nonStandardTotalMetas.filter(m => shouldIncludeInRecommendationByRole(m.analysisRole)).map(m => m.header);
+
+for (const header of nonStandardTotalHeaders) {
+  const meta = nonStandardTotalMetas.find(m => m.header === header);
+  assert(`${header} 识别为 primaryTotal`, meta?.analysisRole, 'primaryTotal');
+  assert(`${header} 在默认推荐字段`, nonStandardTotalDefault.includes(header), true);
+}
+
+// 测试 2：校排、班排、位次、年级名次
+console.log('\n测试 2：非标准排名字段识别');
+const nonStandardRankHeaders = ['校排', '班排', '位次', '年级名次'];
+const nonStandardRankRows = [
+  { '校排': 50, '班排': 3, '位次': 120, '年级名次': 45 },
+  { '校排': 60, '班排': 5, '位次': 150, '年级名次': 55 },
+];
+const nonStandardRankMetas = classifyFields(nonStandardRankHeaders, nonStandardRankRows);
+const nonStandardRankDefault = nonStandardRankMetas.filter(m => shouldIncludeInRecommendationByRole(m.analysisRole)).map(m => m.header);
+
+for (const header of nonStandardRankHeaders) {
+  const meta = nonStandardRankMetas.find(m => m.header === header);
+  assert(`${header} 识别为 rank`, meta?.analysisRole, 'rank');
+  assert(`${header} 在默认推荐字段`, nonStandardRankDefault.includes(header), true);
+}
+
+// 测试 3：Python及其应用、数据结构与算法（课程字段）
+console.log('\n测试 3：非标准课程字段识别');
+const nonStandardCourseHeaders = ['Python及其应用', '数据结构与算法'];
+const nonStandardCourseRows = [
+  { 'Python及其应用': 85, '数据结构与算法': 90 },
+  { 'Python及其应用': 88, '数据结构与算法': 92 },
+];
+const nonStandardCourseMetas = classifyFields(nonStandardCourseHeaders, nonStandardCourseRows);
+const nonStandardCourseDefault = nonStandardCourseMetas.filter(m => shouldIncludeInRecommendationByRole(m.analysisRole)).map(m => m.header);
+
+for (const header of nonStandardCourseHeaders) {
+  const meta = nonStandardCourseMetas.find(m => m.header === header);
+  assert(`${header} 识别为 courseScore`, meta?.analysisRole, 'courseScore');
+  assert(`${header} 在默认推荐字段`, nonStandardCourseDefault.includes(header), true);
+}
+
+// 测试 4：反误判测试 - 身份字段不应进入推荐
+console.log('\n测试 4：反误判测试 - 身份字段');
+const identityTestHeaders = ['学号', '考号', '身份证号', '姓名', '班级'];
+const identityTestRows = [
+  { '学号': '2024001', '考号': '1001', '身份证号': '110101200001011234', '姓名': '张三', '班级': '1班' },
+  { '学号': '2024002', '考号': '1002', '身份证号': '110101200002021234', '姓名': '李四', '班级': '1班' },
+];
+const identityTestMetas = classifyFields(identityTestHeaders, identityTestRows);
+const identityTestDefault = identityTestMetas.filter(m => shouldIncludeInRecommendationByRole(m.analysisRole)).map(m => m.header);
+
+for (const header of identityTestHeaders) {
+  const meta = identityTestMetas.find(m => m.header === header);
+  assert(`${header} 识别为 identity`, meta?.type, 'identity');
+  assert(`${header} 不在默认推荐字段`, !identityTestDefault.includes(header), true);
+}
+
+// 测试 5：反误判测试 - 加分/扣分字段不应进入推荐
+console.log('\n测试 5：反误判测试 - 加分/扣分字段');
+const adjustmentTestHeaders = ['加分', '政策加分', '竞赛加分', '扣分', '违纪扣分'];
+const adjustmentTestRows = [
+  { '加分': 10, '政策加分': 5, '竞赛加分': 3, '扣分': 0, '违纪扣分': 0 },
+  { '加分': 8, '政策加分': 3, '竞赛加分': 0, '扣分': 2, '违纪扣分': 0 },
+];
+const adjustmentTestMetas = classifyFields(adjustmentTestHeaders, adjustmentTestRows);
+const adjustmentTestDefault = adjustmentTestMetas.filter(m => shouldIncludeInRecommendationByRole(m.analysisRole)).map(m => m.header);
+
+for (const header of adjustmentTestHeaders) {
+  const meta = adjustmentTestMetas.find(m => m.header === header);
+  assert(`${header} 识别为 adjustment`, meta?.analysisRole, 'adjustment');
+  assert(`${header} 不在默认推荐字段`, !adjustmentTestDefault.includes(header), true);
+}
+
+// 测试 6：反误判测试 - 未命名字段和非法字段名不应进入推荐
+console.log('\n测试 6：反误判测试 - 未命名字段和非法字段名');
+const invalidTestHeaders = ['未命名字段1', '未命名字段2', '93_80', '0_0', '101.60_91.60'];
+const invalidTestRows = [
+  { '未命名字段1': '', '未命名字段2': '', '93_80': '', '0_0': '', '101.60_91.60': '' },
+  { '未命名字段1': '', '未命名字段2': '', '93_80': '', '0_0': '', '101.60_91.60': '' },
+];
+const invalidTestMetas = classifyFields(invalidTestHeaders, invalidTestRows);
+const invalidTestDefault = invalidTestMetas.filter(m => shouldIncludeInRecommendationByRole(m.analysisRole)).map(m => m.header);
+
+for (const header of invalidTestHeaders) {
+  const meta = invalidTestMetas.find(m => m.header === header);
+  assert(`${header} 识别为 invalid`, meta?.analysisRole, 'invalid');
+  assert(`${header} 不在默认推荐字段`, !invalidTestDefault.includes(header), true);
+}
 
 // ============================================================
 // 测试结果

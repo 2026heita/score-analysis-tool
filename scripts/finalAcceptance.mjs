@@ -113,10 +113,66 @@ function isInvalidKeyword(str) {
   return false;
 }
 
+// ---- contentAnalyzer.ts ----
+function analyzeContentFeature(columnValues) {
+  const total = columnValues.length;
+  if (total === 0) {
+    return { numericRatio: 0, integerRatio: 0, decimalRatio: 0, uniqueRatio: 0, min: null, max: null, mean: null, avgStringLength: 0, valuePattern: 'unknown' };
+  }
+
+  let validCount = 0, integerCount = 0, decimalCount = 0;
+  let min = null, max = null, sum = 0;
+  const uniqueValues = new Set();
+  let totalLength = 0;
+  let chineseNameCount = 0, longNumberCount = 0, classLabelCount = 0, rankLikeCount = 0, scoreLikeCount = 0;
+
+  for (const val of columnValues) {
+    uniqueValues.add(val);
+    totalLength += val.length;
+    const parsed = parseNumericValue(val);
+    if (parsed.status === 'valid') {
+      validCount++;
+      const num = parsed.value;
+      sum += num;
+      if (min === null || num < min) min = num;
+      if (max === null || num > max) max = num;
+      if (Number.isInteger(num)) integerCount++;
+      else decimalCount++;
+      if (Number.isInteger(num) && num >= 1 && num <= total * 2) rankLikeCount++;
+      if (num >= 0 && num <= 1000) scoreLikeCount++;
+    }
+    const trimmed = val.trim();
+    if (trimmed) {
+      if (/^[\u4e00-\u9fa5]{2,4}$/.test(trimmed)) chineseNameCount++;
+      if (/^\d{6,}$/.test(trimmed)) longNumberCount++;
+      if (/班|级|高一|高二|高三/.test(trimmed)) classLabelCount++;
+    }
+  }
+
+  const numericRatio = validCount / total;
+  const integerRatio = validCount > 0 ? integerCount / validCount : 0;
+  const decimalRatio = validCount > 0 ? decimalCount / validCount : 0;
+  const uniqueRatio = uniqueValues.size / total;
+  const mean = validCount > 0 ? sum / validCount : null;
+  const avgStringLength = totalLength / total;
+
+  let valuePattern = 'unknown';
+  if (chineseNameCount / total > 0.5) valuePattern = 'chineseName';
+  else if (classLabelCount / total > 0.3) valuePattern = 'classLabel';
+  else if (longNumberCount / total > 0.5) valuePattern = 'longNumber';
+  else if (numericRatio > 0.5) {
+    if (rankLikeCount / validCount > 0.7) valuePattern = 'rankLike';
+    else if (scoreLikeCount / validCount > 0.7) valuePattern = 'scoreLike';
+    else valuePattern = 'mixed';
+  }
+
+  return { numericRatio, integerRatio, decimalRatio, uniqueRatio, min, max, mean, avgStringLength, valuePattern };
+}
+
 // ---- fieldClassifier.ts ----
 const IDENTITY_KEYWORDS = ['学校代码', '学校名称', '姓名', '班级', '考号', '座号', '学号', '考生号', '准考证', '考生姓名', '身份证号', '性别', '民族'];
-const SCORE_KEYWORDS = ['总分', '语文', '数学', '英语', '外语', '物理', '化学', '生物', '政治', '历史', '地理', '成绩', '分数', '得分', '总分（不含加分）', '原始总分', '标准总分', '综合', '文科综合', '理科综合'];
-const RANK_KEYWORDS = ['名次', '排名', '位次', '年级名次', '班级名次'];
+const SCORE_KEYWORDS = ['总分', '语文', '数学', '英语', '外语', '物理', '化学', '生物', '政治', '历史', '地理', '成绩', '分数', '得分', '总分（不含加分）', '原始总分', '标准总分', '综合', '文科综合', '理科综合', '高考成绩', '综合成绩', '赋分后成绩', '语数英总', '等级分', '标准分'];
+const RANK_KEYWORDS = ['名次', '排名', '位次', '年级名次', '班级名次', '校排', '班排', '年排', '级排'];
 const BONUS_KEYWORDS = ['加分', '区内加分', '区外加分', '政策加分', '优惠加分', '特长加分'];
 const PENALTY_KEYWORDS = ['扣分'];
 const CATEGORY_KEYWORDS = ['组合', '组合简称', '科类', '选科', '类别', '文理', '科类名称', '选考', '首选', '再选'];
@@ -126,50 +182,113 @@ function isPureBonusField(headerLower) {
   return BONUS_KEYWORDS.some(kw => headerLower.includes(kw.toLowerCase()));
 }
 
-function classifyField(header, columnValues = []) {
-  const lower = header.toLowerCase().trim();
-  for (const kw of RANK_KEYWORDS) if (lower.includes(kw.toLowerCase())) return 'rank';
-  for (const kw of IDENTITY_KEYWORDS) if (lower.includes(kw.toLowerCase())) return 'identity';
-  for (const kw of SCORE_KEYWORDS) if (lower.includes(kw.toLowerCase())) return 'score';
-  for (const kw of CATEGORY_KEYWORDS) if (lower.includes(kw.toLowerCase())) return 'category';
-  for (const kw of BONUS_KEYWORDS) if (lower.includes(kw.toLowerCase())) return 'bonus';
-  for (const kw of PENALTY_KEYWORDS) if (lower.includes(kw.toLowerCase())) return 'penalty';
-  
-  if (/^[\u4e00-\u9fa5]{2,}$/.test(lower)) return 'courseScore';
-  
-  const numericCount = columnValues.filter(v => parseNumericValue(v).status === 'valid').length;
-  const nonEmptyCount = columnValues.filter(v => v !== '' && v !== '-' && v !== null && v !== undefined).length;
-  if (nonEmptyCount > 0 && numericCount / nonEmptyCount > 0.7) return 'courseScore';
-  
-  return 'unknown';
+function isInvalidHeaderName(headerLower) {
+  if (!headerLower || /^[\s]+$/.test(headerLower)) return true;
+  if (headerLower.startsWith('未命名字段')) return true;
+  if (/^[\s_\-\.]+$/.test(headerLower)) return true;
+  if (/^\d+[\._]\d+/.test(headerLower) || /^\d+_\d+/.test(headerLower)) return true;
+  const digitsOnly = headerLower.replace(/[_\-\s\.]/g, '');
+  if (/^\d{4,}$/.test(digitsOnly)) return true;
+  if (headerLower.length >= 6) {
+    const nonDigitNonAlpha = headerLower.replace(/[\d_\-\.\s]/g, '');
+    if (nonDigitNonAlpha.length / headerLower.length < 0.2) return true;
+  }
+  return false;
 }
 
-function determineAnalysisRole(header, columnValues = []) {
-  const basicRole = classifyField(header, columnValues);
+function classifyFieldByKeyword(header) {
+  const headerLower = header.toLowerCase().trim();
+  if (isInvalidHeaderName(headerLower)) return { type: 'unknown', reason: `字段名"${header}"疑似数据行误识别为表头` };
+  for (const kw of RANK_KEYWORDS) if (headerLower.includes(kw.toLowerCase())) return { type: 'rank', reason: `字段名包含"${kw}"` };
+  for (const kw of IDENTITY_KEYWORDS) if (headerLower.includes(kw.toLowerCase())) return { type: 'identity', reason: `字段名包含"${kw}"` };
+  for (const kw of SCORE_KEYWORDS) if (headerLower.includes(kw.toLowerCase())) return { type: 'score', reason: `字段名包含"${kw}"` };
+  for (const kw of CATEGORY_KEYWORDS) if (headerLower.includes(kw.toLowerCase())) return { type: 'category', reason: `字段名包含"${kw}"` };
+  for (const kw of BONUS_KEYWORDS) if (headerLower.includes(kw.toLowerCase())) return { type: 'bonus', reason: `字段名包含"${kw}"` };
+  for (const kw of PENALTY_KEYWORDS) if (headerLower.includes(kw.toLowerCase())) return { type: 'penalty', reason: `字段名包含"${kw}"` };
+  return null;
+}
+
+function classifyFieldByContent(header, columnValues, feature, rowCount) {
+  const headerLower = header.toLowerCase().trim();
+  const total = columnValues.length;
+  if (isInvalidHeaderName(headerLower)) return { type: 'unknown', reason: `字段名"${header}"主要由数字/符号组成`, confidence: 0.95 };
+  if (feature.numericRatio > 0.5) {
+    if (feature.integerRatio > 0.8 && feature.valuePattern === 'rankLike' && feature.uniqueRatio > 0.5 && feature.max !== null && feature.max <= rowCount * 2) return { type: 'rank', reason: `内容为1~${rowCount}范围内的整数`, confidence: 0.7 };
+    if (feature.valuePattern === 'longNumber' && feature.uniqueRatio > 0.8) return { type: 'identity', reason: `内容为长数字串且唯一率高`, confidence: 0.8 };
+    if (feature.valuePattern === 'classLabel') return { type: 'identity', reason: `内容包含班级相关关键词`, confidence: 0.85 };
+    if (feature.valuePattern === 'scoreLike' && feature.numericRatio > 0.7) {
+      if (/[\u4e00-\u9fa5]/.test(headerLower)) return { type: 'score', reason: `字段名含中文且数值比例高`, confidence: 0.8 };
+      return { type: 'score', reason: `数值比例高`, confidence: 0.65 };
+    }
+    if (/[\u4e00-\u9fa5]/.test(headerLower)) return { type: 'score', reason: `字段名含中文，数值比例高`, confidence: 0.75 };
+    const digitCount = (headerLower.match(/\d/g) || []).length;
+    if (headerLower.length > 0 && digitCount / headerLower.length > 0.5) return { type: 'unknown', reason: `字段名数字比例过高`, confidence: 0.7 };
+    return { type: 'unknown', reason: `数值比例高但无法确定具体类型`, confidence: 0.5 };
+  }
+  const textCount = total - feature.numericRatio * total;
+  if (total > 0 && textCount / total > 0.6) {
+    if (feature.valuePattern === 'chineseName') return { type: 'identity', reason: `内容多为2-4个中文字符`, confidence: 0.8 };
+    if (feature.valuePattern === 'classLabel') return { type: 'identity', reason: `内容包含班级相关关键词`, confidence: 0.85 };
+    return { type: 'text', reason: `大部分内容为文本`, confidence: 0.7 };
+  }
+  return { type: 'unknown', reason: `无法通过关键词或内容特征确定类型`, confidence: 0.3 };
+}
+
+function adjustConfidence(type, baseConfidence, feature, counts, total) {
+  let confidence = baseConfidence;
+  const reasons = [];
+  if (total === 0) return { confidence: 0 };
+  if (type === 'score') {
+    if (feature.numericRatio > 0.8) { confidence = Math.min(0.95, confidence + 0.05); reasons.push(`数值比例高确认`); }
+    else if (feature.numericRatio < 0.5) { confidence = Math.max(0.5, confidence - 0.2); reasons.push(`数值比例低`); }
+  }
+  if (type === 'rank') {
+    if (feature.integerRatio > 0.9 && feature.valuePattern === 'rankLike') { confidence = Math.min(0.95, confidence + 0.05); reasons.push(`整数且范围符合排名特征`); }
+    else if (feature.integerRatio < 0.7) { confidence = Math.max(0.6, confidence - 0.15); reasons.push(`非整数比例较高`); }
+  }
+  if (type === 'identity') {
+    if (feature.uniqueRatio > 0.9) { confidence = Math.min(0.95, confidence + 0.05); reasons.push(`唯一率高确认`); }
+  }
+  if (baseConfidence < 0.85 && feature.numericRatio < 0.5 && (type === 'score' || type === 'rank')) { confidence = Math.max(0.4, confidence - 0.15); reasons.push(`数值比例不足`); }
+  return { confidence: Math.round(confidence * 100) / 100, reasonAddition: reasons.length > 0 ? reasons.join('，') : undefined };
+}
+
+function classifyFields(headers, rows) {
+  return headers.map(header => {
+    const columnValues = rows.map(row => row[header] ?? '');
+    const counts = { valid: 0, empty: 0, invalid: 0, text: 0 };
+    for (const val of columnValues) {
+      const parsed = parseNumericValue(val);
+      if (parsed.status === 'valid') counts.valid++;
+      else if (parsed.status === 'empty') counts.empty++;
+      else counts.invalid++;
+    }
+    counts.text = counts.empty + counts.invalid;
+    const contentFeature = analyzeContentFeature(columnValues);
+    const keywordType = classifyFieldByKeyword(header);
+    let type, reason, confidence;
+    if (keywordType) { type = keywordType.type; reason = keywordType.reason; confidence = 0.9; }
+    else { const contentResult = classifyFieldByContent(header, columnValues, contentFeature, rows.length); type = contentResult.type; reason = contentResult.reason; confidence = contentResult.confidence; }
+    const adjusted = adjustConfidence(type, confidence, contentFeature, counts, columnValues.length);
+    confidence = adjusted.confidence;
+    if (adjusted.reasonAddition) reason += '，' + adjusted.reasonAddition;
+    const analysisRole = determineAnalysisRole(header, type, contentFeature);
+    return { header, type, analysisRole, validCount: counts.valid, emptyCount: counts.empty, invalidCount: counts.invalid, textCount: counts.text, confidence, reason, contentFeature };
+  });
+}
+
+function determineAnalysisRole(header, type, feature) {
   const lower = header.toLowerCase().trim();
-  
-  if (basicRole === 'identity') return 'identity';
-  if (basicRole === 'rank') return 'rank';
-  if (basicRole === 'bonus' || basicRole === 'penalty') return 'adjustment';
-  if (basicRole === 'category') return 'category';
-  
-  if (lower.includes('总分') || lower.includes('总成绩') || lower.includes('综合成绩') || lower.includes('总评')) {
-    if (!isPureBonusField(lower)) return 'primaryTotal';
-  }
-  
-  if (lower.includes('合计') || lower.includes('总计') || lower.includes('小计') || lower.includes('模块合计')) {
-    return 'sectionTotal';
-  }
-  
-  if (basicRole === 'score') return 'courseScore';
-  
-  if (basicRole === 'unknown') {
-    const numericCount = columnValues.filter(v => parseNumericValue(v).status === 'valid').length;
-    const nonEmptyCount = columnValues.filter(v => v !== '' && v !== '-' && v !== null && v !== undefined).length;
-    if (nonEmptyCount > 0 && numericCount / nonEmptyCount > 0.7) return 'courseScore';
-    return 'unknown';
-  }
-  
+  if (isInvalidHeaderName(lower)) return 'invalid';
+  const PRIMARY_TOTAL_KEYWORDS = ['总分', '总成绩', '综合成绩', '总评', '最终成绩', '高考成绩', '赋分后成绩', '语数英总', '等级分', '标准分'];
+  for (const kw of PRIMARY_TOTAL_KEYWORDS) if (lower.includes(kw.toLowerCase()) && !isPureBonusField(lower)) return 'primaryTotal';
+  if (type === 'rank') return 'rank';
+  const SECTION_TOTAL_KEYWORDS = ['合计', '总计', '小计', '模块合计'];
+  for (const kw of SECTION_TOTAL_KEYWORDS) if (lower.includes(kw.toLowerCase())) return 'sectionTotal';
+  if (type === 'bonus' || type === 'penalty') return 'adjustment';
+  if (type === 'identity') return 'identity';
+  if (type === 'text' || type === 'category' || type === 'status') return 'textMeta';
+  if (type === 'score') return 'courseScore';
   return 'unknown';
 }
 
@@ -181,7 +300,8 @@ function classifyFieldLocally(header) {
     return 'invalid';
   }
 
-  const PRIMARY_TOTAL_KEYWORDS = ['总分', '总成绩', '综合成绩', '总评', '最终成绩'];
+  const PRIMARY_TOTAL_KEYWORDS = ['总分', '总成绩', '综合成绩', '总评', '最终成绩',
+    '高考成绩', '赋分后成绩', '语数英总', '等级分', '标准分'];
   for (const kw of PRIMARY_TOTAL_KEYWORDS) {
     if (headerLower.includes(kw.toLowerCase())) {
       if (!headerLower.includes('不含加分') && !headerLower.includes('不含优惠')) {
@@ -190,7 +310,7 @@ function classifyFieldLocally(header) {
     }
   }
 
-  const RANK_KEYWORDS_LOCAL = ['名次', '排名', '位次', '年级名次', '班级名次'];
+  const RANK_KEYWORDS_LOCAL = ['名次', '排名', '位次', '年级名次', '班级名次', '校排', '班排', '年排', '级排'];
   for (const kw of RANK_KEYWORDS_LOCAL) {
     if (headerLower.includes(kw.toLowerCase())) {
       return 'rank';
@@ -420,6 +540,32 @@ assertMinCount('课程成绩字段数量', path3Groups.courseScore.length, 2);
 assert('加分字段在adjustment分组', path3Groups.adjustment.includes('加分'), true);
 assert('扣分字段在adjustment分组', path3Groups.adjustment.includes('扣分'), true);
 assert('学号字段在identity分组', path3Groups.identity.includes('学号'), true);
+
+// ============================================================
+// 详细字段输出（适配新 FieldMeta 结构）
+// ============================================================
+console.log('\n=== 详细字段输出（新 FieldMeta 结构） ===\n');
+
+// 使用路径 1 的数据进行详细输出
+const path1Rows = path1Data.map(row => {
+  const obj = {};
+  path1Headers.forEach((h, i) => { obj[h] = row[i]; });
+  return obj;
+});
+const path1Metas = classifyFields(path1Headers, path1Rows);
+
+console.log('路径 1 字段详情：');
+for (const meta of path1Metas) {
+  console.log(`  - field: ${meta.header}`);
+  console.log(`    type: ${meta.type}`);
+  console.log(`    confidence: ${meta.confidence}`);
+  console.log(`    reason: ${meta.reason}`);
+  console.log(`    numericRatio: ${meta.contentFeature.numericRatio.toFixed(3)}`);
+  console.log(`    uniqueRatio: ${meta.contentFeature.uniqueRatio.toFixed(3)}`);
+  console.log(`    min: ${meta.contentFeature.min}`);
+  console.log(`    max: ${meta.contentFeature.max}`);
+  console.log('');
+}
 
 // ============================================================
 // 总结
