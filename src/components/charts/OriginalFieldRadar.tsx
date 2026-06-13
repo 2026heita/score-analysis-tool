@@ -1009,7 +1009,7 @@ export default function OriginalFieldRadar({
       )}
 
       {/* 学生搜索框 */}
-      {selections.length > 0 && rows.length > 0 && (
+      {rows.length > 0 && (
         <div style={styles.studentSearchContainer}>
           <div style={styles.studentSearchRow}>
             <div style={styles.studentSearchWrap}>
