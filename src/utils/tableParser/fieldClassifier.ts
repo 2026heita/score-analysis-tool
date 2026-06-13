@@ -109,7 +109,7 @@ export function classifyFields(
     }
 
     // 第三步：内容特征微调置信度
-    const adjusted = adjustConfidence(type, confidence, contentFeature, counts, columnValues.length);
+    const adjusted = adjustConfidence(type, confidence, contentFeature, counts, columnValues.length, header);
     confidence = adjusted.confidence;
     if (adjusted.reasonAddition) {
       reason += '，' + adjusted.reasonAddition;
@@ -369,6 +369,7 @@ function adjustConfidence(
   feature: ContentFeature,
   _counts: { valid: number; empty: number; invalid: number; text: number },
   total: number,
+  header: string,
 ): ConfidenceAdjustResult {
   let confidence = baseConfidence;
   const reasons: string[] = [];
@@ -385,6 +386,14 @@ function adjustConfidence(
       confidence = Math.max(0.5, confidence - 0.2);
       reasons.push(`数值比例低(${(feature.numericRatio * 100).toFixed(0)}%)，置信度降低`);
     }
+    
+    // courseScore 增强：数值比例高且范围在常见分数区间（0-150）
+    if (feature.numericRatio > 0.8 && feature.min !== null && feature.max !== null) {
+      if (feature.min >= 0 && feature.max <= 150 && feature.max >= 60) {
+        confidence = Math.min(0.95, confidence + 0.05);
+        reasons.push(`分数范围合理(${feature.min.toFixed(0)}~${feature.max.toFixed(0)})`);
+      }
+    }
   }
 
   if (type === 'rank') {
@@ -396,6 +405,15 @@ function adjustConfidence(
       confidence = Math.max(0.6, confidence - 0.15);
       reasons.push(`非整数比例较高，置信度降低`);
     }
+    
+    // rank 增强：字段名含排名关键词且内容为小整数
+    const headerLower = header.toLowerCase();
+    const rankKeywords = ['排名', '名次', '位次', '班排', '校排', '年排', '级排'];
+    const hasRankKeyword = rankKeywords.some(kw => headerLower.includes(kw));
+    if (hasRankKeyword && feature.integerRatio > 0.9 && feature.max !== null && feature.max <= total * 2) {
+      confidence = Math.min(0.95, confidence + 0.05);
+      reasons.push(`字段名含排名关键词且内容为小整数`);
+    }
   }
 
   if (type === 'identity') {
@@ -404,12 +422,33 @@ function adjustConfidence(
       confidence = Math.min(0.95, confidence + 0.05);
       reasons.push(`唯一率高(${(feature.uniqueRatio * 100).toFixed(0)}%)确认`);
     }
+    
+    // identity 增强：长数字串、高唯一率时提高置信度，防止误判为 courseScore
+    if (feature.valuePattern === 'longNumber' && feature.uniqueRatio > 0.8) {
+      confidence = Math.min(0.95, confidence + 0.1);
+      reasons.push(`长数字串且唯一率高，确认为身份标识`);
+    }
   }
 
   // 内容特征分类的字段，如果数值比例低，降低置信度
   if (baseConfidence < 0.85 && feature.numericRatio < 0.5 && (type === 'score' || type === 'rank')) {
     confidence = Math.max(0.4, confidence - 0.15);
     reasons.push(`数值比例不足`);
+  }
+  
+  // bonus/penalty 增强：关键词命中时保持高置信度
+  if ((type === 'bonus' || type === 'penalty') && baseConfidence >= 0.9) {
+    confidence = Math.min(0.95, confidence + 0.02);
+    reasons.push(`加扣分字段确认`);
+  }
+  
+  // unknown/invalid 增强：非法字段名时提高置信度
+  if (type === 'unknown' && baseConfidence >= 0.9) {
+    const headerLower = header.toLowerCase();
+    if (isInvalidHeaderName(headerLower)) {
+      confidence = Math.min(0.98, confidence + 0.03);
+      reasons.push(`非法字段名确认`);
+    }
   }
 
   return {

@@ -159,3 +159,61 @@ export interface WorkbookCandidate {
   merges: import('./headerFlattener').MergeRange[];
   candidate: SheetCandidate;
 }
+
+// ============================================================
+// 解析结果报告类型定义
+// ============================================================
+
+/**
+ * 解析报告摘要
+ */
+export interface ParseReportSummary {
+  dataRowCount: number;           // 数据行数
+  fieldCount: number;             // 字段总数
+  recommendedFieldCount: number;  // 推荐分析字段数
+  identityCount: number;          // identity 字段数
+  primaryTotalCount: number;      // primaryTotal 字段数
+  rankCount: number;              // rank 字段数
+  sectionTotalCount: number;      // sectionTotal 字段数
+  courseScoreCount: number;       // courseScore 字段数
+  adjustmentCount: number;        // adjustment 字段数
+  textMetaCount: number;          // textMeta 字段数
+  unknownCount: number;           // unknown 字段数
+  invalidCount: number;           // invalid 字段数
+  lowConfidenceCount: number;     // 低置信度字段数（confidence < 0.7）
+}
+
+/**
+ * 字段内容特征摘要（用于报告展示）
+ */
+export interface ContentFeatureSummary {
+  numericRatio: number;
+  uniqueRatio: number;
+  min: number | null;
+  max: number | null;
+  valuePattern: string;
+}
+
+/**
+ * 解析报告字段明细
+ */
+export interface ParseReportField {
+  name: string;                   // 字段名
+  type: FieldType;                // 字段类型
+  analysisRole: AnalysisRole;     // 分析角色
+  confidence: number;             // 分类置信度
+  reason: string;                 // 分类原因
+  recommended: boolean;           // 是否推荐
+  hiddenByDefault: boolean;       // 是否默认隐藏
+  hiddenReason: string;           // 隐藏原因
+  contentFeature?: ContentFeatureSummary;  // 内容特征摘要
+}
+
+/**
+ * 解析报告
+ */
+export interface ParseReport {
+  summary: ParseReportSummary;    // 摘要统计
+  fields: ParseReportField[];     // 字段明细
+  warnings: string[];             // 提示信息
+}
