@@ -78,8 +78,19 @@ export default function App() {
     savedState?.traditionalSubjectRadar?.entries ?? []
   );
 
+  // 调试：监听 originalFieldState 变化
+  useEffect(() => {
+    console.debug('[App] originalFieldState CHANGED - selections:', originalFieldState?.selections?.length ?? 0, 'state:', originalFieldState);
+  }, [originalFieldState]);
+
+  // 调试：监听 inputValue 变化
+  useEffect(() => {
+    console.debug('[App] inputValue CHANGED:', inputValue, 'current originalFieldState.selections:', originalFieldState?.selections?.length ?? 0);
+  }, [inputValue]);
+
   // ===== 自动保存 =====
   useEffect(() => {
+    console.debug('[App] Auto-save triggered - originalFieldState.selections:', originalFieldState?.selections?.length ?? 0, 'inputValue:', inputValue);
     try {
       saveState({
         version: 2,
