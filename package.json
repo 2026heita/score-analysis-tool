@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "verify:stats": "node scripts/verifyStats.mjs",
     "test:parser": "node scripts/testParser.mjs",
+    "test:parseReport": "node scripts/testParseReport.mjs",
+    "test:analysis-explainer": "node scripts/testAnalysisExplainer.mjs",
     "finalAcceptance": "node scripts/finalAcceptance.mjs"
   },
   "dependencies": {

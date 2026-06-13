@@ -3,6 +3,8 @@ import { parseTableText } from './utils/parseTable';
 import { parseTableFile, type ParsedFileResult } from './utils/fileImport';
 import { calculateStats, calculatePosition, formatNumber } from './utils/stats';
 import { saveState, loadSavedState, clearSavedState, getSystemDefaultState } from './utils/storage';
+import { buildParseReport } from './utils/tableParser';
+import { generateExplanation } from './utils/analysisExplainer';
 import type { ParsedTable, StatsResult, PositionResult, ChartTab, OriginalFieldRadarState, TraditionalSubjectEntry } from './types';
 import type { ParseSummary } from './utils/tableParser/types';
 import UsageGuide from './components/UsageGuide';
@@ -12,6 +14,8 @@ import BoxPlotChart from './components/charts/BoxPlotChart';
 import CdfChart from './components/charts/CdfChart';
 import RadarAnalysis from './components/charts/RadarAnalysis';
 import QuartilePieChart from './components/charts/QuartilePieChart';
+import ParseReportPanel from './components/ParseReportPanel';
+import AnalysisExplainer from './components/AnalysisExplainer';
 
 const EXCLUDED_KEYWORDS = ['名次', '排名', '序号', '编号', '序号号'];
 
@@ -69,6 +73,24 @@ export default function App() {
   const [activeChartTab, setActiveChartTab] = useState<ChartTab>('histogram');
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
+  // ===== 解析报告派生（只读，不修改任何状态） =====
+  const parseReport = useMemo(() => {
+    if (!parsedData || !parseSummary?.fieldTypes) return null;
+    // recommended 基于 analysisRole 判断，不依赖 showAllFields 开关
+    const recommendedFields = parseSummary.fieldTypes
+      .filter(meta => {
+        const role = meta.analysisRole;
+        return role === 'primaryTotal' || role === 'rank' || role === 'sectionTotal' || role === 'courseScore';
+      })
+      .map(meta => meta.header);
+    return buildParseReport(
+      parsedData.headers,
+      parsedData.rows,
+      parseSummary.fieldTypes,
+      recommendedFields
+    );
+  }, [parsedData, parseSummary]);
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const [originalFieldState, setOriginalFieldState] = useState<OriginalFieldRadarState>(
@@ -77,6 +99,50 @@ export default function App() {
   const [traditionalEntries, setTraditionalEntries] = useState<TraditionalSubjectEntry[]>(
     savedState?.traditionalSubjectRadar?.entries ?? []
   );
+
+  // ===== 分析解释派生（只读，不修改任何状态） =====
+  const analysisExplanation = useMemo(() => {
+    if (!parsedData || !originalFieldState?.selections?.length) return null;
+    
+    // 构建排名字段集合（用于反转百分位计算方向）
+    const rankFields = new Set<string>();
+    if (parseSummary?.fieldTypes) {
+      for (const meta of parseSummary.fieldTypes) {
+        if (meta.analysisRole === 'rank') {
+          rankFields.add(meta.header);
+        }
+      }
+    }
+    
+    // 构建 fieldValues 和 fieldData
+    const fieldValues: Record<string, number> = {};
+    const fieldData: Record<string, number[]> = {};
+    
+    for (const selection of originalFieldState.selections) {
+      const { field, userValue } = selection;
+      if (!field || userValue === undefined || isNaN(userValue)) continue;
+      
+      fieldValues[field] = userValue;
+      
+      // 提取该字段的所有数据
+      const values = parsedData.rows
+        .map(row => {
+          const val = row[field];
+          if (val === undefined || val === '' || val === null) return null;
+          const num = parseFloat(val);
+          return isNaN(num) ? null : num;
+        })
+        .filter((v): v is number => v !== null && Number.isFinite(v));
+      
+      if (values.length > 0) {
+        fieldData[field] = values;
+      }
+    }
+    
+    if (Object.keys(fieldValues).length === 0) return null;
+    
+    return generateExplanation(fieldValues, fieldData, rankFields);
+  }, [parsedData, originalFieldState, parseSummary]);
 
   // 调试：监听 originalFieldState 变化
   useEffect(() => {
@@ -537,6 +603,13 @@ export default function App() {
               </section>
             )}
 
+            {parseReport && (
+              <section style={styles.section}>
+                <h2 style={styles.sectionTitle}>解析报告</h2>
+                <ParseReportPanel report={parseReport} />
+              </section>
+            )}
+
             {availableSheets && availableSheets.length > 1 && (
               <section style={styles.section}>
                 <h2 style={styles.sectionTitle}>工作表选择</h2>
@@ -724,6 +797,10 @@ export default function App() {
                     onTraditionalChange={setTraditionalEntries}
                   />
                 </div>
+
+                {analysisExplanation && (
+                  <AnalysisExplainer explanation={analysisExplanation} />
+                )}
               </section>
             )}
           </>

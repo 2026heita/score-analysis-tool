@@ -15,6 +15,10 @@ export type {
   ParseSummary,
   ParsedTableResult,
   WorkbookCandidate,
+  ParseReport,
+  ParseReportSummary,
+  ParseReportField,
+  ContentFeatureSummary,
 } from './types';
 
 // 核心解析函数
@@ -51,6 +55,11 @@ export {
   recommendAnalysisField,
   getAnalyzableFields,
 } from './fieldClassifier';
+
+// 解析报告构建
+export {
+  buildParseReport,
+} from './parseReportBuilder';
 
 // 行分类
 export {

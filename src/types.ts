@@ -62,3 +62,34 @@ export interface SavedState {
   traditionalSubjectRadar: TraditionalSubjectRadarState;
   analysisMode: AnalysisMode;
 }
+
+// 分析解释类型定义
+export type PerformanceTier = 'top10' | 'top25' | 'middle' | 'bottom25' | 'bottom10';
+
+export interface FieldExplanation {
+  field: string;
+  userValue: number;
+  mean: number;
+  lowerCount: number;
+  percentile: number;
+  tier: PerformanceTier;
+  tierLabel: string;
+  diffFromMean: number;
+  diffFromP75: number;
+  diffFromP90: number;
+  diffFromP95: number;
+  validCount: number;
+}
+
+export interface MultiFieldSummary {
+  top3Fields: { field: string; percentile: number }[];
+  bottom3Fields: { field: string; percentile: number }[];
+  averagePercentile: number;
+  fieldCount: number;
+  insufficientData: boolean;
+}
+
+export interface AnalysisExplanation {
+  fieldExplanations: FieldExplanation[];
+  multiFieldSummary: MultiFieldSummary;
+}
