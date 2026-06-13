@@ -70,7 +70,8 @@ function classifyFieldLocally(header: string): string {
   }
 
   // 2. 总分相关 → primaryTotal
-  const PRIMARY_TOTAL_KEYWORDS = ['总分', '总成绩', '综合成绩', '总评', '最终成绩'];
+  const PRIMARY_TOTAL_KEYWORDS = ['总分', '总成绩', '综合成绩', '总评', '最终成绩',
+    '高考成绩', '赋分后成绩', '语数英总', '等级分', '标准分'];
   for (const kw of PRIMARY_TOTAL_KEYWORDS) {
     if (headerLower.includes(kw.toLowerCase())) {
       // 排除纯加分字段
@@ -81,7 +82,7 @@ function classifyFieldLocally(header: string): string {
   }
 
   // 3. 排名相关 → rank
-  const RANK_KEYWORDS = ['名次', '排名', '位次', '年级名次', '班级名次'];
+  const RANK_KEYWORDS = ['名次', '排名', '位次', '年级名次', '班级名次', '校排', '班排', '年排', '级排'];
   for (const kw of RANK_KEYWORDS) {
     if (headerLower.includes(kw.toLowerCase())) {
       return 'rank';

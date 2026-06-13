@@ -7,6 +7,7 @@ export type {
   ParsedNumber,
   FieldType,
   FieldMeta,
+  ContentFeature,
   RowType,
   RowMeta,
   SheetCandidate,
