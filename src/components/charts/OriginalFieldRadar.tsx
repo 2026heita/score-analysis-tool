@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
 import { calculateFieldPercentile } from '../../utils/chartData';
@@ -26,6 +26,12 @@ type ViewMode = 'bar' | 'radar';
 type QuickMode = 'recommended' | 'totalRank' | 'sectionTotal' | 'courseScore' | null;
 
 const EXCLUDED_DEFAULT = ['名次', '排名', '序号', '编号'];
+
+// 模块级缓存：在组件重新挂载时保留字段选择和数值
+// 这是为了解决组件因父组件重渲染或 ReactECharts 导致的意外卸载/重新挂载问题
+let _cachedSelectedFields: string[] | null = null;
+let _cachedFieldValues: Record<string, number> | null = null;
+let _cachedViewMode: 'bar' | 'radar' | null = null;
 
 // 字段分组配置：每个字段只属于一个分组
 const FIELD_GROUP_CONFIG = [
@@ -127,8 +133,111 @@ export default function OriginalFieldRadar({
   headers, rows, isNumericField, getFieldAnalysisRole, excludedKeywords,
   initialSelections, initialViewMode, onStateChange,
 }: OriginalFieldRadarProps) {
-  const [selections, setSelections] = useState<FieldSelection[]>(initialSelections ?? []);
-  const [viewMode, setViewMode] = useState<ViewMode>(initialViewMode ?? 'bar');
+  // 调试：组件挂载
+  console.debug('[OriginalFieldRadar] MOUNT START - initialSelections?.length:', initialSelections?.length ?? 0, 
+    'cached fields:', _cachedSelectedFields?.length ?? 0);
+
+  // 缓存清理：当 headers 变化时（说明切换了文件或重新解析），清空缓存
+  const headersKey = headers.join(',');
+  useEffect(() => {
+    console.debug('[OriginalFieldRadar] headers CHANGED - clearing cache, headers.length:', headers.length);
+    _cachedSelectedFields = null;
+    _cachedFieldValues = null;
+    _cachedViewMode = null;
+  }, [headersKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 分离状态：字段选择（稳定）和用户输入值（频繁变化）
+  // 优先使用缓存，其次使用 initialSelections，避免组件重新挂载时状态丢失
+  const [selectedFields, setSelectedFields] = useState<string[]>(() => {
+    const cached = _cachedSelectedFields;
+    if (cached && cached.length > 0) {
+      console.debug('[OriginalFieldRadar] useState selectedFields - using cache:', cached.length);
+      return cached;
+    }
+    const initial = initialSelections?.map(s => s.field) ?? [];
+    console.debug('[OriginalFieldRadar] useState selectedFields - using initial:', initial.length);
+    return initial;
+  });
+
+  const [fieldValues, setFieldValues] = useState<Record<string, number>>(() => {
+    const cached = _cachedFieldValues;
+    if (cached && Object.keys(cached).length > 0) {
+      console.debug('[OriginalFieldRadar] useState fieldValues - using cache:', Object.keys(cached).length);
+      return cached;
+    }
+    const values: Record<string, number> = {};
+    initialSelections?.forEach(s => {
+      values[s.field] = s.userValue ?? 0;
+    });
+    console.debug('[OriginalFieldRadar] useState fieldValues - using initial:', Object.keys(values).length);
+    return values;
+  });
+
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const cached = _cachedViewMode;
+    if (cached) {
+      console.debug('[OriginalFieldRadar] useState viewMode - using cache:', cached);
+      return cached;
+    }
+    const initial = initialViewMode ?? 'bar';
+    console.debug('[OriginalFieldRadar] useState viewMode - using initial:', initial);
+    return initial;
+  });
+
+  // 调试：组件渲染
+  console.debug('[OriginalFieldRadar] RENDER - selectedFields.length:', selectedFields.length, 
+    'fieldValues keys:', Object.keys(fieldValues).length, 
+    'initialSelections?.length:', initialSelections?.length ?? 0);
+
+  // 关键修复：在渲染时立即同步缓存，而不是在 useLayoutEffect 中
+  // 这样即使组件被 ReactECharts 重新挂载，缓存也已更新
+  _cachedSelectedFields = selectedFields;
+  _cachedFieldValues = { ...fieldValues };
+  _cachedViewMode = viewMode;
+
+  // 调试：组件挂载/卸载
+  useEffect(() => {
+    console.debug('[OriginalFieldRadar] MOUNT EFFECT - selectedFields.length:', selectedFields.length, 
+      'initialSelections?.length:', initialSelections?.length ?? 0);
+    return () => {
+      console.debug('[OriginalFieldRadar] UNMOUNT - selectedFields.length was:', selectedFields.length,
+        'fieldValues keys:', Object.keys(fieldValuesRef.current).length);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 调试：监听 selectedFields 变化
+  // 使用 useLayoutEffect 同步更新缓存，确保在组件重新挂载前缓存已更新
+  useLayoutEffect(() => {
+    console.debug('[OriginalFieldRadar] selectedFields CHANGED - length:', selectedFields.length, 'fields:', selectedFields.slice(0, 5));
+    // 同步到模块级缓存
+    _cachedSelectedFields = selectedFields;
+  }, [selectedFields]);
+
+  // 调试：监听 fieldValues 变化
+  // 使用 useLayoutEffect 同步更新缓存，确保在组件重新挂载前缓存已更新
+  useLayoutEffect(() => {
+    console.debug('[OriginalFieldRadar] fieldValues CHANGED - keys:', Object.keys(fieldValues).length);
+    // 同步到模块级缓存（确保缓存始终有最新值，组件重新挂载时可恢复）
+    _cachedFieldValues = { ...fieldValues };
+  }, [fieldValues]);
+
+  // 调试：监听 viewMode 变化
+  useLayoutEffect(() => {
+    console.debug('[OriginalFieldRadar] viewMode CHANGED - mode:', viewMode);
+    // 同步到模块级缓存
+    _cachedViewMode = viewMode;
+  }, [viewMode]);
+
+  // 使用 ref 存储最新的 fieldValues 和 onStateChange，避免在 effect 依赖数组中添加它们
+  const fieldValuesRef = useRef(fieldValues);
+  useEffect(() => {
+    fieldValuesRef.current = fieldValues;
+  }, [fieldValues]);
+
+  const onStateChangeRef = useRef(onStateChange);
+  useEffect(() => {
+    onStateChangeRef.current = onStateChange;
+  }, [onStateChange]);
   const [showBatchModal, setShowBatchModal] = useState(false);
   const [tempSelections, setTempSelections] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
@@ -142,25 +251,34 @@ export default function OriginalFieldRadar({
   const [matchedStudents, setMatchedStudents] = useState<Record<string, string>[]>([]);
   const [showStudentPicker, setShowStudentPicker] = useState(false);
 
+  // 组合 selections 用于渲染
+  const selections = useMemo(() => {
+    return selectedFields.map(field => ({
+      field,
+      userValue: fieldValues[field] ?? 0,
+    }));
+  }, [selectedFields, fieldValues]);
+
   const excluded = excludedKeywords ?? EXCLUDED_DEFAULT;
 
-  // 只在挂载时初始化状态，不监听 initialSelections 变化
-  // 这样可以避免用户输入时状态被父组件覆盖
-  useEffect(() => {
-    if (initialSelections !== undefined && selections.length === 0) {
-      setSelections(initialSelections);
+  // 只在字段列表或视图模式变化时通知父组件（不监听 fieldValues，避免输入时触发父组件更新）
+  // 使用 useLayoutEffect 确保在组件卸载前父组件的状态已经被更新
+  useLayoutEffect(() => {
+    console.debug('[OriginalFieldRadar] onStateChange effect triggered - selectedFields.length:', selectedFields.length, 'viewMode:', viewMode);
+    if (selectedFields.length > 0) {
+      const state = {
+        selections: selectedFields.map(field => ({
+          field,
+          userValue: fieldValuesRef.current[field] ?? 0,
+        })),
+        viewMode,
+      };
+      console.debug('[OriginalFieldRadar] Calling onStateChange with selections.length:', state.selections.length);
+      onStateChangeRef.current?.(state);
+    } else {
+      console.debug('[OriginalFieldRadar] selectedFields is empty, NOT calling onStateChange');
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (initialViewMode !== undefined) setViewMode(initialViewMode);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (onStateChange) {
-      onStateChange({ selections, viewMode });
-    }
-  }, [selections, viewMode, onStateChange]);
+  }, [selectedFields, viewMode]);
 
   const numericFields = useMemo(() => {
     return headers.filter(h => isNumericField(h) && !excluded.some(kw => h.includes(kw)));
@@ -239,6 +357,7 @@ export default function OriginalFieldRadar({
 
   // 确认批量选择
   const confirmBatchSelection = useCallback(() => {
+    console.debug('[OriginalFieldRadar] confirmBatchSelection called - tempSelections.size:', tempSelections.size, 'current selections.length:', selections.length);
     const ordered: FieldSelection[] = [];
     for (const sel of selections) {
       if (tempSelections.has(sel.field)) {
@@ -250,7 +369,19 @@ export default function OriginalFieldRadar({
         ordered.push({ field, userValue: 0 });
       }
     }
-    setSelections(ordered);
+    console.debug('[OriginalFieldRadar] confirmBatchSelection - ordered.length:', ordered.length, 'fields:', ordered.map(o => o.field));
+    setSelectedFields(prev => {
+      console.debug('[OriginalFieldRadar] setSelectedFields (confirmBatch) - prev:', prev.length, 'new:', ordered.length);
+      return ordered.map(o => o.field);
+    });
+    setFieldValues(prev => {
+      const next = { ...prev };
+      for (const o of ordered) {
+        if (next[o.field] === undefined) next[o.field] = o.userValue;
+      }
+      console.debug('[OriginalFieldRadar] setFieldValues (confirmBatch) - keys:', Object.keys(next).length);
+      return next;
+    });
     setShowBatchModal(false);
     setSearchQuery('');
     setActiveQuickMode(null);
@@ -406,13 +537,14 @@ export default function OriginalFieldRadar({
       return;
     }
 
-    // 更新字段值
-    setSelections(prev =>
-      prev.map(s => {
-        const matched = matchedFields.find(m => m.field === s.field);
-        return matched ? { ...s, userValue: matched.value } : s;
-      })
-    );
+    // 更新字段值（只更新 fieldValues，不改变 selectedFields）
+    setFieldValues(prev => {
+      const next = { ...prev };
+      for (const matched of matchedFields) {
+        next[matched.field] = matched.value;
+      }
+      return next;
+    });
 
     setShowPasteModal(false);
     setPasteText('');
@@ -420,13 +552,15 @@ export default function OriginalFieldRadar({
     showToast(`成功填充 ${matchedFields.length} 个字段`);
   }, [pasteText, selections, showToast]);
 
-  // 搜索学生（按姓名或学号）
-  const searchStudent = useCallback((query: string) => {
-    setStudentSearchQuery(query);
-    const trimmed = query.trim().toLowerCase();
-    if (!trimmed) {
-      setMatchedStudents([]);
-      setShowStudentPicker(false);
+  // 查找反馈消息
+  const [lookupMessage, setLookupMessage] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null);
+  const [emptyFields, setEmptyFields] = useState<string[]>([]);
+
+  // 查找并填充学生数据（点击按钮或回车触发）
+  const performStudentLookup = useCallback(() => {
+    const query = studentSearchQuery.trim();
+    if (!query) {
+      setLookupMessage({ type: 'warning', text: '请输入姓名或学号' });
       return;
     }
 
@@ -437,106 +571,176 @@ export default function OriginalFieldRadar({
     });
     const studentIdField = headers.find(h => {
       const lower = h.toLowerCase();
-      return lower.includes('学号') || lower.includes('考生号') || lower.includes('考号');
+      return lower.includes('学号') || lower.includes('考生号') || lower.includes('考号') || lower.includes('准考证号');
     });
 
     if (!nameField && !studentIdField) {
-      showToast('未找到姓名或学号字段');
+      setLookupMessage({ type: 'error', text: '未找到姓名或学号字段' });
       return;
     }
 
-    // 模糊匹配
-    const matches = rows.filter(row => {
-      const name = nameField ? (row[nameField] || '').toLowerCase() : '';
-      const studentId = studentIdField ? (row[studentIdField] || '').toLowerCase() : '';
-      return name.includes(trimmed) || studentId.includes(trimmed);
-    });
+    const queryLower = query.toLowerCase();
 
-    if (matches.length === 0) {
-      showToast('未找到该学生');
-      setMatchedStudents([]);
-      setShowStudentPicker(false);
-      return;
+    // 优先级1：学号精确匹配
+    if (studentIdField) {
+      const exactIdMatch = rows.filter(row => {
+        const id = (row[studentIdField] || '').trim();
+        return id.toLowerCase() === queryLower;
+      });
+      if (exactIdMatch.length === 1) {
+        fillStudentData(exactIdMatch[0]);
+        return;
+      } else if (exactIdMatch.length > 1) {
+        setMatchedStudents(exactIdMatch);
+        setShowStudentPicker(true);
+        setLookupMessage({ type: 'warning', text: `找到 ${exactIdMatch.length} 个相同学号的学生，请选择` });
+        return;
+      }
     }
 
-    if (matches.length === 1) {
-      // 只有一个匹配，直接填充
-      fillStudentData(matches[0]);
-      setMatchedStudents([]);
-      setShowStudentPicker(false);
-    } else {
-      // 多个匹配，显示选择器
-      setMatchedStudents(matches);
-      setShowStudentPicker(true);
+    // 优先级2：姓名精确匹配
+    if (nameField) {
+      const exactNameMatch = rows.filter(row => {
+        const name = (row[nameField] || '').trim();
+        return name.toLowerCase() === queryLower;
+      });
+      if (exactNameMatch.length === 1) {
+        fillStudentData(exactNameMatch[0]);
+        return;
+      } else if (exactNameMatch.length > 1) {
+        setMatchedStudents(exactNameMatch);
+        setShowStudentPicker(true);
+        setLookupMessage({ type: 'warning', text: `找到 ${exactNameMatch.length} 个同名学生，请选择` });
+        return;
+      }
     }
-  }, [headers, rows, showToast]);
 
-  // 填充学生数据
+    // 优先级3：姓名模糊匹配
+    if (nameField) {
+      const fuzzyNameMatch = rows.filter(row => {
+        const name = (row[nameField] || '').trim().toLowerCase();
+        return name.includes(queryLower);
+      });
+      if (fuzzyNameMatch.length === 1) {
+        fillStudentData(fuzzyNameMatch[0]);
+        return;
+      } else if (fuzzyNameMatch.length > 1) {
+        setMatchedStudents(fuzzyNameMatch);
+        setShowStudentPicker(true);
+        setLookupMessage({ type: 'warning', text: `找到 ${fuzzyNameMatch.length} 个匹配学生，请选择` });
+        return;
+      }
+    }
+
+    // 未找到
+    setLookupMessage({ type: 'error', text: '未找到匹配学生，请检查姓名或学号。' });
+    setMatchedStudents([]);
+    setShowStudentPicker(false);
+  }, [studentSearchQuery, headers, rows]);
+
+  // 填充学生数据（只更新 fieldValues，不修改 selectedFields）
   const fillStudentData = useCallback((studentRow: Record<string, string>) => {
-    let filledCount = 0;
-    
-    const updatedSelections = selections.map(sel => {
-      const rawValue = studentRow[sel.field];
+    const updates: Record<string, number> = {};
+    const emptyFieldsList: string[] = [];
+
+    for (const field of selectedFields) {
+      const rawValue = studentRow[field];
       if (rawValue !== undefined && rawValue !== null && rawValue !== '') {
         const parsed = parseNumericValue(rawValue);
         if (parsed.status === 'valid') {
-          filledCount++;
-          return { ...sel, userValue: parsed.value };
+          updates[field] = parsed.value;
         }
+      } else {
+        emptyFieldsList.push(field);
       }
-      return sel;
-    });
+    }
 
-    setSelections(updatedSelections);
+    const filledCount = Object.keys(updates).length;
+
+    // 只更新 fieldValues
+    if (filledCount > 0) {
+      setFieldValues(prev => ({ ...prev, ...updates }));
+    }
+
+    // 记录空字段
+    setEmptyFields(emptyFieldsList);
+
+    // 显示反馈消息
+    const nameField = headers.find(h => h.toLowerCase().includes('姓名'));
+    const studentIdField = headers.find(h => h.toLowerCase().includes('学号') || h.toLowerCase().includes('考号'));
+    const studentName = nameField ? studentRow[nameField] : '';
+    const studentId = studentIdField ? studentRow[studentIdField] : '';
+    const displayName = studentName || studentId || '学生';
 
     if (filledCount > 0) {
-      const nameField = headers.find(h => h.toLowerCase().includes('姓名'));
-      const studentName = nameField ? studentRow[nameField] : '';
-      showToast(`已填充 ${studentName || '学生'} 的 ${filledCount} 个字段`);
+      setLookupMessage({ 
+        type: 'success', 
+        text: `已找到：${displayName}${studentId ? ` / ${studentId}` : ''}，已填充 ${filledCount} 个字段。` 
+      });
     } else {
-      showToast('未找到可填充的数值');
+      setLookupMessage({ type: 'warning', text: `已找到：${displayName}，但该学生所有字段均无数据。` });
     }
-  }, [selections, headers, showToast]);
 
-  // 选择学生
-  const selectStudent = useCallback((student: Record<string, string>) => {
-    fillStudentData(student);
+    // 清空选择器
     setMatchedStudents([]);
     setShowStudentPicker(false);
-    setStudentSearchQuery('');
+  }, [selectedFields, headers]);
+
+  // 选择学生（从候选列表中选择）
+  const selectStudent = useCallback((student: Record<string, string>) => {
+    fillStudentData(student);
   }, [fillStudentData]);
 
   // 字段管理
   const addField = useCallback(() => {
-    const available = numericFields.filter(f => !selections.some(s => s.field === f));
+    console.debug('[OriginalFieldRadar] addField called - before: selectedFields.length:', selectedFields.length);
+    const available = numericFields.filter(f => !selectedFields.includes(f));
     if (available.length > 0) {
-      setSelections([...selections, { field: available[0], userValue: 0 }]);
+      const newField = available[0];
+      setSelectedFields(prev => {
+        console.debug('[OriginalFieldRadar] setSelectedFields (addField) - prev:', prev.length, 'new:', prev.length + 1);
+        return [...prev, newField];
+      });
+      setFieldValues(prev => ({ ...prev, [newField]: 0 }));
     }
-  }, [numericFields, selections]);
+  }, [numericFields, selectedFields]);
 
   const removeField = useCallback((index: number) => {
-    setSelections(prev => prev.filter((_, i) => i !== index));
+    console.debug('[OriginalFieldRadar] removeField called - index:', index, 'before: selectedFields.length:', selectedFields.length);
+    setSelectedFields(prev => {
+      console.debug('[OriginalFieldRadar] setSelectedFields (removeField) - prev:', prev.length, 'new:', prev.length - 1);
+      return prev.filter((_, i) => i !== index);
+    });
   }, []);
 
   const updateField = useCallback((index: number, key: keyof FieldSelection, value: number) => {
-    setSelections(prev => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], [key]: value };
-      return updated;
-    });
-  }, []);
+    const fieldName = selectedFields[index];
+    console.debug('[OriginalFieldRadar] updateField START - index:', index, 'field:', fieldName, 'key:', key, 'value:', value, 'selectedFields.length:', selectedFields.length);
+    if (key === 'userValue' && fieldName) {
+      console.debug('[OriginalFieldRadar] updateField BEFORE setFieldValues - field:', fieldName, 'newValue:', value);
+      setFieldValues(prev => {
+        console.debug('[OriginalFieldRadar] updateField IN setFieldValues - field:', fieldName, 'oldValue:', prev[fieldName], 'newValue:', value);
+        return { ...prev, [fieldName]: value };
+      });
+      console.debug('[OriginalFieldRadar] updateField AFTER setFieldValues - selectedFields.length still:', selectedFields.length);
+    }
+  }, [selectedFields]);
 
   const clearAllFields = useCallback(() => {
-    setSelections([]);
-  }, []);
+    console.debug('[OriginalFieldRadar] clearAllFields called - before: selectedFields.length:', selectedFields.length);
+    setSelectedFields([]);
+    setFieldValues({});
+  }, [selectedFields.length]);
 
   const restoreRecommended = useCallback(() => {
-    const newSelections: FieldSelection[] = defaultRecommendedFields.map(f => {
-      const existing = selections.find(s => s.field === f);
-      return { field: f, userValue: existing?.userValue ?? 0 };
-    });
-    setSelections(newSelections);
-  }, [defaultRecommendedFields, selections]);
+    console.debug('[OriginalFieldRadar] restoreRecommended called - before: selectedFields.length:', selectedFields.length, 'defaultRecommendedFields:', defaultRecommendedFields.length);
+    setSelectedFields(defaultRecommendedFields);
+    const newValues: Record<string, number> = {};
+    for (const f of defaultRecommendedFields) {
+      newValues[f] = fieldValues[f] ?? 0;
+    }
+    setFieldValues(newValues);
+  }, [defaultRecommendedFields, fieldValues]);
 
   // 固定字段顺序
   const FIXED_SUBJECT_ORDER = [
@@ -815,13 +1019,43 @@ export default function OriginalFieldRadar({
               </svg>
               <input
                 type="text"
-                placeholder="输入姓名或学号快速填充..."
+                placeholder="输入姓名或学号查找并自动填充"
                 value={studentSearchQuery}
-                onChange={e => searchStudent(e.target.value)}
+                onChange={e => setStudentSearchQuery(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    performStudentLookup();
+                  }
+                }}
                 style={styles.studentSearchInput}
               />
             </div>
+            <button 
+              style={styles.studentSearchButton}
+              onClick={performStudentLookup}
+            >
+              查找并填充
+            </button>
           </div>
+
+          {/* 查找反馈消息 */}
+          {lookupMessage && (
+            <div style={{
+              ...styles.lookupMessage,
+              ...(lookupMessage.type === 'success' ? styles.lookupMessageSuccess : {}),
+              ...(lookupMessage.type === 'error' ? styles.lookupMessageError : {}),
+              ...(lookupMessage.type === 'warning' ? styles.lookupMessageWarning : {}),
+            }}>
+              {lookupMessage.text}
+            </div>
+          )}
+
+          {/* 空字段弱提示 */}
+          {emptyFields.length > 0 && (
+            <div style={styles.emptyFieldsHint}>
+              以下字段在该学生中无数据：{emptyFields.join('、')}
+            </div>
+          )}
 
           {/* 学生选择器 */}
           {showStudentPicker && matchedStudents.length > 1 && (
@@ -834,6 +1068,7 @@ export default function OriginalFieldRadar({
                     setShowStudentPicker(false);
                     setMatchedStudents([]);
                     setStudentSearchQuery('');
+                    setLookupMessage(null);
                   }}
                 >
                   ×
@@ -1444,6 +1679,48 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '13px',
     outline: 'none',
     transition: 'border-color 0.15s, box-shadow 0.15s',
+  },
+  studentSearchButton: {
+    padding: '8px 16px',
+    border: 'none',
+    borderRadius: '6px',
+    background: '#3b82f6',
+    color: '#fff',
+    fontSize: '13px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
+  },
+  lookupMessage: {
+    marginTop: '10px',
+    padding: '8px 12px',
+    borderRadius: '6px',
+    fontSize: '13px',
+    fontWeight: 500,
+  },
+  lookupMessageSuccess: {
+    background: '#d1fae5',
+    color: '#065f46',
+    border: '1px solid #a7f3d0',
+  },
+  lookupMessageError: {
+    background: '#fee2e2',
+    color: '#991b1b',
+    border: '1px solid #fecaca',
+  },
+  lookupMessageWarning: {
+    background: '#fef3c7',
+    color: '#92400e',
+    border: '1px solid #fde68a',
+  },
+  emptyFieldsHint: {
+    marginTop: '8px',
+    padding: '6px 10px',
+    background: '#f1f5f9',
+    color: '#64748b',
+    borderRadius: '6px',
+    fontSize: '12px',
   },
   // 学生选择器样式
   studentPicker: {
