@@ -893,6 +893,99 @@ export default function OriginalFieldRadar({
 
   return (
     <div>
+      {/* 学生搜索框 */}
+      {rows.length > 0 && (
+        <div style={styles.studentSearchContainer}>
+          <div style={styles.studentSearchRow}>
+            <div style={styles.studentSearchWrap}>
+              <svg style={styles.studentSearchIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8" />
+                <path d="M21 21l-4.35-4.35" />
+              </svg>
+              <input
+                type="text"
+                placeholder="输入姓名或学号查找并自动填充"
+                value={studentSearchQuery}
+                onChange={e => setStudentSearchQuery(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    performStudentLookup();
+                  }
+                }}
+                style={styles.studentSearchInput}
+              />
+            </div>
+            <button 
+              style={styles.studentSearchButton}
+              onClick={performStudentLookup}
+            >
+              查找并填充
+            </button>
+          </div>
+
+          {/* 查找反馈消息 */}
+          {lookupMessage && (
+            <div style={{
+              ...styles.lookupMessage,
+              ...(lookupMessage.type === 'success' ? styles.lookupMessageSuccess : {}),
+              ...(lookupMessage.type === 'error' ? styles.lookupMessageError : {}),
+              ...(lookupMessage.type === 'warning' ? styles.lookupMessageWarning : {}),
+            }}>
+              {lookupMessage.text}
+            </div>
+          )}
+
+          {/* 空字段弱提示 */}
+          {emptyFields.length > 0 && (
+            <div style={styles.emptyFieldsHint}>
+              以下字段在该学生中无数据：{emptyFields.join('、')}
+            </div>
+          )}
+
+          {/* 学生选择器 */}
+          {showStudentPicker && matchedStudents.length > 1 && (
+            <div style={styles.studentPicker}>
+              <div style={styles.studentPickerHeader}>
+                <span>找到 {matchedStudents.length} 个匹配学生，请选择：</span>
+                <button
+                  style={styles.studentPickerClose}
+                  onClick={() => {
+                    setShowStudentPicker(false);
+                    setMatchedStudents([]);
+                    setStudentSearchQuery('');
+                    setLookupMessage(null);
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+              <div style={styles.studentPickerList}>
+                {matchedStudents.map((student, idx) => {
+                  const nameField = headers.find(h => h.toLowerCase().includes('姓名'));
+                  const studentIdField = headers.find(h => h.toLowerCase().includes('学号'));
+                  const classField = headers.find(h => h.toLowerCase().includes('班级'));
+                  const name = nameField ? student[nameField] : '';
+                  const studentId = studentIdField ? student[studentIdField] : '';
+                  const className = classField ? student[classField] : '';
+
+                  return (
+                    <div
+                      key={idx}
+                      style={styles.studentPickerItem}
+                      onClick={() => selectStudent(student)}
+                    >
+                      <span style={styles.studentPickerName}>{name}</span>
+                      {studentId && <span style={styles.studentPickerId}>{studentId}</span>}
+                      {className && <span style={styles.studentPickerClass}>{className}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 字段选择列表 */}
       <div style={styles.fieldList}>
         {selections.map((sel, index) => (
@@ -1006,99 +1099,6 @@ export default function OriginalFieldRadar({
       )}
       {viewMode === 'radar' && radarOption && (
         <ReactECharts option={radarOption} style={{ height: '400px', width: '100%' }} />
-      )}
-
-      {/* 学生搜索框 */}
-      {rows.length > 0 && (
-        <div style={styles.studentSearchContainer}>
-          <div style={styles.studentSearchRow}>
-            <div style={styles.studentSearchWrap}>
-              <svg style={styles.studentSearchIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="11" cy="11" r="8" />
-                <path d="M21 21l-4.35-4.35" />
-              </svg>
-              <input
-                type="text"
-                placeholder="输入姓名或学号查找并自动填充"
-                value={studentSearchQuery}
-                onChange={e => setStudentSearchQuery(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    performStudentLookup();
-                  }
-                }}
-                style={styles.studentSearchInput}
-              />
-            </div>
-            <button 
-              style={styles.studentSearchButton}
-              onClick={performStudentLookup}
-            >
-              查找并填充
-            </button>
-          </div>
-
-          {/* 查找反馈消息 */}
-          {lookupMessage && (
-            <div style={{
-              ...styles.lookupMessage,
-              ...(lookupMessage.type === 'success' ? styles.lookupMessageSuccess : {}),
-              ...(lookupMessage.type === 'error' ? styles.lookupMessageError : {}),
-              ...(lookupMessage.type === 'warning' ? styles.lookupMessageWarning : {}),
-            }}>
-              {lookupMessage.text}
-            </div>
-          )}
-
-          {/* 空字段弱提示 */}
-          {emptyFields.length > 0 && (
-            <div style={styles.emptyFieldsHint}>
-              以下字段在该学生中无数据：{emptyFields.join('、')}
-            </div>
-          )}
-
-          {/* 学生选择器 */}
-          {showStudentPicker && matchedStudents.length > 1 && (
-            <div style={styles.studentPicker}>
-              <div style={styles.studentPickerHeader}>
-                <span>找到 {matchedStudents.length} 个匹配学生，请选择：</span>
-                <button
-                  style={styles.studentPickerClose}
-                  onClick={() => {
-                    setShowStudentPicker(false);
-                    setMatchedStudents([]);
-                    setStudentSearchQuery('');
-                    setLookupMessage(null);
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-              <div style={styles.studentPickerList}>
-                {matchedStudents.map((student, idx) => {
-                  const nameField = headers.find(h => h.toLowerCase().includes('姓名'));
-                  const studentIdField = headers.find(h => h.toLowerCase().includes('学号'));
-                  const classField = headers.find(h => h.toLowerCase().includes('班级'));
-                  const name = nameField ? student[nameField] : '';
-                  const studentId = studentIdField ? student[studentIdField] : '';
-                  const className = classField ? student[classField] : '';
-
-                  return (
-                    <div
-                      key={idx}
-                      style={styles.studentPickerItem}
-                      onClick={() => selectStudent(student)}
-                    >
-                      <span style={styles.studentPickerName}>{name}</span>
-                      {studentId && <span style={styles.studentPickerId}>{studentId}</span>}
-                      {className && <span style={styles.studentPickerClass}>{className}</span>}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
       )}
 
       {/* 当前参与分析字段列表 */}
