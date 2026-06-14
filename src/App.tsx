@@ -1004,7 +1004,7 @@ function formatComparisonText(input: number, ref: number): string {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: { minHeight: '100vh', background: '#f8fafc', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', color: '#1e293b' },
+  container: { minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', color: '#1e293b', position: 'relative', zIndex: 1 },
   header: { background: 'linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%)', color: '#fff', padding: '28px 24px', textAlign: 'center' },
   title: { margin: '0 0 4px', fontSize: '28px', fontWeight: 700, letterSpacing: '-0.02em' },
   subtitle: { margin: '0 0 14px', fontSize: '14px', opacity: 0.85, fontWeight: 400 },
@@ -1012,12 +1012,12 @@ const styles: Record<string, React.CSSProperties> = {
   headerButton: { padding: '4px 12px', background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', transition: 'all 0.15s' },
   saveMsg: { margin: '8px 0 0', fontSize: '12px', color: '#86efac', fontWeight: 500 },
   main: { maxWidth: '800px', margin: '0 auto', padding: '20px 16px' },
-  section: { background: '#fff', borderRadius: '12px', padding: '20px', marginBottom: '12px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s' },
+  section: { background: '#fff', borderRadius: '12px', padding: '20px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s, transform 0.2s', border: '1px solid rgba(226, 232, 240, 0.6)' },
   sectionTitle: { margin: '0 0 14px', fontSize: '16px', fontWeight: 600, color: '#334155', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' },
   hint: { margin: '0 0 10px', fontSize: '13px', color: '#64748b', background: '#f0f7ff', padding: '8px 12px', borderRadius: '6px', borderLeft: '3px solid #3b82f6' },
   textarea: { width: '100%', padding: '12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box', outline: 'none' },
   parseRow: { display: 'flex', gap: '10px', marginTop: '12px', alignItems: 'center' },
-  parseButton: { padding: '10px 24px', background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 8px rgba(37,99,235,0.3)', transition: 'box-shadow 0.15s' },
+  parseButton: { padding: '10px 24px', background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 8px rgba(99,102,241,0.25)', transition: 'all 0.15s' },
   sampleButton: { padding: '10px 24px', background: '#f0f7ff', color: '#3b82f6', border: '1px solid #93c5fd', borderRadius: '8px', fontSize: '14px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s' },
   copyButton: { padding: '4px 12px', background: '#f0f7ff', color: '#3b82f6', border: '1px solid #93c5fd', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 500, whiteSpace: 'nowrap', transition: 'all 0.15s' },
   error: { margin: '8px 0 0', color: '#ef4444', fontSize: '14px' },
