@@ -1,3 +1,5 @@
+import { APP_VERSION } from '../config/version';
+
 export interface UpdateLogItem {
   date: string;
   version?: string;
@@ -9,7 +11,7 @@ export interface UpdateLogItem {
 export const updateLogs: UpdateLogItem[] = [
   {
     date: '2026-06-14',
-    version: 'v1.1.0',
+    version: APP_VERSION,
     title: '平台方向升级',
     type: 'notice',
     items: [

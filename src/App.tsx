@@ -5,6 +5,7 @@ import { calculateStats, calculatePosition, formatNumber } from './utils/stats';
 import { saveState, loadSavedState, clearSavedState, getSystemDefaultState } from './utils/storage';
 import { buildParseReport } from './utils/tableParser';
 import { generateExplanation } from './utils/analysisExplainer';
+import { APP_VERSION } from './config/version';
 import type { ParsedTable, StatsResult, PositionResult, ChartTab, OriginalFieldRadarState, TraditionalSubjectEntry } from './types';
 import type { ParseSummary } from './utils/tableParser/types';
 import UsageGuide from './components/UsageGuide';
@@ -17,6 +18,7 @@ import RadarAnalysis from './components/charts/RadarAnalysis';
 import QuartilePieChart from './components/charts/QuartilePieChart';
 import ParseReportPanel from './components/ParseReportPanel';
 import AnalysisExplainer from './components/AnalysisExplainer';
+import GeneralDataOverview from './components/GeneralDataOverview';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 const EXCLUDED_KEYWORDS = ['名次', '排名', '序号', '编号', '序号号'];
@@ -700,6 +702,10 @@ export default function App() {
               </section>
             )}
 
+            <section style={styles.section}>
+              <GeneralDataOverview headers={parsedData.headers} rows={parsedData.rows} />
+            </section>
+
             {availableSheets && availableSheets.length > 1 && (
               <section style={styles.section}>
                 <h2 style={styles.sectionTitle}>工作表选择</h2>
@@ -914,7 +920,7 @@ export default function App() {
       </main>
 
       <footer style={styles.footer}>
-        <div style={styles.footerVersion}>版本：v0.1.2</div>
+        <div style={styles.footerVersion}>版本：{APP_VERSION}</div>
         <div style={styles.footerSection}>
           <div style={styles.footerLabel}>说明：</div>
           <p style={styles.footerText}>本工具仅基于用户粘贴的数据进行统计分析，不代表官方排名结果。若输入数据不是完整全量数据，百分位、名次区间和图表结果可能失真。</p>

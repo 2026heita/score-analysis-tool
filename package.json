@@ -13,6 +13,7 @@
     "test:analysis-explainer": "node scripts/testAnalysisExplainer.mjs",
     "test:mobile-compatibility": "node scripts/testMobileCompatibility.mjs",
     "test:general-engine": "node scripts/testGeneralEngine.mjs",
+    "test:general-overview": "node scripts/testGeneralOverview.mjs",
     "finalAcceptance": "node scripts/finalAcceptance.mjs"
   },
   "dependencies": {
