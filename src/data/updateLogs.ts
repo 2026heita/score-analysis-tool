@@ -12,6 +12,17 @@ export const updateLogs: UpdateLogItem[] = [
   {
     date: '2026-06-14',
     version: APP_VERSION,
+    title: '新增通用数据概览',
+    type: 'feature',
+    items: [
+      '新增通用数据概览面板，可查看数据行数、字段类型数量和基础结构信息',
+      '新增数值字段基础统计表，支持查看有效值、缺失值、均值、中位数、标准差和异常值数量',
+      '通用分析引擎开始在页面中可视化展示，为后续支持更多类型表格打基础'
+    ]
+  },
+  {
+    date: '2026-06-14',
+    version: 'v1.1.0',
     title: '平台方向升级',
     type: 'notice',
     items: [

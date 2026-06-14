@@ -3,4 +3,4 @@
  * 统一管理应用版本号，避免硬编码
  */
 
-export const APP_VERSION = 'v1.1.0';
+export const APP_VERSION = 'v1.1.1';
