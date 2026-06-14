@@ -76,9 +76,11 @@ export default function UpdateNotice() {
 
       {expanded && (
         <div style={styles.body}>
-          {updateLogs.map((log, idx) => (
-            <LogEntry key={idx} log={log} />
-          ))}
+          <div style={styles.scrollContainer}>
+            {updateLogs.map((log, idx) => (
+              <LogEntry key={idx} log={log} />
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -157,6 +159,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
   body: {
     padding: '4px 16px 16px',
+  },
+  scrollContainer: {
+    maxHeight: '360px',
+    overflowY: 'auto',
+    paddingRight: '4px',
   },
   entry: {
     paddingTop: '12px',

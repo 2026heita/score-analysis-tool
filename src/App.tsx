@@ -19,6 +19,8 @@ import QuartilePieChart from './components/charts/QuartilePieChart';
 import ParseReportPanel from './components/ParseReportPanel';
 import AnalysisExplainer from './components/AnalysisExplainer';
 import GeneralDataOverview from './components/GeneralDataOverview';
+import SampleDataSelector from './components/SampleDataSelector';
+import type { SampleDataset } from './data/sampleDatasets';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 const EXCLUDED_KEYWORDS = ['名次', '排名', '序号', '编号', '序号号'];
@@ -438,6 +440,35 @@ export default function App() {
     } catch { /* 静默 */ }
   }, [rawText]);
 
+  const handleLoadSampleDataset = useCallback((dataset: SampleDataset) => {
+    if (rawText.trim() && !window.confirm('当前输入会被示例数据覆盖，是否继续？')) return;
+
+    // 清空旧状态
+    setOriginalFieldState({ selections: [], viewMode: 'bar' });
+    setTraditionalEntries([]);
+    setSelectedField('');
+    setInputValue('');
+    setActiveChartTab('histogram');
+    setParseSummary(null);
+
+    // 将示例数据转换为文本格式
+    const text = [
+      dataset.headers.join('\t'),
+      ...dataset.rows.map(row => dataset.headers.map(h => row[h] ?? '').join('\t'))
+    ].join('\n');
+
+    setRawText(text);
+    try {
+      const result = parseTableText(text);
+      setParsedData(result);
+      setParseWarnings(result.warnings || []);
+      setParseError(null);
+
+      // textarea 回到顶部
+      setTimeout(() => { textareaRef.current?.scrollTo({ top: 0 }); }, 0);
+    } catch { /* 静默 */ }
+  }, [rawText]);
+
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -623,6 +654,9 @@ export default function App() {
               <span style={styles.fileUploadButton}>上传 CSV / Excel 文件</span>
             </label>
             <span style={styles.fileUploadNote}>文件只在浏览器本地解析，不上传服务器。</span>
+          </div>
+          <div style={{ marginBottom: '12px' }}>
+            <SampleDataSelector onSelect={handleLoadSampleDataset} disabled={isParsing} />
           </div>
           <textarea
             ref={textareaRef}
