@@ -28,6 +28,11 @@ export function explainField(
   values: number[],
   isRankField: boolean = false,
 ): FieldExplanation | null {
+  // 校验 userValue 有效性
+  if (!Number.isFinite(userValue)) {
+    return null;
+  }
+
   // 过滤有效数值
   const cleanValues = values.filter(v => Number.isFinite(v));
   
@@ -131,6 +136,11 @@ export function generateExplanation(
 
   // 为每个字段生成解释
   for (const [field, userValue] of Object.entries(fieldValues)) {
+    // 跳过无效的 userValue
+    if (!Number.isFinite(userValue)) {
+      continue;
+    }
+
     const values = fieldData[field];
     if (!values || values.length === 0) {
       continue;
