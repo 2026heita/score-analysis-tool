@@ -134,14 +134,9 @@ export default function OriginalFieldRadar({
   headers, rows, isNumericField, getFieldAnalysisRole, excludedKeywords,
   initialSelections, initialViewMode, onStateChange,
 }: OriginalFieldRadarProps) {
-  // 调试：组件挂载
-  console.debug('[OriginalFieldRadar] MOUNT START - initialSelections?.length:', initialSelections?.length ?? 0, 
-    'cached fields:', _cachedSelectedFields?.length ?? 0);
-
   // 缓存清理：当 headers 变化时（说明切换了文件或重新解析），清空缓存
   const headersKey = headers.join(',');
   useEffect(() => {
-    console.debug('[OriginalFieldRadar] headers CHANGED - clearing cache, headers.length:', headers.length);
     _cachedSelectedFields = null;
     _cachedFieldValues = null;
     _cachedViewMode = null;
@@ -152,43 +147,34 @@ export default function OriginalFieldRadar({
   const [selectedFields, setSelectedFields] = useState<string[]>(() => {
     const cached = _cachedSelectedFields;
     if (cached && cached.length > 0) {
-      console.debug('[OriginalFieldRadar] useState selectedFields - using cache:', cached.length);
       return cached;
     }
     const initial = initialSelections?.map(s => s.field) ?? [];
-    console.debug('[OriginalFieldRadar] useState selectedFields - using initial:', initial.length);
     return initial;
   });
 
   const [fieldValues, setFieldValues] = useState<Record<string, number>>(() => {
     const cached = _cachedFieldValues;
     if (cached && Object.keys(cached).length > 0) {
-      console.debug('[OriginalFieldRadar] useState fieldValues - using cache:', Object.keys(cached).length);
       return cached;
     }
     const values: Record<string, number> = {};
     initialSelections?.forEach(s => {
-      values[s.field] = s.userValue ?? 0;
+      if (s.userValue !== undefined && !isNaN(s.userValue)) {
+        values[s.field] = s.userValue;
+      }
     });
-    console.debug('[OriginalFieldRadar] useState fieldValues - using initial:', Object.keys(values).length);
     return values;
   });
 
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     const cached = _cachedViewMode;
     if (cached) {
-      console.debug('[OriginalFieldRadar] useState viewMode - using cache:', cached);
       return cached;
     }
     const initial = initialViewMode ?? 'bar';
-    console.debug('[OriginalFieldRadar] useState viewMode - using initial:', initial);
     return initial;
   });
-
-  // 调试：组件渲染
-  console.debug('[OriginalFieldRadar] RENDER - selectedFields.length:', selectedFields.length, 
-    'fieldValues keys:', Object.keys(fieldValues).length, 
-    'initialSelections?.length:', initialSelections?.length ?? 0);
 
   // 关键修复：在渲染时立即同步缓存，而不是在 useLayoutEffect 中
   // 这样即使组件被 ReactECharts 重新挂载，缓存也已更新
@@ -196,36 +182,27 @@ export default function OriginalFieldRadar({
   _cachedFieldValues = { ...fieldValues };
   _cachedViewMode = viewMode;
 
-  // 调试：组件挂载/卸载
-  useEffect(() => {
-    console.debug('[OriginalFieldRadar] MOUNT EFFECT - selectedFields.length:', selectedFields.length, 
-      'initialSelections?.length:', initialSelections?.length ?? 0);
-    return () => {
-      console.debug('[OriginalFieldRadar] UNMOUNT - selectedFields.length was:', selectedFields.length,
-        'fieldValues keys:', Object.keys(fieldValuesRef.current).length);
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // 动画 token：每次切换 viewMode 时递增，驱动 shouldAnimate
+  const [animationToken, setAnimationToken] = useState(0);
+  // 已消费的 token，消费后 shouldAnimate 变为 false
+  const consumedTokenRef = useRef<number | null>(null);
 
-  // 调试：监听 selectedFields 变化
+  // 首次渲染时标记为已消费，避免首次加载时播放动画
+  useEffect(() => {
+    consumedTokenRef.current = animationToken;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // 使用 useLayoutEffect 同步更新缓存，确保在组件重新挂载前缓存已更新
   useLayoutEffect(() => {
-    console.debug('[OriginalFieldRadar] selectedFields CHANGED - length:', selectedFields.length, 'fields:', selectedFields.slice(0, 5));
-    // 同步到模块级缓存
     _cachedSelectedFields = selectedFields;
   }, [selectedFields]);
 
-  // 调试：监听 fieldValues 变化
-  // 使用 useLayoutEffect 同步更新缓存，确保在组件重新挂载前缓存已更新
   useLayoutEffect(() => {
-    console.debug('[OriginalFieldRadar] fieldValues CHANGED - keys:', Object.keys(fieldValues).length);
-    // 同步到模块级缓存（确保缓存始终有最新值，组件重新挂载时可恢复）
     _cachedFieldValues = { ...fieldValues };
   }, [fieldValues]);
 
-  // 调试：监听 viewMode 变化
   useLayoutEffect(() => {
-    console.debug('[OriginalFieldRadar] viewMode CHANGED - mode:', viewMode);
-    // 同步到模块级缓存
     _cachedViewMode = viewMode;
   }, [viewMode]);
 
@@ -236,7 +213,7 @@ export default function OriginalFieldRadar({
   }, [fieldValues]);
 
   const onStateChangeRef = useRef(onStateChange);
-  useEffect(() => {
+  useLayoutEffect(() => {
     onStateChangeRef.current = onStateChange;
   }, [onStateChange]);
   const [showBatchModal, setShowBatchModal] = useState(false);
@@ -256,30 +233,28 @@ export default function OriginalFieldRadar({
   const selections = useMemo(() => {
     return selectedFields.map(field => ({
       field,
-      userValue: fieldValues[field] ?? 0,
+      userValue: fieldValues[field],
     }));
   }, [selectedFields, fieldValues]);
 
   const excluded = excludedKeywords ?? EXCLUDED_DEFAULT;
 
-  // 只在字段列表或视图模式变化时通知父组件（不监听 fieldValues，避免输入时触发父组件更新）
+  // 字段列表、视图模式或数值变化时通知父组件
   // 使用 useLayoutEffect 确保在组件卸载前父组件的状态已经被更新
   useLayoutEffect(() => {
-    console.debug('[OriginalFieldRadar] onStateChange effect triggered - selectedFields.length:', selectedFields.length, 'viewMode:', viewMode);
     if (selectedFields.length > 0) {
       const state = {
-        selections: selectedFields.map(field => ({
-          field,
-          userValue: fieldValuesRef.current[field] ?? 0,
-        })),
+        selections: selectedFields
+          .map(field => ({
+            field,
+            userValue: fieldValues[field],
+          }))
+          .filter(sel => sel.userValue !== undefined && !isNaN(sel.userValue)),
         viewMode,
       };
-      console.debug('[OriginalFieldRadar] Calling onStateChange with selections.length:', state.selections.length);
       onStateChangeRef.current?.(state);
-    } else {
-      console.debug('[OriginalFieldRadar] selectedFields is empty, NOT calling onStateChange');
     }
-  }, [selectedFields, viewMode]);
+  }, [selectedFields, viewMode, fieldValues]);
 
   const numericFields = useMemo(() => {
     return headers.filter(h => isNumericField(h) && !excluded.some(kw => h.includes(kw)));
@@ -358,7 +333,6 @@ export default function OriginalFieldRadar({
 
   // 确认批量选择
   const confirmBatchSelection = useCallback(() => {
-    console.debug('[OriginalFieldRadar] confirmBatchSelection called - tempSelections.size:', tempSelections.size, 'current selections.length:', selections.length);
     const ordered: FieldSelection[] = [];
     for (const sel of selections) {
       if (tempSelections.has(sel.field)) {
@@ -367,20 +341,19 @@ export default function OriginalFieldRadar({
     }
     for (const field of tempSelections) {
       if (!ordered.some(o => o.field === field)) {
-        ordered.push({ field, userValue: 0 });
+        // 新增字段不设置默认值，保持未填写状态
+        ordered.push({ field, userValue: NaN });
       }
     }
-    console.debug('[OriginalFieldRadar] confirmBatchSelection - ordered.length:', ordered.length, 'fields:', ordered.map(o => o.field));
-    setSelectedFields(prev => {
-      console.debug('[OriginalFieldRadar] setSelectedFields (confirmBatch) - prev:', prev.length, 'new:', ordered.length);
-      return ordered.map(o => o.field);
-    });
+    setSelectedFields(ordered.map(o => o.field));
     setFieldValues(prev => {
       const next = { ...prev };
       for (const o of ordered) {
-        if (next[o.field] === undefined) next[o.field] = o.userValue;
+        // 只保留已存在的值，不设置默认值
+        if (next[o.field] === undefined && !isNaN(o.userValue)) {
+          next[o.field] = o.userValue;
+        }
       }
-      console.debug('[OriginalFieldRadar] setFieldValues (confirmBatch) - keys:', Object.keys(next).length);
       return next;
     });
     setShowBatchModal(false);
@@ -694,51 +667,44 @@ export default function OriginalFieldRadar({
 
   // 字段管理
   const addField = useCallback(() => {
-    console.debug('[OriginalFieldRadar] addField called - before: selectedFields.length:', selectedFields.length);
     const available = numericFields.filter(f => !selectedFields.includes(f));
     if (available.length > 0) {
       const newField = available[0];
       setSelectedFields(prev => {
-        console.debug('[OriginalFieldRadar] setSelectedFields (addField) - prev:', prev.length, 'new:', prev.length + 1);
         return [...prev, newField];
       });
-      setFieldValues(prev => ({ ...prev, [newField]: 0 }));
+      // 不设置默认值，让字段保持未填写状态
     }
   }, [numericFields, selectedFields]);
 
   const removeField = useCallback((index: number) => {
-    console.debug('[OriginalFieldRadar] removeField called - index:', index, 'before: selectedFields.length:', selectedFields.length);
     setSelectedFields(prev => {
-      console.debug('[OriginalFieldRadar] setSelectedFields (removeField) - prev:', prev.length, 'new:', prev.length - 1);
       return prev.filter((_, i) => i !== index);
     });
   }, []);
 
   const updateField = useCallback((index: number, key: keyof FieldSelection, value: number) => {
     const fieldName = selectedFields[index];
-    console.debug('[OriginalFieldRadar] updateField START - index:', index, 'field:', fieldName, 'key:', key, 'value:', value, 'selectedFields.length:', selectedFields.length);
     if (key === 'userValue' && fieldName) {
-      console.debug('[OriginalFieldRadar] updateField BEFORE setFieldValues - field:', fieldName, 'newValue:', value);
       setFieldValues(prev => {
-        console.debug('[OriginalFieldRadar] updateField IN setFieldValues - field:', fieldName, 'oldValue:', prev[fieldName], 'newValue:', value);
         return { ...prev, [fieldName]: value };
       });
-      console.debug('[OriginalFieldRadar] updateField AFTER setFieldValues - selectedFields.length still:', selectedFields.length);
     }
   }, [selectedFields]);
 
   const clearAllFields = useCallback(() => {
-    console.debug('[OriginalFieldRadar] clearAllFields called - before: selectedFields.length:', selectedFields.length);
     setSelectedFields([]);
     setFieldValues({});
-  }, [selectedFields.length]);
+  }, []);
 
   const restoreRecommended = useCallback(() => {
-    console.debug('[OriginalFieldRadar] restoreRecommended called - before: selectedFields.length:', selectedFields.length, 'defaultRecommendedFields:', defaultRecommendedFields.length);
     setSelectedFields(defaultRecommendedFields);
     const newValues: Record<string, number> = {};
     for (const f of defaultRecommendedFields) {
-      newValues[f] = fieldValues[f] ?? 0;
+      // 只保留已存在的值，不设置默认值
+      if (fieldValues[f] !== undefined && !isNaN(fieldValues[f])) {
+        newValues[f] = fieldValues[f];
+      }
     }
     setFieldValues(newValues);
   }, [defaultRecommendedFields, fieldValues]);
@@ -765,11 +731,14 @@ export default function OriginalFieldRadar({
       const min = Math.min(...values);
       const mean = values.reduce((a, b) => a + b, 0) / values.length;
       const median = calculateQuantile(values, 0.5);
-      const percentile = calculateFieldPercentile(values, s.userValue);
+      
+      // 判断是否为排名字段（排名字段需要反转百分位计算方向）
+      const isRankField = getFieldRole(s.field) === 'rank';
+      const percentile = calculateFieldPercentile(values, s.userValue, isRankField);
 
       return { field: s.field, userValue: s.userValue, percentile, max, min, mean, median, count: values.length };
     });
-  }, [selections, rows]);
+  }, [selections, rows, getFieldRole]);
 
   const sortedStats = useMemo(() => {
     return [...rawStats].sort((a, b) => b.percentile - a.percentile);
@@ -786,8 +755,8 @@ export default function OriginalFieldRadar({
     });
   }, [rawStats, selections]);
 
-  const validStats = sortedStats.filter(s => s.userValue > 0);
-  const validRadarStats = radarStats.filter(s => s.userValue > 0);
+  const validStats = useMemo(() => sortedStats.filter(s => s.userValue !== undefined && Number.isFinite(s.userValue)), [sortedStats]);
+  const validRadarStats = useMemo(() => radarStats.filter(s => s.userValue !== undefined && Number.isFinite(s.userValue)), [radarStats]);
 
   // 条形图
   const barOption: EChartsOption | null = useMemo(() => {
@@ -796,7 +765,14 @@ export default function OriginalFieldRadar({
     const fields = reversed.map(s => s.field);
     const percentiles = reversed.map(s => s.percentile);
 
+    // 只有当 token 未被消费时才播放动画
+    const shouldAnimate = consumedTokenRef.current !== animationToken;
+
     return {
+      animation: shouldAnimate,
+      animationDuration: shouldAnimate ? 700 : 0,
+      animationEasing: 'cubicOut',
+      animationDurationUpdate: 0, // 数据更新时不播放动画
       title: {
         text: '原表字段相对位置分析',
         left: 'center',
@@ -837,7 +813,7 @@ export default function OriginalFieldRadar({
         barMaxWidth: 28,
       }],
     } as EChartsOption;
-  }, [validStats]);
+  }, [validStats, viewMode, animationToken]);
 
   // 雷达图
   const radarOption: EChartsOption | null = useMemo(() => {
@@ -848,7 +824,14 @@ export default function OriginalFieldRadar({
       .map(s => `${s.field}: ${s.userValue} → ${s.percentile.toFixed(1)}%`)
       .join('<br/>');
 
+    // 只有当 token 未被消费时才播放动画
+    const shouldAnimate = consumedTokenRef.current !== animationToken;
+
     return {
+      animation: shouldAnimate,
+      animationDuration: shouldAnimate ? 700 : 0,
+      animationEasing: 'cubicOut',
+      animationDurationUpdate: 0, // 数据更新时不播放动画
       title: {
         text: '原表字段相对位置分析', left: 'center',
         textStyle: { fontSize: 14, fontWeight: 600, color: '#334155' },
@@ -872,7 +855,15 @@ export default function OriginalFieldRadar({
         }],
       }],
     } as EChartsOption;
-  }, [validRadarStats]);
+  }, [validRadarStats, viewMode, animationToken]);
+
+  // 图表渲染后消费 token，阻止后续重复动画
+  useEffect(() => {
+    const shouldAnimate = consumedTokenRef.current !== animationToken;
+    if (shouldAnimate && ((viewMode === 'bar' && barOption) || (viewMode === 'radar' && radarOption))) {
+      consumedTokenRef.current = animationToken;
+    }
+  }, [viewMode, animationToken, barOption, radarOption]);
 
   const conclusion = useMemo(() => {
     if (validStats.length < 2) return null;
@@ -998,8 +989,24 @@ export default function OriginalFieldRadar({
                 <input
                   type="number"
                   style={styles.fieldInput}
-                  value={sel.userValue || ''}
-                  onChange={e => updateField(index, 'userValue', parseFloat(e.target.value) || 0)}
+                  value={sel.userValue !== undefined ? sel.userValue : ''}
+                  onChange={e => {
+                    const val = e.target.value.trim();
+                    if (val === '') {
+                      // 清空输入时，删除该字段的值
+                      const fieldName = selectedFields[index];
+                      setFieldValues(prev => {
+                        const next = { ...prev };
+                        delete next[fieldName];
+                        return next;
+                      });
+                    } else {
+                      const num = parseFloat(val);
+                      if (!isNaN(num)) {
+                        updateField(index, 'userValue', num);
+                      }
+                    }
+                  }}
                   placeholder="输入你的数值"
                 />
               </label>
@@ -1075,13 +1082,23 @@ export default function OriginalFieldRadar({
       {validStats.length > 0 && (
         <div style={styles.toggleRow}>
           <button
-            onClick={() => setViewMode('bar')}
+            onClick={() => {
+              if (viewMode !== 'bar') {
+                setViewMode('bar');
+                setAnimationToken(t => t + 1);
+              }
+            }}
             style={{ ...styles.toggleButton, ...(viewMode === 'bar' ? styles.toggleActive : {}) }}
           >
             条形图
           </button>
           <button
-            onClick={() => setViewMode('radar')}
+            onClick={() => {
+              if (viewMode !== 'radar') {
+                setViewMode('radar');
+                setAnimationToken(t => t + 1);
+              }
+            }}
             disabled={validStats.length < 2}
             style={{
               ...styles.toggleButton,

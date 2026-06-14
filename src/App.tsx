@@ -144,19 +144,8 @@ export default function App() {
     return generateExplanation(fieldValues, fieldData, rankFields);
   }, [parsedData, originalFieldState, parseSummary]);
 
-  // 调试：监听 originalFieldState 变化
-  useEffect(() => {
-    console.debug('[App] originalFieldState CHANGED - selections:', originalFieldState?.selections?.length ?? 0, 'state:', originalFieldState);
-  }, [originalFieldState]);
-
-  // 调试：监听 inputValue 变化
-  useEffect(() => {
-    console.debug('[App] inputValue CHANGED:', inputValue, 'current originalFieldState.selections:', originalFieldState?.selections?.length ?? 0);
-  }, [inputValue]);
-
   // ===== 自动保存 =====
   useEffect(() => {
-    console.debug('[App] Auto-save triggered - originalFieldState.selections:', originalFieldState?.selections?.length ?? 0, 'inputValue:', inputValue);
     try {
       saveState({
         version: 2,
@@ -399,6 +388,7 @@ export default function App() {
     setParseSummary(null);
     setAvailableSheets(null);
     setSelectedSheet(null);
+    setOriginalFieldState({ selections: [], viewMode: 'bar' });
     parseTableFile(file)
       .then(result => {
         setParsedData(result);
@@ -434,6 +424,7 @@ export default function App() {
   // 切换 sheet 重新解析
   const handleSheetChange = useCallback((sheetName: string) => {
     setSelectedSheet(sheetName);
+    setOriginalFieldState({ selections: [], viewMode: 'bar' });
     // 需要重新上传文件来解析不同 sheet，这里提示用户
     if (parsedData && (parsedData as ParsedFileResult).reparseSheet) {
       (parsedData as ParsedFileResult).reparseSheet!(sheetName)
