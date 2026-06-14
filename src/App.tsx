@@ -422,24 +422,6 @@ export default function App() {
     setTimeout(() => setSaveMsg(null), 2000);
   }, []);
 
-  const handleFillSample = useCallback(() => {
-    if (rawText.trim() && !window.confirm('当前输入会被示例数据覆盖，是否继续？')) return;
-    const def = getSystemDefaultState();
-    setRawText(def.rawText);
-    try {
-      const result = parseTableText(def.rawText);
-      setParsedData(result);
-      setParseWarnings(result.warnings || []);
-      setParseError(null);
-      setSelectedField(def.selectedField);
-      setInputValue(def.inputValue);
-      setActiveChartTab(def.activeChartTab as ChartTab);
-      setTraditionalEntries(def.traditionalSubjectRadar.entries);
-      // textarea 回到顶部
-      setTimeout(() => { textareaRef.current?.scrollTo({ top: 0 }); }, 0);
-    } catch { /* 静默 */ }
-  }, [rawText]);
-
   const handleLoadSampleDataset = useCallback((dataset: SampleDataset) => {
     if (rawText.trim() && !window.confirm('当前输入会被示例数据覆盖，是否继续？')) return;
 
@@ -668,7 +650,6 @@ export default function App() {
           />
           <div style={styles.parseRow}>
             <button className="parse-btn" style={styles.parseButton} onClick={handleParse}>解析数据</button>
-            <button className="sample-btn" style={styles.sampleButton} onClick={handleFillSample}>填入示例数据</button>
           </div>
           {parseError && <p style={styles.error}>{parseError}</p>}
           {fileError && <p style={styles.error}>{fileError}</p>}
