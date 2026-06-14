@@ -90,10 +90,12 @@ export default function UpdateNotice() {
 const styles: Record<string, React.CSSProperties> = {
   container: {
     background: '#fff',
-    borderRadius: '10px',
+    borderRadius: '12px',
     marginBottom: '12px',
-    boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
+    border: '1px solid rgba(226, 232, 240, 0.6)',
     overflow: 'hidden',
+    transition: 'box-shadow 0.2s',
   },
   header: {
     display: 'flex',
@@ -103,6 +105,7 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     userSelect: 'none',
     borderBottom: '1px solid #f1f5f9',
+    transition: 'background 0.15s',
   },
   headerLeft: {
     display: 'flex',

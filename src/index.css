@@ -1,0 +1,214 @@
+/* 全局样式 - 背景花纹、动画、视觉增强 */
+
+/* 页面背景 - 淡蓝灰底 + 柔和光斑 */
+body {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  background-attachment: fixed;
+  position: relative;
+  min-height: 100vh;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    radial-gradient(ellipse 800px 600px at 20% 30%, rgba(99, 102, 241, 0.04) 0%, transparent 70%),
+    radial-gradient(ellipse 600px 500px at 80% 70%, rgba(139, 92, 246, 0.03) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 淡网格背景 - 用于大容器 */
+.grid-pattern {
+  position: relative;
+}
+
+.grid-pattern::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    linear-gradient(rgba(99, 102, 241, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99, 102, 241, 0.03) 1px, transparent 1px);
+  background-size: 20px 20px;
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+/* 卡片悬浮动画 */
+.card-hover {
+  transition: transform 180ms ease-out, box-shadow 180ms ease-out, border-color 180ms ease-out;
+}
+
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.08);
+}
+
+/* 按钮动画 */
+.btn-animated {
+  transition: transform 150ms ease-out, box-shadow 150ms ease-out, background 150ms ease-out;
+}
+
+.btn-animated:hover {
+  transform: translateY(-1px);
+}
+
+.btn-animated:active {
+  transform: scale(0.98);
+}
+
+/* 展开/折叠动画 */
+.expandable-content {
+  overflow: hidden;
+  transition: max-height 220ms ease-out, opacity 180ms ease-out;
+}
+
+/* 渐入动画 */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in-up {
+  animation: fadeInUp 0.25s ease-out;
+}
+
+/* 渐显动画 */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* 主按钮渐变背景 */
+.btn-primary-gradient {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  border: none;
+  color: white;
+  font-weight: 500;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
+}
+
+.btn-primary-gradient:hover {
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.35);
+}
+
+/* 卡片标题色条 */
+.section-title-bar {
+  position: relative;
+  padding-left: 12px;
+}
+
+.section-title-bar::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  background: linear-gradient(180deg, #6366f1 0%, #8b5cf6 100%);
+  border-radius: 2px;
+}
+
+/* 标签样式 */
+.tag-soft {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #ede9fe 0%, #e0e7ff 100%);
+  color: #6366f1;
+}
+
+/* 统计数字强调 */
+.stat-highlight {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-weight: 600;
+}
+
+/* 示例数据卡片 */
+.sample-card {
+  transition: all 180ms ease-out;
+  border: 1px solid #e2e8f0;
+}
+
+.sample-card:hover {
+  border-color: #a5b4fc;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.1);
+  transform: translateY(-1px);
+}
+
+/* 尊重用户偏好 - 减少动画 */
+@media (prefers-reduced-motion: reduce) {
+  .card-hover,
+  .btn-animated,
+  .expandable-content,
+  .fade-in-up,
+  .fade-in,
+  .sample-card {
+    transition: none !important;
+    animation: none !important;
+  }
+  
+  .card-hover:hover,
+  .btn-animated:hover,
+  .sample-card:hover {
+    transform: none !important;
+  }
+}
+
+/* 移动端优化 - 减少复杂背景 */
+@media (max-width: 768px) {
+  body::before {
+    background: 
+      radial-gradient(ellipse 400px 300px at 20% 30%, rgba(99, 102, 241, 0.03) 0%, transparent 70%);
+  }
+  
+  .grid-pattern::before {
+    background-size: 30px 30px;
+    opacity: 0.3;
+  }
+}
+
+/* 滚动条美化 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #a5b4fc 0%, #8b5cf6 100%);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #818cf8 0%, #7c3aed 100%);
+}
