@@ -11,6 +11,7 @@
     "test:parser": "node scripts/testParser.mjs",
     "test:parseReport": "node scripts/testParseReport.mjs",
     "test:analysis-explainer": "node scripts/testAnalysisExplainer.mjs",
+    "test:mobile-compatibility": "node scripts/testMobileCompatibility.mjs",
     "finalAcceptance": "node scripts/finalAcceptance.mjs"
   },
   "dependencies": {

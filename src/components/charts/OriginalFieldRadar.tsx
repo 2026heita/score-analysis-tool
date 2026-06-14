@@ -193,6 +193,22 @@ export default function OriginalFieldRadar({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 监听窗口 resize 和 orientationchange，触发图表重绘
+  useEffect(() => {
+    const handleResize = () => {
+      // 触发自定义事件，让 echarts-for-react 重新计算尺寸
+      window.dispatchEvent(new Event('chart-resize'));
+    };
+    
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
+  }, []);
+
   // 使用 useLayoutEffect 同步更新缓存，确保在组件重新挂载前缓存已更新
   useLayoutEffect(() => {
     _cachedSelectedFields = selectedFields;
@@ -1113,10 +1129,26 @@ export default function OriginalFieldRadar({
 
       {/* 图表 */}
       {viewMode === 'bar' && barOption && (
-        <ReactECharts option={barOption} style={{ height: Math.max(300, validStats.length * 40 + 80), width: '100%' }} />
+        <div style={{ minHeight: '320px', width: '100%' }}>
+          <ReactECharts option={barOption} style={{ height: Math.max(320, validStats.length * 40 + 80), width: '100%' }} />
+        </div>
       )}
       {viewMode === 'radar' && radarOption && (
-        <ReactECharts option={radarOption} style={{ height: '400px', width: '100%' }} />
+        <div style={{ minHeight: '320px', width: '100%' }}>
+          <ReactECharts option={radarOption} style={{ height: '400px', width: '100%' }} />
+        </div>
+      )}
+      
+      {/* 图表无法渲染提示 */}
+      {selections.length > 0 && validStats.length === 0 && (
+        <div style={styles.errorBox}>
+          <p style={{ margin: 0, color: '#dc2626' }}>
+            当前字段数据中有效数值不足，无法计算百分位。
+          </p>
+          <p style={{ margin: '8px 0 0', fontSize: '14px', color: '#64748b' }}>
+            请检查字段值是否已填写，或尝试重新选择字段。
+          </p>
+        </div>
       )}
 
       {/* 当前参与分析字段列表 */}

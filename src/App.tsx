@@ -16,6 +16,7 @@ import RadarAnalysis from './components/charts/RadarAnalysis';
 import QuartilePieChart from './components/charts/QuartilePieChart';
 import ParseReportPanel from './components/ParseReportPanel';
 import AnalysisExplainer from './components/AnalysisExplainer';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const EXCLUDED_KEYWORDS = ['名次', '排名', '序号', '编号', '序号号'];
 
@@ -72,6 +73,7 @@ export default function App() {
   const [showAllFields, setShowAllFields] = useState(false);
   const [activeChartTab, setActiveChartTab] = useState<ChartTab>('histogram');
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [isParsing, setIsParsing] = useState(false);
 
   // ===== 解析报告派生（只读，不修改任何状态） =====
   const parseReport = useMemo(() => {
@@ -186,9 +188,15 @@ export default function App() {
   }, [rawText]);
 
   // ===== 字段值提取 =====
+  // 防卡死保护：大表格时限制计算范围
   const rawFieldValues = useMemo(() => {
     if (!parsedData || !selectedField) return [];
-    return parsedData.rows.map(row => {
+    
+    // 大表格保护：超过 5000 行时，只计算前 5000 行
+    const maxRows = Math.min(parsedData.rows.length, 5000);
+    const limitedRows = parsedData.rows.slice(0, maxRows);
+    
+    return limitedRows.map(row => {
       const val = row[selectedField];
       if (val === undefined || val === '' || val === null) return null;
       const num = parseFloat(val);
@@ -238,8 +246,36 @@ export default function App() {
       return parsedData.headers;
     }
     // 默认视图：只显示推荐分析字段
-    return parsedData.headers.filter(h => isRecommendedField(h) && !shouldExclude(h));
-  }, [parsedData, showAllFields, isRecommendedField, shouldExclude]);
+    const recommended = parsedData.headers.filter(h => isRecommendedField(h) && !shouldExclude(h));
+    
+    // 兜底：如果推荐字段为空，但有数值字段，提供手动选择入口
+    if (recommended.length === 0 && parsedData.headers.length > 0) {
+      // 找出数值比例较高的 unknown 字段（排除 identity/textMeta/invalid）
+      const numericCandidates = parsedData.headers.filter(h => {
+        const role = getFieldAnalysisRole(h);
+        // 排除身份、文本、无效字段
+        if (role === 'identity' || role === 'textMeta' || role === 'invalid' || role === 'adjustment') {
+          return false;
+        }
+        // 检查是否为数值字段
+        return isNumericField(h) && !shouldExclude(h);
+      });
+      
+      if (numericCandidates.length > 0) {
+        // 返回数值候选字段，但不自动推荐，只提供手动选择入口
+        return numericCandidates;
+      }
+    }
+    
+    return recommended;
+  }, [parsedData, showAllFields, isRecommendedField, shouldExclude, getFieldAnalysisRole, isNumericField]);
+
+  // 判断是否处于兜底状态（recommendedFields 为空但存在数值候选字段）
+  const isFallbackFieldMode = useMemo(() => {
+    if (!parsedData || showAllFields) return false;
+    const recommended = parsedData.headers.filter(h => isRecommendedField(h) && !shouldExclude(h));
+    return recommended.length === 0 && availableFields.length > 0;
+  }, [parsedData, showAllFields, isRecommendedField, shouldExclude, availableFields]);
 
   // 分组字段（用于"显示全部字段"时的 optgroup）
   const groupedFields = useMemo(() => {
@@ -270,8 +306,26 @@ export default function App() {
   }, [parsedData, showAllFields, getFieldAnalysisRole]);
 
   // ===== 统计计算（先定义，供后续 useCallback 使用） =====
+  // 防卡死保护：大表格时只对已选字段做计算
   const stats: StatsResult | null = useMemo(() => {
     if (!parsedData || !selectedField || fieldValues.length === 0) return null;
+    
+    // 大表格保护：超过 5000 行时，只计算前 5000 行
+    if (parsedData.rows.length > 5000) {
+      // 只提取前 5000 行的当前字段数据
+      const limitedValues = parsedData.rows
+        .slice(0, 5000)
+        .map(row => {
+          const val = row[selectedField];
+          if (val === undefined || val === '' || val === null) return null;
+          const num = parseFloat(val);
+          return isNaN(num) ? null : num;
+        })
+        .filter((v): v is number => v !== null && Number.isFinite(v));
+      
+      return calculateStats(limitedValues, limitedValues.length);
+    }
+    
     return calculateStats(rawFieldValues, parsedData.rows.length);
   }, [rawFieldValues, parsedData, selectedField, fieldValues]);
 
@@ -389,11 +443,30 @@ export default function App() {
     setAvailableSheets(null);
     setSelectedSheet(null);
     setOriginalFieldState({ selections: [], viewMode: 'bar' });
+    setIsParsing(true);
+    
+    // 大文件提示
+    if (file.size > 5 * 1024 * 1024) {
+      setTimeout(() => {
+        setParseWarnings(['文件较大，解析可能需要几秒，请耐心等待...']);
+      }, 100);
+    }
+    
     parseTableFile(file)
       .then(result => {
         setParsedData(result);
         setParseWarnings(result.warnings || []);
         setParseError(null);
+        setIsParsing(false);
+        
+        // 大表格提示
+        if (result.rows.length > 5000) {
+          setParseWarnings([
+            ...result.warnings,
+            `当前数据量较大（${result.rows.length} 行），为避免卡顿，所有分析结果（包括排名、百分位等）仅基于前 5000 行数据计算。如需全表分析，请谨慎核对结果。`
+          ]);
+        }
+        
         // 保存解析摘要
         if (result.summary) {
           setParseSummary(result.summary);
@@ -416,6 +489,7 @@ export default function App() {
         setParsedData(null);
         setParseWarnings([]);
         setParseSummary(null);
+        setIsParsing(false);
       });
     // 重置 input，允许重复选择同一文件
     e.target.value = '';
@@ -560,6 +634,7 @@ export default function App() {
           </div>
           {parseError && <p style={styles.error}>{parseError}</p>}
           {fileError && <p style={styles.error}>{fileError}</p>}
+          {isParsing && <p style={styles.loading}>正在解析文件...</p>}
           {parseWarnings.map((w, i) => (
             <p key={i} style={styles.warning}>{w}</p>
           ))}
@@ -571,7 +646,29 @@ export default function App() {
 
         {parsedData && availableFields.length === 0 && (
           <section style={{ ...styles.section, ...styles.errorSection }}>
-            <p style={styles.errorText}>当前表格没有可分析的数值字段。</p>
+            <p style={styles.errorText}>
+              {(() => {
+                // 诊断不同原因显示不同提示
+                if (!parsedData.rows || parsedData.rows.length === 0) {
+                  return '表格数据为空，请检查是否成功读取到数据行。';
+                }
+                if (!parsedData.headers || parsedData.headers.length === 0) {
+                  return '未识别到表头字段，请确认第一行为字段名。';
+                }
+                if (parseSummary?.fieldTypes) {
+                  const allInvalid = parseSummary.fieldTypes.every(
+                    m => m.analysisRole === 'invalid' || m.analysisRole === 'identity' || m.analysisRole === 'textMeta'
+                  );
+                  if (allInvalid) {
+                    return '已识别字段，但未发现成绩类字段，请尝试打开"显示全部字段"并手动选择数值字段。';
+                  }
+                }
+                return '当前表格没有可分析的数值字段，请尝试打开"显示全部字段"并手动选择。';
+              })()}
+            </p>
+            <p style={styles.hint}>
+              如果文件包含复杂表头，建议使用 Excel 复制表格后粘贴文本方式。
+            </p>
           </section>
         )}
 
@@ -634,6 +731,14 @@ export default function App() {
 
             <section style={styles.section}>
               <h2 style={styles.sectionTitle}>分析设置</h2>
+              {isFallbackFieldMode && (
+                <div style={styles.fallbackHint}>
+                  <p style={{ margin: '0 0 4px 0', fontWeight: 500 }}>系统未能自动推荐字段，但检测到若干数值字段，可手动选择后分析。</p>
+                  <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>
+                    建议打开"显示全部字段"以查看完整字段列表，或尝试粘贴表格文本方式。
+                  </p>
+                </div>
+              )}
               <div style={styles.settingsRow}>
                 <div style={styles.settingItem}>
                   <label style={styles.settingLabel}>分析字段</label>
@@ -707,6 +812,7 @@ export default function App() {
             )}
 
             {stats && (
+              <ErrorBoundary>
               <section style={styles.section}>
                 <h2 style={styles.sectionTitle}>统计指标</h2>
                 <div style={styles.statsGrid}>
@@ -722,9 +828,11 @@ export default function App() {
                   <StatCard label="95% 分位" value={formatNumber(stats.q95)} />
                 </div>
               </section>
+              </ErrorBoundary>
             )}
 
             {position && stats && !isNaN(inputNum) && (
+              <ErrorBoundary>
               <section style={styles.section}>
                 <div style={styles.positionHeader}>
                   <h2 style={styles.sectionTitle}>排名定位</h2>
@@ -757,9 +865,11 @@ export default function App() {
                   <p style={styles.warning}>你的数值超出当前字段数据范围，排名结果仅作为插入估算。</p>
                 )}
               </section>
+              </ErrorBoundary>
             )}
 
             {parsedData && (
+              <ErrorBoundary>
               <section style={styles.section}>
                 <h2 style={styles.sectionTitle}>图表分析</h2>
 
@@ -790,9 +900,12 @@ export default function App() {
                 </div>
 
                 {analysisExplanation && (
-                  <AnalysisExplainer explanation={analysisExplanation} />
+                  <ErrorBoundary>
+                    <AnalysisExplainer explanation={analysisExplanation} />
+                  </ErrorBoundary>
                 )}
               </section>
+              </ErrorBoundary>
             )}
           </>
         )}
@@ -867,6 +980,7 @@ const styles: Record<string, React.CSSProperties> = {
   copyButton: { padding: '4px 12px', background: '#f0f7ff', color: '#3b82f6', border: '1px solid #93c5fd', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 500, whiteSpace: 'nowrap', transition: 'all 0.15s' },
   error: { margin: '8px 0 0', color: '#ef4444', fontSize: '14px' },
   warning: { margin: '8px 0 0', color: '#92400e', fontSize: '13px', background: '#fffbeb', padding: '6px 10px', borderRadius: '6px' },
+  loading: { margin: '8px 0 0', color: '#2563eb', fontSize: '14px', fontWeight: 500 },
   errorSection: { border: '1px solid #fecaca', background: '#fef2f2' },
   errorText: { margin: 0, color: '#dc2626', fontSize: '14px', fontWeight: 500 },
   infoRow: { display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' },
