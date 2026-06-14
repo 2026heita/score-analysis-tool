@@ -8,6 +8,7 @@ import { generateExplanation } from './utils/analysisExplainer';
 import type { ParsedTable, StatsResult, PositionResult, ChartTab, OriginalFieldRadarState, TraditionalSubjectEntry } from './types';
 import type { ParseSummary } from './utils/tableParser/types';
 import UsageGuide from './components/UsageGuide';
+import UpdateNotice from './components/UpdateNotice';
 import ChartTabs from './components/charts/ChartTabs';
 import HistogramChart from './components/charts/HistogramChart';
 import BoxPlotChart from './components/charts/BoxPlotChart';
@@ -606,6 +607,7 @@ export default function App() {
         <section style={styles.section}>
           <h2 style={styles.sectionTitle}>数据输入</h2>
           <UsageGuide />
+          <UpdateNotice />
           <p style={styles.hint}>建议直接从 Excel 复制整块表格后粘贴到下方文本框中。</p>
           <p style={styles.rowLimitHint}>建议单次粘贴数据量不超过 2 万行。数据量过大时，浏览器可能出现卡顿。</p>
           <div style={styles.fileUploadRow}>
