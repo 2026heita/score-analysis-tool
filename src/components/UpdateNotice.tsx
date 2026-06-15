@@ -78,7 +78,9 @@ export default function UpdateNotice() {
         <div style={styles.body}>
           <div style={styles.scrollContainer}>
             {updateLogs.map((log, idx) => (
-              <LogEntry key={idx} log={log} />
+              <div key={idx} className={idx === 0 ? 'log-entry-latest' : ''}>
+                <LogEntry log={log} />
+              </div>
             ))}
           </div>
         </div>
