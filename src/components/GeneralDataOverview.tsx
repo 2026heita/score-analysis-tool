@@ -8,6 +8,7 @@ import { useState, useMemo } from 'react';
 import { detectDatasetSchema } from '../engine/schemaDetector';
 import { standardizeDataset } from '../engine/featureStandardizer';
 import { analyzeNumericalFeature, detectOutliers } from '../engine/univariateAnalyzer';
+import { MAX_ROWS } from '../engine/analysisEngine';
 import type { FeatureSchema, FeatureType, FeatureStats } from '../engine/types';
 
 interface GeneralDataOverviewProps {
@@ -28,8 +29,6 @@ interface OverviewSummary {
   }>;
   warnings: string[];
 }
-
-const MAX_ROWS = 5000;
 
 function computeOverview(headers: string[], rows: Record<string, string>[]): OverviewSummary {
   const totalRows = rows.length;
