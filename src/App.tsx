@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { parseTableText } from './utils/parseTable';
 import { parseTableFile, type ParsedFileResult } from './utils/fileImport';
 import { formatNumber } from './utils/stats';
-import { saveState, loadSavedState, clearSavedState, getSystemDefaultState } from './utils/storage';
+import { usePersistedState } from './hooks/usePersistedState';
 import { buildParseReport } from './utils/tableParser';
 import { generateExplanation } from './utils/analysisExplainer';
 import { APP_VERSION } from './config/version';
@@ -29,6 +29,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 const EXCLUDED_KEYWORDS = ['名次', '排名', '序号', '编号', '序号号'];
 
 export default function App() {
+  const { loadState, save, clear, getDefault } = usePersistedState();
   const [showSampleSelector, setShowSampleSelector] = useState(false);
   
   // ===== 注入全局动画样式 =====
@@ -68,7 +69,7 @@ export default function App() {
     return () => { document.head.removeChild(style); };
   }, []);
 
-  const savedState = useMemo(() => loadSavedState(), []);
+  const savedState = useMemo(() => loadState(), [loadState]);
 
   const [rawText, setRawText] = useState('');
   const [parsedData, setParsedData] = useState<ParsedTable | null>(null);
@@ -185,20 +186,18 @@ export default function App() {
 
   // ===== 自动保存 =====
   useEffect(() => {
-    try {
-      saveState({
-        version: 2,
-        rawText,
-        selectedField,
-        inputValue,
-        showAllFields,
-        activeChartTab,
-        originalFieldRadar: originalFieldState,
-        traditionalSubjectRadar: { entries: traditionalEntries },
-        analysisMode: 'scoreRate',
-      } as any);
-    } catch { /* 静默 */ }
-  }, [rawText, selectedField, inputValue, showAllFields, activeChartTab, originalFieldState, traditionalEntries]);
+    save({
+      version: 2,
+      rawText,
+      selectedField,
+      inputValue,
+      showAllFields,
+      activeChartTab,
+      originalFieldRadar: originalFieldState,
+      traditionalSubjectRadar: { entries: traditionalEntries },
+      analysisMode: 'scoreRate',
+    });
+  }, [rawText, selectedField, inputValue, showAllFields, activeChartTab, originalFieldState, traditionalEntries, save]);
 
   // ===== 页面加载后恢复保存状态 =====
   useEffect(() => {
@@ -378,7 +377,7 @@ export default function App() {
   }, [rawText]);
 
   const handleSave = useCallback(() => {
-    saveState({
+    save({
       version: 1,
       rawText,
       selectedField,
@@ -388,13 +387,13 @@ export default function App() {
       originalFieldRadar: originalFieldState,
       traditionalSubjectRadar: { entries: traditionalEntries },
       analysisMode: 'scoreRate',
-    } as any);
+    });
     setSaveMsg('已保存当前输入');
     setTimeout(() => setSaveMsg(null), 2000);
-  }, [rawText, selectedField, inputValue, showAllFields, activeChartTab, originalFieldState, traditionalEntries]);
+  }, [rawText, selectedField, inputValue, showAllFields, activeChartTab, originalFieldState, traditionalEntries, save]);
 
   const handleReset = useCallback(() => {
-    const def = getSystemDefaultState();
+    const def = getDefault();
     setRawText(def.rawText);
     setSelectedField(def.selectedField);
     setInputValue(def.inputValue);
@@ -408,15 +407,15 @@ export default function App() {
       setParseWarnings(result.warnings || []);
       setParseError(null);
     } catch { setParsedData(null); }
-    saveState(def as any);
+    save(def);
     setSaveMsg('已恢复默认设置');
     setTimeout(() => setSaveMsg(null), 2000);
     // textarea 回到顶部
     setTimeout(() => { textareaRef.current?.scrollTo({ top: 0 }); }, 0);
-  }, []);
+  }, [getDefault, save]);
 
   const handleClear = useCallback(() => {
-    clearSavedState();
+    clear();
     setRawText(''); setParsedData(null); setParseError(null); setParseWarnings([]);
     setSelectedField(''); setInputValue(''); setShowAllFields(false);
     setActiveChartTab('histogram');
@@ -424,7 +423,7 @@ export default function App() {
     setTraditionalEntries([]);
     setSaveMsg('已清空数据');
     setTimeout(() => setSaveMsg(null), 2000);
-  }, []);
+  }, [clear]);
 
   const handleFillSample = useCallback(() => {
     setShowSampleSelector(true);
