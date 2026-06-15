@@ -10,8 +10,21 @@ export interface UpdateLogItem {
 
 export const updateLogs: UpdateLogItem[] = [
   {
-    date: '2026-06-14',
+    date: '2026-06-15',
     version: APP_VERSION,
+    title: '分析更稳定，结果更一致',
+    type: 'improvement',
+    items: [
+      '表格解析更稳定，字段识别更准确',
+      '统计计算口径统一，均值、中位数、百分位等结果全局一致',
+      '新增变量关系分析，可查看字段之间的相关性',
+      '示例数据选择器优化，支持快速切换不同数据场景',
+      '移动端兼容性进一步增强，大表格加载更流畅'
+    ]
+  },
+  {
+    date: '2026-06-14',
+    version: 'v1.1.0',
     title: '新增通用数据概览',
     type: 'feature',
     items: [
