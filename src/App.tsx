@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { parseTableText } from './utils/parseTable';
 import { parseTableFile, type ParsedFileResult } from './utils/fileImport';
-import { calculateStats, calculatePosition, formatNumber } from './utils/stats';
+import { formatNumber } from './utils/stats';
 import { saveState, loadSavedState, clearSavedState, getSystemDefaultState } from './utils/storage';
 import { buildParseReport } from './utils/tableParser';
 import { generateExplanation } from './utils/analysisExplainer';
@@ -22,6 +22,7 @@ import GeneralDataOverview from './components/GeneralDataOverview';
 import RelationshipAnalysisPanel from './components/RelationshipAnalysisPanel';
 import SampleDataSelector from './components/SampleDataSelector';
 import { analyzeCorrelations, analyzeCorrelationsSimple } from './engine/correlationAnalyzer';
+import { extractFieldValues, computeStats, computePosition, isNumericField as checkIsNumericField } from './engine/analysisEngine';
 import type { SampleDataset } from './data/sampleDatasets';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -223,38 +224,24 @@ export default function App() {
     } catch { /* 忽略 */ }
   }, [rawText]);
 
-  // ===== 字段值提取 =====
-  // 防卡死保护：大表格时限制计算范围
-  const rawFieldValues = useMemo(() => {
-    if (!parsedData || !selectedField) return [];
-    
-    // 大表格保护：超过 5000 行时，只计算前 5000 行
-    const maxRows = Math.min(parsedData.rows.length, 5000);
-    const limitedRows = parsedData.rows.slice(0, maxRows);
-    
-    return limitedRows.map(row => {
-      const val = row[selectedField];
-      if (val === undefined || val === '' || val === null) return null;
-      const num = parseFloat(val);
-      return isNaN(num) ? null : num;
-    });
+  // ===== 字段值提取（使用统一分析引擎） =====
+  const fieldAnalysisResult = useMemo(() => {
+    if (!parsedData || !selectedField) return null;
+    return extractFieldValues(parsedData.rows, selectedField);
   }, [parsedData, selectedField]);
+
+  const rawFieldValues = useMemo(() => {
+    return fieldAnalysisResult?.values || [];
+  }, [fieldAnalysisResult]);
 
   const fieldValues = useMemo(() => {
     return rawFieldValues.filter((v): v is number => v !== null && Number.isFinite(v));
   }, [rawFieldValues]);
 
-  // ===== 字段判断 =====
+  // ===== 字段判断（使用统一分析引擎） =====
   const isNumericField = useCallback((header: string): boolean => {
     if (!parsedData) return false;
-    const values = parsedData.rows.map(row => {
-      const val = row[header];
-      if (val === undefined || val === '' || val === null) return null;
-      const num = parseFloat(val);
-      return isNaN(num) ? null : num;
-    });
-    const numericCount = values.filter((v): v is number => v !== null).length;
-    return numericCount > parsedData.rows.length * 0.5;
+    return checkIsNumericField(parsedData.rows, header);
   }, [parsedData]);
 
   const shouldExclude = useCallback((header: string): boolean => {
@@ -341,35 +328,21 @@ export default function App() {
     return { recommended, adjustment, identity, textMeta, others };
   }, [parsedData, showAllFields, getFieldAnalysisRole]);
 
-  // ===== 统计计算（先定义，供后续 useCallback 使用） =====
-  // 防卡死保护：大表格时只对已选字段做计算
+  // ===== 统计计算（使用统一分析引擎） =====
   const stats: StatsResult | null = useMemo(() => {
     if (!parsedData || !selectedField || fieldValues.length === 0) return null;
     
-    // 大表格保护：超过 5000 行时，只计算前 5000 行
-    if (parsedData.rows.length > 5000) {
-      // 只提取前 5000 行的当前字段数据
-      const limitedValues = parsedData.rows
-        .slice(0, 5000)
-        .map(row => {
-          const val = row[selectedField];
-          if (val === undefined || val === '' || val === null) return null;
-          const num = parseFloat(val);
-          return isNaN(num) ? null : num;
-        })
-        .filter((v): v is number => v !== null && Number.isFinite(v));
-      
-      return calculateStats(limitedValues, limitedValues.length);
-    }
-    
-    return calculateStats(rawFieldValues, parsedData.rows.length);
-  }, [rawFieldValues, parsedData, selectedField, fieldValues]);
+    // 使用统一分析引擎的 computeStats，它已经处理了 5000 行截断
+    return computeStats(fieldValues, fieldAnalysisResult?.truncatedRows || parsedData.rows.length);
+  }, [fieldValues, fieldAnalysisResult, parsedData, selectedField]);
 
   const position: PositionResult | null = useMemo(() => {
     if (!inputValue || fieldValues.length === 0) return null;
     const val = parseFloat(inputValue);
     if (isNaN(val)) return null;
-    return calculatePosition(fieldValues, val);
+    
+    // 使用统一分析引擎的 computePosition
+    return computePosition(fieldValues, val);
   }, [fieldValues, inputValue]);
 
   const inputNum = inputValue ? parseFloat(inputValue) : NaN;

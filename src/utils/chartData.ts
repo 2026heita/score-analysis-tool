@@ -70,20 +70,6 @@ export function generateCdf(values: number[]): CdfPoint[] {
 }
 
 /**
- * 计算字段内百分位：低于该值人数 / 有效人数 * 100
- * @param isRankField 是否为排名字段（排名数值越小越好，需要反转百分位计算）
- */
-export function calculateFieldPercentile(values: number[], inputValue: number, isRankField: boolean = false): number {
-  if (!values || values.length === 0) return 0;
-  const cleanValues = values.filter(v => Number.isFinite(v));
-  if (cleanValues.length === 0) return 0;
-  const lowerCount = isRankField
-    ? cleanValues.filter(v => v > inputValue).length
-    : cleanValues.filter(v => v < inputValue).length;
-  return (lowerCount / cleanValues.length) * 100;
-}
-
-/**
  * 标准化分数：实际分 / 满分 * 100
  */
 export function normalizeScore(score: number, maxScore: number): number {

@@ -1,8 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
-import { calculateFieldPercentile } from '../../utils/chartData';
-import { calculateQuantile } from '../../utils/stats';
+import { extractFieldValues, computeStats, computePercentile, isRankField as checkIsRankField } from '../../engine/analysisEngine';
 import { parseNumericValue } from '../../utils/tableParser/numericParser';
 import type { OriginalFieldRadarState } from '../../types';
 
@@ -732,29 +731,22 @@ export default function OriginalFieldRadar({
     '物理', '化学', '生物', '政治', '历史', '地理',
   ];
 
-  // 计算各字段的百分位
+  // 计算各字段的百分位（使用统一分析引擎）
   const rawStats = useMemo(() => {
     return selections.map(s => {
-      const values = rows
-        .map(r => parseFloat(r[s.field]))
-        .filter(v => Number.isFinite(v));
+      const result = extractFieldValues(rows, s.field);
+      const stats = computeStats(result.values, result.truncatedRows);
 
-      if (values.length === 0) {
+      if (!stats) {
         return { field: s.field, userValue: s.userValue, percentile: 0, max: 0, min: 0, mean: 0, median: 0, count: 0 };
       }
 
-      const max = Math.max(...values);
-      const min = Math.min(...values);
-      const mean = values.reduce((a, b) => a + b, 0) / values.length;
-      const median = calculateQuantile(values, 0.5);
-      
-      // 判断是否为排名字段（排名字段需要反转百分位计算方向）
-      const isRankField = getFieldRole(s.field) === 'rank';
-      const percentile = calculateFieldPercentile(values, s.userValue, isRankField);
+      // 使用统一分析引擎的百分位计算和 rank 判断
+      const percentile = computePercentile(result.values, s.userValue, checkIsRankField(s.field));
 
-      return { field: s.field, userValue: s.userValue, percentile, max, min, mean, median, count: values.length };
+      return { field: s.field, userValue: s.userValue, percentile, max: stats.max, min: stats.min, mean: stats.mean, median: stats.median, count: stats.count };
     });
-  }, [selections, rows, getFieldRole]);
+  }, [selections, rows]);
 
   const sortedStats = useMemo(() => {
     return [...rawStats].sort((a, b) => b.percentile - a.percentile);

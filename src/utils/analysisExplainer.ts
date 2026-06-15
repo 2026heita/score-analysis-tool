@@ -1,5 +1,5 @@
 import type { FieldExplanation, MultiFieldSummary, AnalysisExplanation, PerformanceTier } from '../types';
-import { calculateStats, calculateQuantile } from './stats';
+import { computeStats, computePercentile } from '../engine/analysisEngine';
 
 /**
  * 根据百分位确定表现层级
@@ -40,27 +40,27 @@ export function explainField(
     return null;
   }
 
-  // 计算统计信息
-  const stats = calculateStats(cleanValues, cleanValues.length);
+  // 计算统计信息（使用统一分析引擎）
+  const stats = computeStats(cleanValues, cleanValues.length);
   if (!stats) {
     return null;
   }
 
-  // 计算位置信息
+  // 计算位置信息（使用统一分析引擎的百分位计算）
   // 排名字段：数值越小越好，所以"超过"是指比用户值大的（排名更靠后的）
   // 普通字段：数值越大越好，所以"超过"是指比用户值小的
   const lowerCount = isRankField
     ? cleanValues.filter(v => v > userValue).length
     : cleanValues.filter(v => v < userValue).length;
-  const percentile = (lowerCount / cleanValues.length) * 100;
+  const percentile = computePercentile(cleanValues, userValue, isRankField);
 
   // 确定表现层级
   const { tier, tierLabel } = getPerformanceTier(percentile);
 
-  // 计算与分位数的差距
-  const p75 = calculateQuantile(cleanValues, 0.75);
-  const p90 = calculateQuantile(cleanValues, 0.9);
-  const p95 = calculateQuantile(cleanValues, 0.95);
+  // 计算与分位数的差距（使用统一分析引擎的分位数）
+  const p75 = stats.q75;
+  const p90 = stats.q90;
+  const p95 = stats.q95;
 
   return {
     field,

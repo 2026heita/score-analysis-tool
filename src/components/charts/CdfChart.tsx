@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
 import { generateCdf } from '../../utils/chartData';
+import { computePercentile } from '../../engine/analysisEngine';
 
 interface CdfChartProps {
   values: number[];
@@ -42,9 +43,8 @@ export default function CdfChart({ values, fieldName, userValue }: CdfChartProps
     const markPoint: any[] = [];
 
     if (userValue !== undefined) {
-      // 百分位口径：低于该值人数 / 有效人数 * 100（严格小于）
-      const lowerCount = cleanValues.filter(v => v < userValue).length;
-      const percentile = cleanValues.length > 0 ? (lowerCount / cleanValues.length) * 100 : 0;
+      // 使用统一分析引擎的百分位计算
+      const percentile = computePercentile(cleanValues, userValue, false);
 
       markPoint.push({
         coord: [userValue, percentile],
