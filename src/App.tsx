@@ -19,13 +19,15 @@ import QuartilePieChart from './components/charts/QuartilePieChart';
 import ParseReportPanel from './components/ParseReportPanel';
 import AnalysisExplainer from './components/AnalysisExplainer';
 import GeneralDataOverview from './components/GeneralDataOverview';
-import SampleDataSelector from './components/SampleDataSelector';
+import SampleDataSelector, { type SampleDataSelectorRef } from './components/SampleDataSelector';
 import type { SampleDataset } from './data/sampleDatasets';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 const EXCLUDED_KEYWORDS = ['名次', '排名', '序号', '编号', '序号号'];
 
 export default function App() {
+  const sampleSelectorRef = useRef<SampleDataSelectorRef>(null);
+  
   // ===== 注入全局动画样式 =====
   useEffect(() => {
     const style = document.createElement('style');
@@ -423,21 +425,8 @@ export default function App() {
   }, []);
 
   const handleFillSample = useCallback(() => {
-    if (rawText.trim() && !window.confirm('当前输入会被示例数据覆盖，是否继续？')) return;
-    const def = getSystemDefaultState();
-    setRawText(def.rawText);
-    try {
-      const result = parseTableText(def.rawText);
-      setParsedData(result);
-      setParseWarnings(result.warnings || []);
-      setParseError(null);
-      setSelectedField(def.selectedField);
-      setInputValue(def.inputValue);
-      setActiveChartTab(def.activeChartTab as ChartTab);
-      setTraditionalEntries(def.traditionalSubjectRadar.entries);
-      setTimeout(() => { textareaRef.current?.scrollTo({ top: 0 }); }, 0);
-    } catch { /* 静默 */ }
-  }, [rawText]);
+    sampleSelectorRef.current?.toggle();
+  }, []);
 
   const handleLoadSampleDataset = useCallback((dataset: SampleDataset) => {
     if (rawText.trim() && !window.confirm('当前输入会被示例数据覆盖，是否继续？')) return;
@@ -655,7 +644,7 @@ export default function App() {
             <span style={styles.fileUploadNote}>文件只在浏览器本地解析，不上传服务器。</span>
           </div>
           <div style={{ marginBottom: '12px' }}>
-            <SampleDataSelector onSelect={handleLoadSampleDataset} disabled={isParsing} />
+            <SampleDataSelector ref={sampleSelectorRef} onSelect={handleLoadSampleDataset} disabled={isParsing} />
           </div>
           <textarea
             ref={textareaRef}

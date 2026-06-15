@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useImperativeHandle, forwardRef } from 'react';
 import { sampleDatasets, type SampleDataset } from '../data/sampleDatasets';
 
 interface SampleDataSelectorProps {
@@ -6,75 +6,91 @@ interface SampleDataSelectorProps {
   disabled?: boolean;
 }
 
-export default function SampleDataSelector({ onSelect, disabled }: SampleDataSelectorProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string>('全部');
-
-  const categories = ['全部', ...new Set(sampleDatasets.map(ds => ds.category))];
-  
-  const filteredDatasets = selectedCategory === '全部' 
-    ? sampleDatasets 
-    : sampleDatasets.filter(ds => ds.category === selectedCategory);
-
-  const handleSelect = (dataset: SampleDataset) => {
-    onSelect(dataset);
-    setIsOpen(false);
-  };
-
-  return (
-    <div style={styles.container}>
-      <button 
-        style={styles.triggerButton}
-        onClick={() => setIsOpen(!isOpen)}
-        disabled={disabled}
-      >
-        <span style={styles.triggerIcon}>📊</span>
-        <span>没有数据？试试示例表格</span>
-        <span style={styles.arrow}>{isOpen ? '▲' : '▼'}</span>
-      </button>
-
-      {isOpen && (
-        <div style={styles.dropdown}>
-          {/* 分类筛选 */}
-          <div style={styles.categoryFilter}>
-            {categories.map(cat => (
-              <button
-                key={cat}
-                style={{
-                  ...styles.categoryButton,
-                  ...(selectedCategory === cat ? styles.categoryButtonActive : {})
-                }}
-                onClick={() => setSelectedCategory(cat)}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-
-          {/* 数据集列表 */}
-          <div style={styles.datasetList}>
-            {filteredDatasets.map(dataset => (
-              <div
-                key={dataset.id}
-                style={styles.datasetItem}
-                onClick={() => handleSelect(dataset)}
-              >
-                <div style={styles.datasetHeader}>
-                  <span style={styles.datasetName}>{dataset.name}</span>
-                  <span style={styles.datasetCategory}>{dataset.category}</span>
-                </div>
-                <div style={styles.datasetDesc}>{dataset.description}</div>
-                <div style={styles.datasetMeta}>
-                  {dataset.headers.length} 个字段 · {dataset.rows.length} 行数据
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
+export interface SampleDataSelectorRef {
+  open: () => void;
+  close: () => void;
+  toggle: () => void;
 }
+
+const SampleDataSelector = forwardRef<SampleDataSelectorRef, SampleDataSelectorProps>(
+  function SampleDataSelector({ onSelect, disabled }, ref) {
+    const [isOpen, setIsOpen] = useState(false);
+    const [selectedCategory, setSelectedCategory] = useState<string>('全部');
+
+    useImperativeHandle(ref, () => ({
+      open: () => setIsOpen(true),
+      close: () => setIsOpen(false),
+      toggle: () => setIsOpen(prev => !prev),
+    }));
+
+    const categories = ['全部', ...new Set(sampleDatasets.map(ds => ds.category))];
+    
+    const filteredDatasets = selectedCategory === '全部' 
+      ? sampleDatasets 
+      : sampleDatasets.filter(ds => ds.category === selectedCategory);
+
+    const handleSelect = (dataset: SampleDataset) => {
+      onSelect(dataset);
+      setIsOpen(false);
+    };
+
+    return (
+      <div style={styles.container}>
+        <button 
+          style={styles.triggerButton}
+          onClick={() => setIsOpen(!isOpen)}
+          disabled={disabled}
+        >
+          <span style={styles.triggerIcon}>📊</span>
+          <span>没有数据？试试示例表格</span>
+          <span style={styles.arrow}>{isOpen ? '▲' : '▼'}</span>
+        </button>
+
+        {isOpen && (
+          <div style={styles.dropdown}>
+            {/* 分类筛选 */}
+            <div style={styles.categoryFilter}>
+              {categories.map(cat => (
+                <button
+                  key={cat}
+                  style={{
+                    ...styles.categoryButton,
+                    ...(selectedCategory === cat ? styles.categoryButtonActive : {})
+                  }}
+                  onClick={() => setSelectedCategory(cat)}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+            {/* 数据集列表 */}
+            <div style={styles.datasetList}>
+              {filteredDatasets.map(dataset => (
+                <div
+                  key={dataset.id}
+                  style={styles.datasetItem}
+                  onClick={() => handleSelect(dataset)}
+                >
+                  <div style={styles.datasetHeader}>
+                    <span style={styles.datasetName}>{dataset.name}</span>
+                    <span style={styles.datasetCategory}>{dataset.category}</span>
+                  </div>
+                  <div style={styles.datasetDesc}>{dataset.description}</div>
+                  <div style={styles.datasetMeta}>
+                    {dataset.headers.length} 个字段 · {dataset.rows.length} 行数据
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+);
+
+export default SampleDataSelector;
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
