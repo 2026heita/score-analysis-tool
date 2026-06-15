@@ -19,14 +19,14 @@ import QuartilePieChart from './components/charts/QuartilePieChart';
 import ParseReportPanel from './components/ParseReportPanel';
 import AnalysisExplainer from './components/AnalysisExplainer';
 import GeneralDataOverview from './components/GeneralDataOverview';
-import SampleDataSelector, { type SampleDataSelectorRef } from './components/SampleDataSelector';
+import SampleDataSelector from './components/SampleDataSelector';
 import type { SampleDataset } from './data/sampleDatasets';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 const EXCLUDED_KEYWORDS = ['名次', '排名', '序号', '编号', '序号号'];
 
 export default function App() {
-  const sampleSelectorRef = useRef<SampleDataSelectorRef>(null);
+  const [showSampleSelector, setShowSampleSelector] = useState(false);
   
   // ===== 注入全局动画样式 =====
   useEffect(() => {
@@ -425,7 +425,7 @@ export default function App() {
   }, []);
 
   const handleFillSample = useCallback(() => {
-    sampleSelectorRef.current?.toggle();
+    setShowSampleSelector(true);
   }, []);
 
   const handleLoadSampleDataset = useCallback((dataset: SampleDataset) => {
@@ -643,9 +643,11 @@ export default function App() {
             </label>
             <span style={styles.fileUploadNote}>文件只在浏览器本地解析，不上传服务器。</span>
           </div>
-          <div style={{ marginBottom: '12px' }}>
-            <SampleDataSelector ref={sampleSelectorRef} onSelect={handleLoadSampleDataset} disabled={isParsing} />
-          </div>
+          <SampleDataSelector
+            isOpen={showSampleSelector}
+            onSelect={handleLoadSampleDataset}
+            onClose={() => setShowSampleSelector(false)}
+          />
           <textarea
             ref={textareaRef}
             style={styles.textarea}

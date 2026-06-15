@@ -1,145 +1,133 @@
-import { useState, useImperativeHandle, forwardRef } from 'react';
+import { useState } from 'react';
 import { sampleDatasets, type SampleDataset } from '../data/sampleDatasets';
 
 interface SampleDataSelectorProps {
   onSelect: (dataset: SampleDataset) => void;
-  disabled?: boolean;
+  isOpen: boolean;
+  onClose: () => void;
 }
 
-export interface SampleDataSelectorRef {
-  open: () => void;
-  close: () => void;
-  toggle: () => void;
-}
+export default function SampleDataSelector({ onSelect, isOpen, onClose }: SampleDataSelectorProps) {
+  const [selectedCategory, setSelectedCategory] = useState<string>('全部');
 
-const SampleDataSelector = forwardRef<SampleDataSelectorRef, SampleDataSelectorProps>(
-  function SampleDataSelector({ onSelect, disabled }, ref) {
-    const [isOpen, setIsOpen] = useState(false);
-    const [selectedCategory, setSelectedCategory] = useState<string>('全部');
+  const categories = ['全部', ...new Set(sampleDatasets.map(ds => ds.category))];
+  
+  const filteredDatasets = selectedCategory === '全部' 
+    ? sampleDatasets 
+    : sampleDatasets.filter(ds => ds.category === selectedCategory);
 
-    useImperativeHandle(ref, () => ({
-      open: () => setIsOpen(true),
-      close: () => setIsOpen(false),
-      toggle: () => setIsOpen(prev => !prev),
-    }));
+  const handleSelect = (dataset: SampleDataset) => {
+    onSelect(dataset);
+    onClose();
+  };
 
-    const categories = ['全部', ...new Set(sampleDatasets.map(ds => ds.category))];
-    
-    const filteredDatasets = selectedCategory === '全部' 
-      ? sampleDatasets 
-      : sampleDatasets.filter(ds => ds.category === selectedCategory);
+  if (!isOpen) return null;
 
-    const handleSelect = (dataset: SampleDataset) => {
-      onSelect(dataset);
-      setIsOpen(false);
-    };
+  return (
+    <div style={styles.overlay} onClick={onClose}>
+      <div style={styles.container} onClick={e => e.stopPropagation()}>
+        <div style={styles.header}>
+          <span style={styles.title}>选择示例数据</span>
+          <button style={styles.closeBtn} onClick={onClose}>×</button>
+        </div>
+        
+        {/* 分类筛选 */}
+        <div style={styles.categoryFilter}>
+          {categories.map(cat => (
+            <button
+              key={cat}
+              style={{
+                ...styles.categoryButton,
+                ...(selectedCategory === cat ? styles.categoryButtonActive : {})
+              }}
+              onClick={() => setSelectedCategory(cat)}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
 
-    return (
-      <div style={styles.container}>
-        <button 
-          style={styles.triggerButton}
-          onClick={() => setIsOpen(!isOpen)}
-          disabled={disabled}
-        >
-          <span style={styles.triggerIcon}>📊</span>
-          <span>没有数据？试试示例表格</span>
-          <span style={styles.arrow}>{isOpen ? '▲' : '▼'}</span>
-        </button>
-
-        {isOpen && (
-          <div style={styles.dropdown}>
-            {/* 分类筛选 */}
-            <div style={styles.categoryFilter}>
-              {categories.map(cat => (
-                <button
-                  key={cat}
-                  style={{
-                    ...styles.categoryButton,
-                    ...(selectedCategory === cat ? styles.categoryButtonActive : {})
-                  }}
-                  onClick={() => setSelectedCategory(cat)}
-                >
-                  {cat}
-                </button>
-              ))}
+        {/* 数据集列表 */}
+        <div style={styles.datasetList}>
+          {filteredDatasets.map(dataset => (
+            <div
+              key={dataset.id}
+              style={styles.datasetItem}
+              onClick={() => handleSelect(dataset)}
+            >
+              <div style={styles.datasetHeader}>
+                <span style={styles.datasetName}>{dataset.name}</span>
+                <span style={styles.datasetCategory}>{dataset.category}</span>
+              </div>
+              <div style={styles.datasetDesc}>{dataset.description}</div>
+              <div style={styles.datasetMeta}>
+                {dataset.headers.length} 个字段 · {dataset.rows.length} 行数据
+              </div>
             </div>
-
-            {/* 数据集列表 */}
-            <div style={styles.datasetList}>
-              {filteredDatasets.map(dataset => (
-                <div
-                  key={dataset.id}
-                  style={styles.datasetItem}
-                  onClick={() => handleSelect(dataset)}
-                >
-                  <div style={styles.datasetHeader}>
-                    <span style={styles.datasetName}>{dataset.name}</span>
-                    <span style={styles.datasetCategory}>{dataset.category}</span>
-                  </div>
-                  <div style={styles.datasetDesc}>{dataset.description}</div>
-                  <div style={styles.datasetMeta}>
-                    {dataset.headers.length} 个字段 · {dataset.rows.length} 行数据
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+          ))}
+        </div>
       </div>
-    );
-  }
-);
-
-export default SampleDataSelector;
+    </div>
+  );
+}
 
 const styles: Record<string, React.CSSProperties> = {
-  container: {
-    position: 'relative',
-    width: '100%',
-  },
-  triggerButton: {
+  overlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(0, 0, 0, 0.4)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: '8px',
-    width: '100%',
-    padding: '14px 16px',
-    background: 'linear-gradient(135deg, #ede9fe 0%, #e0e7ff 100%)',
-    border: '1px dashed #a5b4fc',
-    borderRadius: '12px',
-    fontSize: '14px',
-    color: '#6366f1',
-    fontWeight: 500,
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-    boxShadow: '0 2px 4px rgba(99, 102, 241, 0.05)',
+    zIndex: 1000,
+    animation: 'fadeIn 0.2s ease-out',
   },
-  triggerIcon: {
-    fontSize: '16px',
-  },
-  arrow: {
-    fontSize: '10px',
-    marginLeft: 'auto',
-    transition: 'transform 0.2s',
-  },
-  dropdown: {
-    position: 'absolute',
-    top: 'calc(100% + 8px)',
-    left: 0,
-    right: 0,
+  container: {
     background: '#fff',
-    border: '1px solid #e2e8f0',
     borderRadius: '16px',
-    boxShadow: '0 20px 40px rgba(99, 102, 241, 0.15), 0 8px 16px rgba(0,0,0,0.08)',
-    zIndex: 100,
-    overflow: 'hidden',
+    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.2)',
+    maxWidth: '600px',
+    width: '90%',
+    maxHeight: '80vh',
+    display: 'flex',
+    flexDirection: 'column',
     animation: 'fadeInUp 0.25s ease-out',
+  },
+  header: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '16px 20px',
+    borderBottom: '1px solid #e2e8f0',
+  },
+  title: {
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#334155',
+  },
+  closeBtn: {
+    background: 'none',
+    border: 'none',
+    fontSize: '24px',
+    color: '#94a3b8',
+    cursor: 'pointer',
+    padding: '0',
+    width: '28px',
+    height: '28px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '6px',
+    transition: 'all 0.15s',
   },
   categoryFilter: {
     display: 'flex',
     flexWrap: 'wrap',
-    gap: '6px',
-    padding: '12px',
+    gap: '8px',
+    padding: '16px 20px',
     borderBottom: '1px solid #f1f5f9',
     background: 'linear-gradient(180deg, #f8fafc 0%, #fff 100%)',
   },
@@ -160,17 +148,17 @@ const styles: Record<string, React.CSSProperties> = {
     borderColor: 'transparent',
     boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
   },
-  datasetLists: {
-    maxHeight: '320px',
+  datasetList: {
     overflowY: 'auto',
-    padding: '8px',
+    padding: '16px 20px',
+    flex: 1,
   },
   datasetItem: {
     padding: '14px',
     borderRadius: '12px',
     cursor: 'pointer',
     transition: 'all 0.2s',
-    marginBottom: '6px',
+    marginBottom: '10px',
     border: '1px solid #f1f5f9',
     background: '#fff',
   },
