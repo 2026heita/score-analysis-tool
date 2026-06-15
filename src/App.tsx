@@ -19,7 +19,9 @@ import QuartilePieChart from './components/charts/QuartilePieChart';
 import ParseReportPanel from './components/ParseReportPanel';
 import AnalysisExplainer from './components/AnalysisExplainer';
 import GeneralDataOverview from './components/GeneralDataOverview';
+import RelationshipAnalysisPanel from './components/RelationshipAnalysisPanel';
 import SampleDataSelector from './components/SampleDataSelector';
+import { analyzeCorrelations, analyzeCorrelationsSimple } from './engine/correlationAnalyzer';
 import type { SampleDataset } from './data/sampleDatasets';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -98,6 +100,33 @@ export default function App() {
       parseSummary.fieldTypes,
       recommendedFields
     );
+  }, [parsedData, parseSummary]);
+
+  // ===== 相关性分析派生（只读，不修改任何状态） =====
+  const correlationResult = useMemo(() => {
+    if (!parsedData || parsedData.rows.length === 0) return null;
+    // 如果有 parseSummary，使用完整版本并传入 fieldMetas
+    if (parseSummary?.fieldTypes) {
+      // 构建最小 features（只包含数值字段）
+      const features = parseSummary.fieldTypes
+        .filter(meta => meta.type === 'score' || meta.type === 'rank')
+        .map(meta => ({
+          fieldName: meta.header,
+          displayName: meta.header,
+          featureType: 'numerical' as const,
+          confidence: meta.confidence || 0.9,
+          reason: 'from parseSummary',
+        }));
+      return analyzeCorrelations(
+        parsedData.headers,
+        parsedData.rows,
+        features,
+        {},
+        parseSummary.fieldTypes
+      );
+    }
+    // 否则使用简化版本
+    return analyzeCorrelationsSimple(parsedData.headers, parsedData.rows);
   }, [parsedData, parseSummary]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -730,6 +759,10 @@ export default function App() {
             <section style={styles.section}>
               <GeneralDataOverview headers={parsedData.headers} rows={parsedData.rows} />
             </section>
+            </ErrorBoundary>
+
+            <ErrorBoundary>
+            <RelationshipAnalysisPanel correlationResult={correlationResult} />
             </ErrorBoundary>
 
             {availableSheets && availableSheets.length > 1 && (

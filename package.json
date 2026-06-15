@@ -14,6 +14,7 @@
     "test:mobile-compatibility": "node scripts/testMobileCompatibility.mjs",
     "test:general-engine": "node scripts/testGeneralEngine.mjs",
     "test:general-overview": "node scripts/testGeneralOverview.mjs",
+    "test:correlation": "node scripts/testCorrelationAnalyzer.mjs",
     "test:sample-data": "node scripts/testSampleData.mjs",
     "check:release-note": "node scripts/checkReleaseNote.mjs",
     "finalAcceptance": "node scripts/finalAcceptance.mjs"
