@@ -2,7 +2,7 @@
 
 /* 页面背景 - 淡蓝灰底 + 柔和光斑 */
 body {
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  background: linear-gradient(160deg, #f0f4ff 0%, #f8fafc 40%, #f5f0ff 100%);
   background-attachment: fixed;
   position: relative;
   min-height: 100vh;
@@ -16,8 +16,9 @@ body::before {
   right: 0;
   bottom: 0;
   background: 
-    radial-gradient(ellipse 800px 600px at 20% 30%, rgba(99, 102, 241, 0.04) 0%, transparent 70%),
-    radial-gradient(ellipse 600px 500px at 80% 70%, rgba(139, 92, 246, 0.03) 0%, transparent 70%);
+    radial-gradient(ellipse 900px 700px at 15% 25%, rgba(99, 102, 241, 0.06) 0%, transparent 70%),
+    radial-gradient(ellipse 700px 600px at 85% 75%, rgba(139, 92, 246, 0.05) 0%, transparent 70%),
+    radial-gradient(ellipse 500px 400px at 50% 50%, rgba(56, 189, 248, 0.03) 0%, transparent 70%);
   pointer-events: none;
   z-index: 0;
 }
@@ -35,8 +36,8 @@ body::before {
   right: 0;
   bottom: 0;
   background-image: 
-    linear-gradient(rgba(99, 102, 241, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(99, 102, 241, 0.03) 1px, transparent 1px);
+    linear-gradient(rgba(99, 102, 241, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99, 102, 241, 0.035) 1px, transparent 1px);
   background-size: 20px 20px;
   pointer-events: none;
   opacity: 0.5;
@@ -44,12 +45,12 @@ body::before {
 
 /* 卡片悬浮动画 */
 .card-hover {
-  transition: transform 180ms ease-out, box-shadow 180ms ease-out, border-color 180ms ease-out;
+  transition: transform 200ms ease-out, box-shadow 200ms ease-out, border-color 200ms ease-out;
 }
 
 .card-hover:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.08);
+  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.1);
 }
 
 /* 按钮动画 */
@@ -211,4 +212,23 @@ body::before {
 
 ::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(180deg, #818cf8 0%, #7c3aed 100%);
+}
+
+/* 示例数据弹窗内卡片网格布局 */
+.sample-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 520px) {
+  .sample-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 公告最新条目高亮 */
+.log-entry-latest {
+  border-left: 3px solid #6366f1;
+  padding-left: 12px;
 }

@@ -27,7 +27,13 @@ export default function SampleDataSelector({ onSelect, isOpen, onClose }: Sample
     <div style={styles.overlay} onClick={onClose}>
       <div style={styles.container} onClick={e => e.stopPropagation()}>
         <div style={styles.header}>
-          <span style={styles.title}>选择示例数据</span>
+          <div style={styles.headerContent}>
+            <div style={styles.headerIcon}>📊</div>
+            <div>
+              <div style={styles.title}>选择示例数据</div>
+              <div style={styles.subtitle}>快速体验数据分析平台</div>
+            </div>
+          </div>
           <button style={styles.closeBtn} onClick={onClose}>×</button>
         </div>
         
@@ -47,22 +53,30 @@ export default function SampleDataSelector({ onSelect, isOpen, onClose }: Sample
           ))}
         </div>
 
-        {/* 数据集列表 */}
-        <div style={styles.datasetList}>
+        {/* 数据集网格 */}
+        <div style={styles.datasetGrid}>
           {filteredDatasets.map(dataset => (
             <div
               key={dataset.id}
-              style={styles.datasetItem}
+              style={styles.datasetCard}
               onClick={() => handleSelect(dataset)}
             >
-              <div style={styles.datasetHeader}>
-                <span style={styles.datasetName}>{dataset.name}</span>
-                <span style={styles.datasetCategory}>{dataset.category}</span>
+              <div style={styles.cardHeader}>
+                <div style={styles.datasetName}>{dataset.name}</div>
+                <div style={styles.datasetCategory}>{dataset.category}</div>
               </div>
               <div style={styles.datasetDesc}>{dataset.description}</div>
               <div style={styles.datasetMeta}>
-                {dataset.headers.length} 个字段 · {dataset.rows.length} 行数据
+                <span style={styles.metaItem}>
+                  <span style={styles.metaIcon}>📋</span>
+                  {dataset.headers.length} 个字段
+                </span>
+                <span style={styles.metaItem}>
+                  <span style={styles.metaIcon}>📝</span>
+                  {dataset.rows.length} 行数据
+                </span>
               </div>
+              <div style={styles.cardAction}>选择此示例 →</div>
             </div>
           ))}
         </div>
@@ -78,64 +92,84 @@ const styles: Record<string, React.CSSProperties> = {
     left: 0,
     right: 0,
     bottom: 0,
-    background: 'rgba(0, 0, 0, 0.4)',
+    background: 'rgba(15, 23, 42, 0.6)',
+    backdropFilter: 'blur(4px)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1000,
     animation: 'fadeIn 0.2s ease-out',
+    padding: '20px',
   },
   container: {
     background: '#fff',
-    borderRadius: '16px',
-    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.2)',
-    maxWidth: '600px',
-    width: '90%',
-    maxHeight: '80vh',
+    borderRadius: '20px',
+    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(99, 102, 241, 0.1)',
+    maxWidth: '900px',
+    width: '100%',
+    maxHeight: '85vh',
     display: 'flex',
     flexDirection: 'column',
     animation: 'fadeInUp 0.25s ease-out',
+    overflow: 'hidden',
   },
   header: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: '16px 20px',
+    padding: '20px 24px',
     borderBottom: '1px solid #e2e8f0',
+    background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+  },
+  headerContent: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  },
+  headerIcon: {
+    fontSize: '32px',
+    lineHeight: 1,
   },
   title: {
-    fontSize: '16px',
+    fontSize: '18px',
     fontWeight: 600,
-    color: '#334155',
+    color: '#1e293b',
+    marginBottom: '2px',
+  },
+  subtitle: {
+    fontSize: '13px',
+    color: '#64748b',
+    fontWeight: 400,
   },
   closeBtn: {
     background: 'none',
     border: 'none',
-    fontSize: '24px',
+    fontSize: '28px',
     color: '#94a3b8',
     cursor: 'pointer',
     padding: '0',
-    width: '28px',
-    height: '28px',
+    width: '32px',
+    height: '32px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: '6px',
+    borderRadius: '8px',
     transition: 'all 0.15s',
+    lineHeight: 1,
   },
   categoryFilter: {
     display: 'flex',
     flexWrap: 'wrap',
     gap: '8px',
-    padding: '16px 20px',
+    padding: '16px 24px',
     borderBottom: '1px solid #f1f5f9',
-    background: 'linear-gradient(180deg, #f8fafc 0%, #fff 100%)',
+    background: '#fff',
   },
   categoryButton: {
-    padding: '6px 14px',
-    fontSize: '12px',
+    padding: '8px 16px',
+    fontSize: '13px',
     color: '#64748b',
-    background: '#fff',
+    background: '#f8fafc',
     border: '1px solid #e2e8f0',
     borderRadius: '20px',
     cursor: 'pointer',
@@ -146,50 +180,82 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#fff',
     background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
     borderColor: 'transparent',
-    boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
+    boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
   },
-  datasetList: {
+  datasetGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+    gap: '16px',
+    padding: '20px 24px',
     overflowY: 'auto',
-    padding: '16px 20px',
     flex: 1,
   },
-  datasetItem: {
-    padding: '14px',
+  datasetCard: {
+    padding: '16px',
     borderRadius: '12px',
     cursor: 'pointer',
     transition: 'all 0.2s',
-    marginBottom: '10px',
-    border: '1px solid #f1f5f9',
+    border: '2px solid #e2e8f0',
     background: '#fff',
-  },
-  datasetHeader: {
     display: 'flex',
-    alignItems: 'center',
+    flexDirection: 'column',
+  },
+  cardHeader: {
+    display: 'flex',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    marginBottom: '6px',
+    marginBottom: '10px',
+    gap: '8px',
   },
   datasetName: {
-    fontSize: '14px',
+    fontSize: '15px',
     fontWeight: 600,
-    color: '#334155',
+    color: '#1e293b',
+    lineHeight: 1.3,
   },
   datasetCategory: {
     fontSize: '11px',
     color: '#6366f1',
     background: 'linear-gradient(135deg, #ede9fe 0%, #e0e7ff 100%)',
-    padding: '3px 10px',
+    padding: '4px 10px',
     borderRadius: '12px',
     fontWeight: 500,
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
   },
   datasetDesc: {
-    fontSize: '12px',
+    fontSize: '13px',
     color: '#64748b',
     lineHeight: 1.6,
-    marginBottom: '6px',
+    marginBottom: '12px',
+    flex: 1,
   },
   datasetMeta: {
-    fontSize: '11px',
-    color: '#94a3b8',
+    display: 'flex',
+    gap: '12px',
+    marginBottom: '12px',
+    paddingTop: '12px',
+    borderTop: '1px solid #f1f5f9',
+  },
+  metaItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    fontSize: '12px',
+    color: '#64748b',
     fontWeight: 500,
+  },
+  metaIcon: {
+    fontSize: '14px',
+  },
+  cardAction: {
+    fontSize: '13px',
+    color: '#6366f1',
+    fontWeight: 500,
+    textAlign: 'center',
+    padding: '8px',
+    background: 'linear-gradient(135deg, #eef2ff 0%, #f5f3ff 100%)',
+    borderRadius: '8px',
+    transition: 'all 0.2s',
   },
 };

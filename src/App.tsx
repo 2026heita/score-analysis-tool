@@ -726,9 +726,11 @@ export default function App() {
               </section>
             )}
 
+            <ErrorBoundary>
             <section style={styles.section}>
               <GeneralDataOverview headers={parsedData.headers} rows={parsedData.rows} />
             </section>
+            </ErrorBoundary>
 
             {availableSheets && availableSheets.length > 1 && (
               <section style={styles.section}>
@@ -995,24 +997,24 @@ function formatComparisonText(input: number, ref: number): string {
 
 const styles: Record<string, React.CSSProperties> = {
   container: { minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', color: '#1e293b', position: 'relative', zIndex: 1 },
-  header: { background: 'linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%)', color: '#fff', padding: '28px 24px', textAlign: 'center' },
-  title: { margin: '0 0 4px', fontSize: '28px', fontWeight: 700, letterSpacing: '-0.02em' },
-  subtitle: { margin: '0 0 14px', fontSize: '14px', opacity: 0.85, fontWeight: 400 },
+  header: { background: 'linear-gradient(135deg, #4338ca 0%, #6366f1 40%, #7c3aed 100%)', color: '#fff', padding: '32px 24px', textAlign: 'center', position: 'relative', overflow: 'hidden' },
+  title: { margin: '0 0 4px', fontSize: '28px', fontWeight: 700, letterSpacing: '-0.02em', textShadow: '0 2px 4px rgba(0,0,0,0.1)' },
+  subtitle: { margin: '0 0 14px', fontSize: '14px', opacity: 0.9, fontWeight: 400 },
   headerActions: { display: 'flex', gap: '6px', justifyContent: 'center', flexWrap: 'wrap' },
-  headerButton: { padding: '4px 12px', background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', transition: 'all 0.15s' },
+  headerButton: { padding: '4px 12px', background: 'rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.9)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', transition: 'all 0.15s', backdropFilter: 'blur(4px)' },
   saveMsg: { margin: '8px 0 0', fontSize: '12px', color: '#86efac', fontWeight: 500 },
   main: { maxWidth: '800px', margin: '0 auto', padding: '20px 16px' },
-  section: { background: '#fff', borderRadius: '12px', padding: '20px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s, transform 0.2s', border: '1px solid rgba(226, 232, 240, 0.6)' },
-  sectionTitle: { margin: '0 0 14px', fontSize: '16px', fontWeight: 600, color: '#334155', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' },
-  hint: { margin: '0 0 10px', fontSize: '13px', color: '#64748b', background: '#f0f7ff', padding: '8px 12px', borderRadius: '6px', borderLeft: '3px solid #3b82f6' },
-  textarea: { width: '100%', padding: '12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box', outline: 'none' },
+  section: { background: '#fff', borderRadius: '14px', padding: '20px', marginBottom: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(99,102,241,0.04)', transition: 'box-shadow 0.2s, transform 0.2s', border: '1px solid rgba(226, 232, 240, 0.8)' },
+  sectionTitle: { margin: '0 0 14px', fontSize: '16px', fontWeight: 600, color: '#334155', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' },
+  hint: { margin: '0 0 10px', fontSize: '13px', color: '#4338ca', background: 'linear-gradient(135deg, #eef2ff 0%, #f0f7ff 100%)', padding: '8px 12px', borderRadius: '8px', borderLeft: '3px solid #6366f1' },
+  textarea: { width: '100%', padding: '12px', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '14px', fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box', outline: 'none', transition: 'border-color 0.15s, box-shadow 0.15s' },
   parseRow: { display: 'flex', gap: '10px', marginTop: '12px', alignItems: 'center' },
-  parseButton: { padding: '10px 24px', background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 8px rgba(99,102,241,0.25)', transition: 'all 0.15s' },
-  sampleButton: { padding: '10px 24px', background: '#f0f7ff', color: '#3b82f6', border: '1px solid #93c5fd', borderRadius: '8px', fontSize: '14px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s' },
+  parseButton: { padding: '10px 24px', background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)', color: '#fff', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 8px rgba(99,102,241,0.3)', transition: 'all 0.15s' },
+  sampleButton: { padding: '10px 24px', background: 'linear-gradient(135deg, #eef2ff 0%, #f5f3ff 100%)', color: '#6366f1', border: '1px solid #c7d2fe', borderRadius: '10px', fontSize: '14px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s' },
   copyButton: { padding: '4px 12px', background: '#f0f7ff', color: '#3b82f6', border: '1px solid #93c5fd', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 500, whiteSpace: 'nowrap', transition: 'all 0.15s' },
   error: { margin: '8px 0 0', color: '#ef4444', fontSize: '14px' },
   warning: { margin: '8px 0 0', color: '#92400e', fontSize: '13px', background: '#fffbeb', padding: '6px 10px', borderRadius: '6px' },
-  loading: { margin: '8px 0 0', color: '#2563eb', fontSize: '14px', fontWeight: 500 },
+  loading: { margin: '8px 0 0', color: '#6366f1', fontSize: '14px', fontWeight: 500 },
   errorSection: { border: '1px solid #fecaca', background: '#fef2f2' },
   errorText: { margin: 0, color: '#dc2626', fontSize: '14px', fontWeight: 500 },
   infoRow: { display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' },
@@ -1027,18 +1029,18 @@ const styles: Record<string, React.CSSProperties> = {
   select: { width: '100%', padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', background: '#fff', cursor: 'pointer', outline: 'none', boxSizing: 'border-box' },
   input: { width: '100%', padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '16px', boxSizing: 'border-box', outline: 'none' },
   statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '10px' },
-  statCard: { background: '#f8fafc', borderRadius: '8px', padding: '12px', textAlign: 'center', transition: 'transform 0.15s, box-shadow 0.15s' },
+  statCard: { background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)', borderRadius: '10px', padding: '12px', textAlign: 'center', transition: 'transform 0.15s, box-shadow 0.15s', border: '1px solid rgba(226, 232, 240, 0.6)' },
   statLabel: { fontSize: '12px', color: '#64748b', marginBottom: '4px' },
   statValue: { fontSize: '18px', fontWeight: 700, color: '#1e293b', fontFamily: 'monospace' },
   positionHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' },
-  summaryBox: { background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '14px 16px', fontSize: '14px', lineHeight: 1.7, color: '#1e40af', marginBottom: '16px' },
+  summaryBox: { background: 'linear-gradient(135deg, #eef2ff 0%, #eff6ff 100%)', border: '1px solid #c7d2fe', borderRadius: '10px', padding: '14px 16px', fontSize: '14px', lineHeight: 1.7, color: '#4338ca', marginBottom: '16px' },
   positionGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '10px', marginBottom: '12px' },
-  positionItem: { background: '#f8fafc', borderRadius: '8px', padding: '12px', textAlign: 'center' },
+  positionItem: { background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)', borderRadius: '10px', padding: '12px', textAlign: 'center', border: '1px solid rgba(226, 232, 240, 0.6)' },
   positionLabel: { fontSize: '12px', color: '#64748b', marginBottom: '4px' },
   positionValue: { fontSize: '15px', fontWeight: 600, color: '#1e293b', fontFamily: 'monospace' },
-  positionHighlight: { background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '14px', textAlign: 'center' },
+  positionHighlight: { background: 'linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)', border: '1px solid #c7d2fe', borderRadius: '10px', padding: '14px', textAlign: 'center' },
   positionHighlightLabel: { fontSize: '12px', color: '#64748b', marginBottom: '4px' },
-  positionHighlightValue: { fontSize: '22px', fontWeight: 700, color: '#2563eb', fontFamily: 'monospace' },
+  positionHighlightValue: { fontSize: '22px', fontWeight: 700, color: '#6366f1', fontFamily: 'monospace' },
   note: { margin: '8px 0 0', fontSize: '11px', color: '#94a3b8' },
   emptyHint: { textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '14px' },
   emptyChart: { textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '13px' },
@@ -1052,14 +1054,15 @@ const styles: Record<string, React.CSSProperties> = {
   fileUploadRow: { display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap' },
   fileUploadLabel: { display: 'inline-flex', alignItems: 'center', cursor: 'pointer' },
   fileInput: { display: 'none' },
-  fileUploadButton: { padding: '8px 16px', background: '#f0f7ff', color: '#3b82f6', border: '1px solid #93c5fd', borderRadius: '8px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s', whiteSpace: 'nowrap' },
+  fileUploadButton: { padding: '8px 16px', background: 'linear-gradient(135deg, #eef2ff 0%, #f5f3ff 100%)', color: '#6366f1', border: '1px solid #c7d2fe', borderRadius: '8px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s', whiteSpace: 'nowrap' },
   fileUploadNote: { fontSize: '12px', color: '#94a3b8', fontStyle: 'italic' },
   summaryGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '8px' },
-  summaryItem: { display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 10px', background: '#f8fafc', borderRadius: '6px', fontSize: '13px' },
+  summaryItem: { display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 10px', background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)', borderRadius: '8px', fontSize: '13px', border: '1px solid rgba(226, 232, 240, 0.6)' },
   summaryLabel: { color: '#64748b', fontSize: '12px' },
   summaryValue: { color: '#1e293b', fontWeight: 600, fontSize: '13px' },
-  summaryHighlight: { color: '#2563eb' },
+  summaryHighlight: { color: '#6366f1' },
   sheetSelector: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
   sheetButton: { padding: '8px 16px', background: '#f0f7ff', color: '#3b82f6', border: '1px solid #93c5fd', borderRadius: '8px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s' },
-  sheetButtonActive: { background: '#2563eb', color: '#fff', borderColor: '#2563eb' },
+  sheetButtonActive: { background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)', color: '#fff', borderColor: 'transparent' },
+  fallbackHint: { margin: '12px 0', padding: '12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', fontSize: '13px', color: '#92400e' },
 };
