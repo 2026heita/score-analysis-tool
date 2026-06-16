@@ -352,7 +352,7 @@ export default function App() {
     if (!position || !stats || isNaN(inputNum)) return '';
     const numStr = formatNumber(inputNum);
     if (position.existsInData) {
-      return `你的【${selectedField}】为 ${numStr} 分。全表 ${position.total} 人中，高于你的人有 ${position.higherCount} 人，与你同分的有 ${position.equalCount} 人。你的名次区间为第 ${position.bestRank} 名 ~ 第 ${position.worstRank} 名，约高于 ${position.percentile.toFixed(1)}% 的有效数据。`;
+      return `你的【${selectedField}】为 ${numStr}。全表 ${position.total} 人中，高于你的人有 ${position.higherCount} 人，与你同分的有 ${position.equalCount} 人。你的名次区间为第 ${position.bestRank} 名 ~ 第 ${position.worstRank} 名，约高于 ${position.percentile.toFixed(1)}% 的有效数据。`;
     }
     return `该值在表中不存在。如果按该值插入全表，估算名次为第 ${position.estimatedRank} 名，约高于 ${position.percentile.toFixed(1)}% 的有效数据。`;
   }, [position, stats, selectedField, inputNum]);
@@ -565,7 +565,7 @@ export default function App() {
     if (!stats || !position || !selectedField) return;
 
     const lines: string[] = [];
-    lines.push('【成绩分析摘要】');
+    lines.push('【数据分析摘要】');
     lines.push('');
     lines.push(`分析字段：${selectedField}`);
     lines.push(`你的数值：${inputValue}`);
@@ -614,8 +614,8 @@ export default function App() {
   return (
     <div style={styles.container}>
       <header style={styles.header}>
-        <h1 style={styles.title}>成绩分析工具</h1>
-        <p style={styles.subtitle}>粘贴表格数据，快速分析成绩分布与排名</p>
+        <h1 style={styles.title}>表格数据分析工具</h1>
+        <p style={styles.subtitle}>粘贴表格数据，快速分析数据分布、排名与相对位置</p>
         <div style={styles.headerActions}>
           <button className="header-btn" style={styles.headerButton} onClick={handleSave}>保存当前输入</button>
           <button className="header-btn" style={styles.headerButton} onClick={() => { if (window.confirm('确定恢复默认设置？当前输入会被覆盖。')) handleReset(); }}>恢复默认</button>
@@ -689,7 +689,7 @@ export default function App() {
                     m => m.analysisRole === 'invalid' || m.analysisRole === 'identity' || m.analysisRole === 'textMeta'
                   );
                   if (allInvalid) {
-                    return '已识别字段，但未发现成绩类字段，请尝试打开"显示全部字段"并手动选择数值字段。';
+                    return '已识别字段，但未发现推荐分析字段，请尝试打开"显示全部字段"并手动选择数值字段。';
                   }
                 }
                 return '当前表格没有可分析的数值字段，请尝试打开"显示全部字段"并手动选择。';
@@ -829,7 +829,7 @@ export default function App() {
                 </div>
                 <div style={styles.settingItem}>
                   <label style={styles.settingLabel}>你的数值</label>
-                  <input type="number" style={styles.input} placeholder="输入成绩" value={inputValue} onChange={e => setInputValue(e.target.value)} />
+                  <input type="number" style={styles.input} placeholder="输入数值" value={inputValue} onChange={e => setInputValue(e.target.value)} />
                 </div>
                 <div style={styles.settingActions}>
                   <label style={styles.toggleLabel}>
