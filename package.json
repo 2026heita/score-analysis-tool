@@ -17,6 +17,7 @@
     "test:correlation": "node scripts/testCorrelationAnalyzer.mjs",
     "test:analysis-engine": "node scripts/testAnalysisEngine.mjs",
     "test:sample-data": "node scripts/testSampleData.mjs",
+    "test:metric-layer": "node scripts/testMetricLayer.mjs",
     "check:release-note": "node scripts/checkReleaseNote.mjs",
     "finalAcceptance": "node scripts/finalAcceptance.mjs"
   },
