@@ -36,7 +36,7 @@ let _cachedViewMode: 'bar' | 'radar' | null = null;
 const FIELD_GROUP_CONFIG = [
   { key: 'totalRank', label: '总分 / 排名', roles: ['primaryTotal', 'rank'], defaultExpanded: true },
   { key: 'sectionTotal', label: '模块合计', roles: ['sectionTotal'], defaultExpanded: true },
-  { key: 'courseScore', label: '课程成绩', roles: ['courseScore'], defaultExpanded: true },
+  { key: 'courseScore', label: '数值字段', roles: ['courseScore'], defaultExpanded: true },
   { key: 'adjustment', label: '加扣分 / 调整项', roles: ['adjustment'], defaultExpanded: false },
   { key: 'identity', label: '身份信息', roles: ['identity'], defaultExpanded: false },
   { key: 'other', label: '其他字段', roles: ['textMeta', 'unknown'], defaultExpanded: false },
@@ -446,12 +446,12 @@ export default function OriginalFieldRadar({
   const quickSelectCourseScore = useCallback(() => {
     const fields = groupedFields['courseScore'] || [];
     if (fields.length === 0) {
-      showToast('当前表格没有匹配的课程成绩字段');
+      showToast('当前表格没有匹配的数值字段');
       return;
     }
     setTempSelections(new Set(fields));
     setActiveQuickMode('courseScore');
-    showToast(`已选择 ${fields.length} 个课程成绩字段`);
+    showToast(`已选择 ${fields.length} 个数值字段`);
   }, [groupedFields, showToast]);
 
   const quickClearAll = useCallback(() => {
@@ -465,7 +465,7 @@ export default function OriginalFieldRadar({
     recommended: '推荐字段',
     totalRank: '总分 + 排名',
     sectionTotal: '模块合计',
-    courseScore: '课程成绩',
+    courseScore: '数值字段',
   };
 
   // 打开粘贴弹窗
@@ -1039,7 +1039,7 @@ export default function OriginalFieldRadar({
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
-              粘贴整行成绩
+              粘贴整行数据
             </button>
           )}
           <button style={styles.btnSecondary} onClick={addField}>
@@ -1279,7 +1279,7 @@ export default function OriginalFieldRadar({
                     <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
                     <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
                   </svg>
-                  课程成绩
+                  数值字段
                 </button>
                 <button style={bs.quickBtnDanger} onClick={quickClearAll}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1421,7 +1421,7 @@ export default function OriginalFieldRadar({
         <div style={pm.overlay} onClick={closePasteModal}>
           <div style={pm.modal} onClick={e => e.stopPropagation()}>
             <div style={pm.header}>
-              <h3 style={pm.title}>粘贴整行成绩</h3>
+              <h3 style={pm.title}>粘贴整行数据</h3>
               <button style={pm.closeBtn} onClick={closePasteModal}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M18 6L6 18M6 6l12 12" />

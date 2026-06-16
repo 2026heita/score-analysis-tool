@@ -87,7 +87,7 @@ function FieldExplanationCard({ explanation }: { explanation: FieldExplanation }
 
       <div style={styles.stats}>
         <div style={styles.statRow}>
-          <span style={styles.statLabel}>你的分数：</span>
+          <span style={styles.statLabel}>你的数值：</span>
           <strong>{userValue}</strong>
         </div>
         <div style={styles.statRow}>

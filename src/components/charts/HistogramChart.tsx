@@ -79,7 +79,7 @@ export default function HistogramChart({ values, fieldName, userValue, binCount 
           rotate: bins.length > 8 ? 30 : 0,
           fontSize: 10,
         },
-        name: '分数区间',
+        name: '数值区间',
         nameTextStyle: { fontSize: 11, color: '#94a3b8', padding: [8, 0, 0, 0] },
       },
       yAxis: {
