@@ -1,6 +1,14 @@
 /**
  * 更新日志（不可变版本结构）
  * 
+ * ⚠️ ⚠️ ⚠️ 强约束规则（必须遵守）⚠️ ⚠️ ⚠️
+ * 
+ * ❗ updateLogs 是不可变数据结构，默认禁止任何修改
+ * ❗ 禁止任何直接数组修改行为：push/unshift/索引修改/splice
+ * ❗ 禁止修改已有 entry 的任何属性
+ * ❗ 禁止修改 entry.items 数组
+ * ❗ 新增版本必须使用 createUpdateLogEntry() 函数
+ * 
  * 设计原则：
  * 1. 每个 entry 一旦创建就不可修改
  * 2. 版本号必须唯一，不能重复
@@ -12,17 +20,37 @@
  * - major：重大重构或不兼容变更
  * - minor：新功能或重要改进
  * - patch：修复或小优化
+ * 
+ * 正确用法示例：
+ * ```ts
+ * // ✅ 正确：使用 createUpdateLogEntry 创建新版本
+ * const newLogs = createUpdateLogEntry(updateLogs, {
+ *   date: '2026-06-16',
+ *   version: 'v1.2.0',
+ *   title: '新增功能',
+ *   items: ['功能1', '功能2'],
+ *   type: 'feature'
+ * });
+ * 
+ * // ❌ 错误：直接修改数组（运行时会抛出错误或被静默忽略）
+ * updateLogs.push(newEntry);           // TypeError in strict mode
+ * (updateLogs as any)[0] = newEntry;   // TypeError in strict mode
+ * updateLogs[0].items.push('新内容');   // TypeError in strict mode
+ * updateLogs[0].title = '新标题';       // TypeError in strict mode
+ * ```
  */
 
 export interface UpdateLogItem {
-  date: string;
-  version: string;
-  title: string;
-  items: string[];
-  type?: 'feature' | 'fix' | 'improvement' | 'notice';
+  readonly date: string;
+  readonly version: string;
+  readonly title: string;
+  readonly items: readonly string[];
+  readonly type?: 'feature' | 'fix' | 'improvement' | 'notice';
 }
 
-export const updateLogs: UpdateLogItem[] = [
+// ─── 内部数据（不可变） ─────────────────────────────────────────
+
+const _updateLogsData: UpdateLogItem[] = [
   {
     date: '2026-06-15',
     version: 'v1.1.2',
@@ -75,11 +103,91 @@ export const updateLogs: UpdateLogItem[] = [
   }
 ];
 
+// ─── 深度冻结 ───────────────────────────────────────────────────
+
+function deepFreeze<T extends object>(obj: T): Readonly<T> {
+  Object.freeze(obj);
+  for (const key of Object.getOwnPropertyNames(obj)) {
+    const value = (obj as Record<string, unknown>)[key];
+    if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+      deepFreeze(value as object);
+    }
+  }
+  return obj as Readonly<T>;
+}
+
+// 深度冻结所有 entry 及其 items 数组
+for (const entry of _updateLogsData) {
+  deepFreeze(entry);
+}
+
+// ─── 导出（只读 + 冻结） ────────────────────────────────────────
+
+/**
+ * 更新日志（只读）
+ * 
+ * 此数组已被 Object.freeze 深度冻结：
+ * - 数组本身不可修改（push/pop/splice/unshift/索引赋值 均会 TypeError）
+ * - 每个 entry 的属性不可修改
+ * - 每个 entry.items 数组不可修改
+ */
+export const updateLogs: readonly UpdateLogItem[] = Object.freeze(_updateLogsData);
+
+// ─── DEV 环境防误用检测 ─────────────────────────────────────────
+
+if (import.meta.env.DEV) {
+  // 1. 验证冻结状态
+  if (!Object.isFrozen(updateLogs)) {
+    console.error('[updateLogs] CRITICAL: updateLogs array is NOT frozen!');
+  }
+  for (let i = 0; i < updateLogs.length; i++) {
+    if (!Object.isFrozen(updateLogs[i])) {
+      console.error(`[updateLogs] CRITICAL: entry [${i}] is NOT frozen!`);
+    }
+    if (!Object.isFrozen(updateLogs[i].items)) {
+      console.error(`[updateLogs] CRITICAL: entry [${i}].items is NOT frozen!`);
+    }
+  }
+
+  // 2. 原型方法调用检测（捕获 attempted mutations）
+  const mutationMethods = ['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'] as const;
+  for (const method of mutationMethods) {
+    const original = Array.prototype[method] as (...args: unknown[]) => unknown;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (Array.prototype as any)[method] = function (this: unknown, ...args: unknown[]) {
+      if (this === updateLogs) {
+        console.error(
+          `[updateLogs] ❌ IMMUTABLE VIOLATION: Array.prototype.${method}() called on frozen updateLogs. ` +
+          `Use createUpdateLogEntry() to create a new version instead.`
+        );
+        throw new TypeError(
+          `updateLogs is immutable. Cannot call ${method}(). Use createUpdateLogEntry() instead.`
+        );
+      }
+      // 对 entry.items 也做检测
+      for (const entry of updateLogs) {
+        if (this === entry.items) {
+          console.error(
+            `[updateLogs] ❌ IMMUTABLE VIOLATION: Array.prototype.${method}() called on frozen entry.items ` +
+            `("${entry.version}"). Entries are immutable.`
+          );
+          throw new TypeError(
+            `updateLogs entry items are immutable. Cannot call ${method}() on "${entry.version}" items.`
+          );
+        }
+      }
+      return original.apply(this, args);
+    };
+  }
+}
+
+// ─── 校验函数 ───────────────────────────────────────────────────
+
 /**
  * 校验 updateLogs 一致性
  * 用于开发时检查数据结构是否正确
  */
-export function validateUpdateLogs(logs: UpdateLogItem[]): { valid: boolean; errors: string[] } {
+export function validateUpdateLogs(logs: readonly UpdateLogItem[]): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
   const versions = new Set<string>();
   const dateVersionCombos = new Set<string>();
@@ -109,4 +217,46 @@ export function validateUpdateLogs(logs: UpdateLogItem[]): { valid: boolean; err
   }
 
   return { valid: errors.length === 0, errors };
+}
+
+// ─── 写入函数（唯一合法写入路径） ────────────────────────────────
+
+/**
+ * 创建新的更新日志 entry（不可变方式）
+ * 
+ * 此函数返回新的冻结数组，不修改原数组。
+ * 新 entry 会被插入到数组开头（最新版本在前）。
+ * 
+ * @param logs - 现有的日志数组
+ * @param newEntry - 新的日志 entry
+ * @returns 包含新 entry 的冻结日志数组
+ * @throws 如果 version 已存在，抛出错误
+ * 
+ * @example
+ * const newLogs = createUpdateLogEntry(updateLogs, {
+ *   date: '2026-06-16',
+ *   version: 'v1.2.0',
+ *   title: '新增功能',
+ *   items: ['功能1', '功能2'],
+ *   type: 'feature'
+ * });
+ */
+export function createUpdateLogEntry(
+  logs: readonly UpdateLogItem[],
+  newEntry: UpdateLogItem
+): readonly UpdateLogItem[] {
+  // 检查 version 是否已存在
+  const existingVersion = logs.find(log => log.version === newEntry.version);
+  if (existingVersion) {
+    throw new Error(
+      `Version "${newEntry.version}" already exists in updateLogs. ` +
+      `Cannot append to existing entry. Create a new version instead.`
+    );
+  }
+
+  // 冻结新 entry
+  deepFreeze(newEntry);
+
+  // 返回新的冻结数组，不修改原数组
+  return Object.freeze([newEntry, ...logs]);
 }
