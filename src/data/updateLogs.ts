@@ -1,8 +1,22 @@
-import { APP_VERSION } from '../config/version';
+/**
+ * 更新日志（不可变版本结构）
+ * 
+ * 设计原则：
+ * 1. 每个 entry 一旦创建就不可修改
+ * 2. 版本号必须唯一，不能重复
+ * 3. 不允许 mutate / append 到旧版本
+ * 4. 每次更新生成新的 release entry
+ * 
+ * 版本号规范：
+ * - 格式：v{major}.{minor}.{patch}
+ * - major：重大重构或不兼容变更
+ * - minor：新功能或重要改进
+ * - patch：修复或小优化
+ */
 
 export interface UpdateLogItem {
   date: string;
-  version?: string;
+  version: string;
   title: string;
   items: string[];
   type?: 'feature' | 'fix' | 'improvement' | 'notice';
@@ -11,7 +25,7 @@ export interface UpdateLogItem {
 export const updateLogs: UpdateLogItem[] = [
   {
     date: '2026-06-15',
-    version: APP_VERSION,
+    version: 'v1.1.2',
     title: '分析更稳定，结果更一致',
     type: 'improvement',
     items: [
@@ -26,7 +40,7 @@ export const updateLogs: UpdateLogItem[] = [
   },
   {
     date: '2026-06-14',
-    version: 'v1.1.0',
+    version: 'v1.1.1',
     title: '新增通用数据概览',
     type: 'feature',
     items: [
@@ -60,3 +74,39 @@ export const updateLogs: UpdateLogItem[] = [
     ]
   }
 ];
+
+/**
+ * 校验 updateLogs 一致性
+ * 用于开发时检查数据结构是否正确
+ */
+export function validateUpdateLogs(logs: UpdateLogItem[]): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  const versions = new Set<string>();
+  const dateVersionCombos = new Set<string>();
+
+  for (let i = 0; i < logs.length; i++) {
+    const log = logs[i];
+    const prefix = `[${i}] ${log.date}`;
+
+    // 检查必填字段
+    if (!log.date) errors.push(`${prefix}: date 不能为空`);
+    if (!log.version) errors.push(`${prefix}: version 不能为空`);
+    if (!log.title) errors.push(`${prefix}: title 不能为空`);
+    if (!log.items || log.items.length === 0) errors.push(`${prefix}: items 不能为空`);
+
+    // 检查 version 唯一性
+    if (versions.has(log.version)) {
+      errors.push(`${prefix}: version "${log.version}" 重复`);
+    }
+    versions.add(log.version);
+
+    // 检查 date+version 组合唯一性
+    const combo = `${log.date}|${log.version}`;
+    if (dateVersionCombos.has(combo)) {
+      errors.push(`${prefix}: date+version 组合 "${combo}" 重复`);
+    }
+    dateVersionCombos.add(combo);
+  }
+
+  return { valid: errors.length === 0, errors };
+}
