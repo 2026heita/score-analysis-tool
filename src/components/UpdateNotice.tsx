@@ -32,7 +32,6 @@ function LogEntry({ log }: { log: UpdateLogItem }) {
       <div style={styles.entryHeader}>
         <div style={styles.entryMeta}>
           <span style={styles.entryDate}>{log.date}</span>
-          {log.version && <span style={styles.entryVersion}>{log.version}</span>}
           {getTypeBadge(log.type)}
         </div>
         <div style={styles.entryTitle}>{log.title}</div>
@@ -51,35 +50,49 @@ export default function UpdateNotice() {
 
   if (updateLogs.length === 0) return null;
 
-  const latest = updateLogs[0];
-  const latestSummary = latest.items[0] || '';
+  // 按 version 分组（版本列表模型）
+  const grouped = updateLogs.reduce((acc, log) => {
+    if (!acc[log.version]) acc[log.version] = [];
+    acc[log.version].push(log);
+    return acc;
+  }, {} as Record<string, UpdateLogItem[]>);
+
+  // 获取最新版本信息（用于折叠状态显示）
+  const latestVersion = Object.keys(grouped)[0];
+  const latestLogs = grouped[latestVersion] || [];
+  const latestDate = latestLogs[0]?.date || '';
 
   return (
     <div style={styles.container}>
-      {/* 折叠状态：只显示最新一条摘要 */}
+      {/* 折叠状态：显示最新版本摘要 */}
       <div style={styles.header} onClick={() => setExpanded(v => !v)}>
         <div style={styles.headerLeft}>
           <span style={styles.dot} />
           <span style={styles.headerTitle}>更新记录</span>
-          <span style={styles.headerDate}>{latest.date}</span>
-          {latest.version && <span style={styles.headerVersion}>{latest.version}</span>}
+          <span style={styles.headerDate}>{latestDate}</span>
+          <span style={styles.headerVersion}>{latestVersion}</span>
         </div>
         <span style={styles.toggle}>{expanded ? '收起' : '展开'}</span>
       </div>
 
-      {!expanded && (
+      {!expanded && latestLogs.length > 0 && (
         <div style={styles.summary}>
-          {getTypeBadge(latest.type)}
-          <span style={styles.summaryText}>{latest.title} - {latestSummary}</span>
+          {getTypeBadge(latestLogs[0].type)}
+          <span style={styles.summaryText}>{latestLogs[0].title} - {latestLogs[0].items[0] || ''}</span>
         </div>
       )}
 
       {expanded && (
         <div style={styles.body}>
           <div style={styles.scrollContainer}>
-            {updateLogs.map((log, idx) => (
-              <div key={idx} className={idx === 0 ? 'log-entry-latest' : ''}>
-                <LogEntry log={log} />
+            {Object.entries(grouped).map(([version, logs]) => (
+              <div key={version} style={styles.versionGroup}>
+                <div style={styles.versionHeader}>{version}</div>
+                {logs.map((log, idx) => (
+                  <div key={`${version}-${idx}`} className={idx === 0 && version === latestVersion ? 'log-entry-latest' : ''}>
+                    <LogEntry log={log} />
+                  </div>
+                ))}
               </div>
             ))}
           </div>
@@ -211,5 +224,16 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#475569',
     lineHeight: 1.7,
     marginBottom: '2px',
+  },
+  versionGroup: {
+    marginBottom: '16px',
+  },
+  versionHeader: {
+    fontSize: '13px',
+    fontWeight: 600,
+    color: '#3b82f6',
+    marginBottom: '8px',
+    paddingBottom: '4px',
+    borderBottom: '1px solid #e2e8f0',
   },
 };
