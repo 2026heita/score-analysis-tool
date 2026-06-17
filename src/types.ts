@@ -41,12 +41,14 @@ export interface OriginalFieldRadarState {
   viewMode: ViewMode;
 }
 
+/** @deprecated 教育/高考功能已收敛至 legacy 区 */
 export interface TraditionalSubjectEntry {
   name: string;
   score: number;
   maxScore: number;
 }
 
+/** @deprecated 教育/高考功能已收敛至 legacy 区 */
 export interface TraditionalSubjectRadarState {
   entries: TraditionalSubjectEntry[];
 }
@@ -59,7 +61,8 @@ export interface SavedState {
   showAllFields: boolean;
   activeChartTab: string;
   originalFieldRadar: OriginalFieldRadarState;
-  traditionalSubjectRadar: TraditionalSubjectRadarState;
+  /** @deprecated 教育/高考功能已收敛至 legacy 区，仅保留旧数据兼容读取 */
+  traditionalSubjectRadar?: TraditionalSubjectRadarState;
   analysisMode: AnalysisMode;
 }
 

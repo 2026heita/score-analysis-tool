@@ -4,6 +4,8 @@ import type { EChartsOption } from 'echarts';
 import { extractFieldValues, computeStats, computePercentile, isRankField as checkIsRankField } from '../../engine/analysisEngine';
 import { parseNumericValue } from '../../utils/tableParser/numericParser';
 import type { OriginalFieldRadarState } from '../../types';
+// @deprecated 教育/高考功能已收敛至 legacy 区
+import { FIXED_SUBJECT_ORDER } from '../../config/education';
 
 interface FieldSelection {
   field: string;
@@ -724,12 +726,8 @@ export default function OriginalFieldRadar({
     setFieldValues(newValues);
   }, [defaultRecommendedFields, fieldValues]);
 
-  // 固定字段顺序
-  const FIXED_SUBJECT_ORDER = [
-    '总分', '总分（不含加分）',
-    '语文', '数学', '英语', '外语',
-    '物理', '化学', '生物', '政治', '历史', '地理',
-  ];
+  // @deprecated 教育/高考功能已收敛至 legacy 区，排序逻辑见 config/education.ts
+  // FIXED_SUBJECT_ORDER 从 config/education.ts 导入，为 legacy behavior
 
   // 计算各字段的百分位（使用统一分析引擎）
   const rawStats = useMemo(() => {

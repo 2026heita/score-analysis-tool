@@ -3,6 +3,7 @@ import type { SavedState } from '../types';
 const STORAGE_KEY = 'score_analyzer_state';
 const CURRENT_VERSION = 2;
 
+/** @deprecated 教育/高考功能已收敛至 legacy 区 */
 export const DEFAULT_TRADITIONAL_ENTRIES = [
   { name: '语文', score: 110, maxScore: 150 },
   { name: '数学', score: 94, maxScore: 150 },
@@ -12,6 +13,7 @@ export const DEFAULT_TRADITIONAL_ENTRIES = [
   { name: '生物', score: 84, maxScore: 100 },
 ];
 
+/** @deprecated 教育/高考功能已收敛至 legacy 区，默认示例数据为高考成绩格式 */
 export const DEFAULT_SAMPLE_TEXT = `名次\t总分\t语文数学两科之和\t语文或数学单科最高成绩\t外语单科成绩\t首选科目单科成绩\t再选科目单科最高成绩\t再选科目单科次高成绩
 1\t680\t290\t150\t135\t92\t88\t85
 2\t673\t285\t148\t132\t90\t87\t83
@@ -74,7 +76,6 @@ export function getSystemDefaultState(): SavedState {
     showAllFields: false,
     activeChartTab: 'histogram',
     originalFieldRadar: { selections: [], viewMode: 'bar' },
-    traditionalSubjectRadar: { entries: DEFAULT_TRADITIONAL_ENTRIES },
     analysisMode: 'scoreRate',
   };
 }
@@ -89,7 +90,6 @@ export function getDefaultState(): SavedState {
     showAllFields: false,
     activeChartTab: 'histogram',
     originalFieldRadar: { selections: [], viewMode: 'bar' },
-    traditionalSubjectRadar: { entries: [] },
     analysisMode: 'scoreRate',
   };
 }

@@ -13,6 +13,7 @@
 import type { StatsResult, PositionResult } from '../types';
 import { calculateQuantile } from '../utils/stats';
 import type { AnalysisContext, MetricResult } from './context';
+import { getOrCreateMetricDef } from '../metrics/metricRegistry';
 
 // 大表格保护：统一截断阈值
 export const MAX_ROWS = 5000;
@@ -331,64 +332,84 @@ export function analyzeMultipleFields(
 }
 
 // ============================================================
-// 统一指标计算入口（基于 AnalysisContext）
+// 统一指标计算入口（基于 Metric Registry）
 // ============================================================
 
 /**
- * 计算单个指标的完整结果（统一入口）
+ * 创建通用 compute 函数工厂
+ * 
+ * 封装当前 computeMetric 的内部实现逻辑，
+ * 作为 factory 注入给 metricRegistry。
+ * 
+ * 这是唯一的 compute 实现，analysisEngine 不再直接计算。
+ */
+function createGenericCompute(
+  metricId: string
+): (ctx: AnalysisContext, userValue?: number) => MetricResult | null {
+  return (ctx: AnalysisContext, userValue?: number): MetricResult | null => {
+    // 1. 从 context 中查找指标定义
+    const metricDef = ctx.metrics.find(m => m.name === metricId);
+    if (!metricDef) {
+      return null;
+    }
+
+    // 2. 提取字段值（使用统一的截断和过滤逻辑）
+    const { values, invalidCount, totalRows, truncatedRows } = extractFieldValues(
+      ctx.rawRows,
+      metricDef.sourceField
+    );
+
+    // 3. 计算统计指标
+    const stats = computeStats(values, truncatedRows);
+
+    // 4. 计算位置（如果有用户输入值）
+    let position: PositionResult | undefined;
+    if (userValue !== undefined && Number.isFinite(userValue) && values.length > 0) {
+      position = computePosition(values, userValue, metricDef.direction);
+    }
+
+    // 5. 构建 MetricResult
+    return {
+      metricName: metricDef.name,
+      displayName: metricDef.displayName,
+      direction: metricDef.direction,
+      values,
+      invalidCount,
+      totalRows,
+      truncatedRows,
+      stats,
+      position,
+      userValue,
+    };
+  };
+}
+
+/**
+ * 计算单个指标的完整结果（统一入口 - Registry Dispatcher）
  * 
  * 核心原则：
- * 1. 从 AnalysisContext 读取原始数据和指标定义
- * 2. 使用 MetricDefinition.direction 判断方向，不再硬编码 isRankField()
- * 3. 返回 MetricResult 供 UI 直接使用
+ * 1. analysisEngine 是 dispatcher，不直接包含计算逻辑
+ * 2. 从 metricRegistry 查找 metric，委托给 metric.compute()
+ * 3. 如果 metric 不在 registry 中，通过 factory 动态创建通用 entry
+ * 4. 返回 MetricResult 供 UI 直接使用
  * 
  * @param context 分析上下文
- * @param metricName 指标名称（对应 MetricDefinition.name）
+ * @param metricName 指标名称（对应 MetricDefinition.name / registry key）
  * @param userValue 用户输入值（可选，用于计算排名位置）
- * @param config 配置
+ * @param config 配置（保留兼容，当前未使用）
  * @returns 指标计算结果
  */
 export function computeMetric(
   context: AnalysisContext,
   metricName: string,
   userValue?: number,
-  config: AnalysisConfig = {}
+  _config: AnalysisConfig = {}
 ): MetricResult | null {
-  // 1. 从 context 中查找指标定义
-  const metricDef = context.metrics.find(m => m.name === metricName);
-  if (!metricDef) {
-    return null;
-  }
-
-  // 2. 提取字段值（使用统一的截断和过滤逻辑）
-  const { values, invalidCount, totalRows, truncatedRows } = extractFieldValues(
-    context.rawRows,
-    metricDef.sourceField,
-    config
-  );
-
-  // 3. 计算统计指标
-  const stats = computeStats(values, truncatedRows);
-
-  // 4. 计算位置（如果有用户输入值）
-  let position: PositionResult | undefined;
-  if (userValue !== undefined && Number.isFinite(userValue) && values.length > 0) {
-    position = computePosition(values, userValue, metricDef.direction);
-  }
-
-  // 5. 构建 MetricResult
-  return {
-    metricName: metricDef.name,
-    displayName: metricDef.displayName,
-    direction: metricDef.direction,
-    values,
-    invalidCount,
-    totalRows,
-    truncatedRows,
-    stats,
-    position,
-    userValue,
-  };
+  // 1. 从 registry 获取或创建 metric definition（通过 factory 注入 compute 逻辑）
+  const metricDef = getOrCreateMetricDef(metricName, createGenericCompute);
+  
+  // 2. 委托给 metric.compute() — engine 不再直接计算
+  return metricDef.compute(context, userValue);
 }
 
 /**
@@ -418,3 +439,11 @@ export function computeMetrics(
 
   return results;
 }
+
+/**
+ * 旧版 computeMetric 兼容层
+ * 
+ * @deprecated 仅供过渡期使用，新代码应直接调用 computeMetric()。
+ * 后续版本将移除此别名。
+ */
+export const legacyComputeMetric = computeMetric;
