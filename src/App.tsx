@@ -6,6 +6,7 @@ import { usePersistedState } from './hooks/usePersistedState';
 import { buildParseReport } from './utils/tableParser';
 import { generateExplanation } from './utils/analysisExplainer';
 import { APP_VERSION } from './config/version';
+import { APP_NAME } from './config/app';
 import type { ParsedTable, StatsResult, PositionResult, ChartTab, OriginalFieldRadarState } from './types';
 import type { ParseSummary } from './utils/tableParser/types';
 import UsageGuide from './components/UsageGuide';
@@ -594,7 +595,7 @@ export default function App() {
   return (
     <div style={styles.container}>
       <header style={styles.header}>
-        <h1 style={styles.title}>表格数据分析工具</h1>
+        <h1 style={styles.title}>{APP_NAME}</h1>
         <p style={styles.subtitle}>粘贴表格数据，快速分析数据分布、排名与相对位置</p>
         <div style={styles.headerActions}>
           <button className="header-btn" style={styles.headerButton} onClick={handleSave}>保存当前输入</button>
