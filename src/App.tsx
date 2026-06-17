@@ -21,8 +21,13 @@ import AnalysisExplainer from './components/AnalysisExplainer';
 import GeneralDataOverview from './components/GeneralDataOverview';
 import RelationshipAnalysisPanel from './components/RelationshipAnalysisPanel';
 import SampleDataSelector from './components/SampleDataSelector';
-import { analyzeCorrelations, analyzeCorrelationsSimple } from './engine/correlationAnalyzer';
-import { extractFieldValues, computeStats, computePosition, isNumericField as checkIsNumericField } from './engine/analysisEngine';
+import { analyzeCorrelationsFromContext } from './engine/correlationAnalyzer';
+import { isNumericField as checkIsNumericField } from './engine/analysisEngine';
+import { buildAnalysisContext } from './engine/context';
+import { computeMetric } from './engine/analysisEngine';
+import { buildSemanticDefinitions } from './engine/metricLayer';
+import { toHistogramProps, toBoxPlotProps, toCdfProps, toQuartilePieProps } from './engine/chartAdapter';
+import { DebugPanel } from './components/DebugPanel';
 import type { SampleDataset } from './data/sampleDatasets';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -104,32 +109,25 @@ export default function App() {
     );
   }, [parsedData, parseSummary]);
 
+  // ===== 构建统一分析上下文（AnalysisContext） =====
+  const analysisContext = useMemo(() => {
+    if (!parsedData || !parseSummary?.fieldTypes) return null;
+    
+    const semanticDefs = buildSemanticDefinitions(parseSummary.fieldTypes);
+    
+    return buildAnalysisContext(
+      parseSummary.fieldTypes,
+      parsedData.rows,
+      semanticDefs.metrics,
+      semanticDefs.dimensions
+    );
+  }, [parsedData, parseSummary]);
+
   // ===== 相关性分析派生（只读，不修改任何状态） =====
   const correlationResult = useMemo(() => {
-    if (!parsedData || parsedData.rows.length === 0) return null;
-    // 如果有 parseSummary，使用完整版本并传入 fieldMetas
-    if (parseSummary?.fieldTypes) {
-      // 构建最小 features（只包含数值字段）
-      const features = parseSummary.fieldTypes
-        .filter(meta => meta.type === 'score' || meta.type === 'rank')
-        .map(meta => ({
-          fieldName: meta.header,
-          displayName: meta.header,
-          featureType: 'numerical' as const,
-          confidence: meta.confidence || 0.9,
-          reason: 'from parseSummary',
-        }));
-      return analyzeCorrelations(
-        parsedData.headers,
-        parsedData.rows,
-        features,
-        {},
-        parseSummary.fieldTypes
-      );
-    }
-    // 否则使用简化版本
-    return analyzeCorrelationsSimple(parsedData.headers, parsedData.rows);
-  }, [parsedData, parseSummary]);
+    if (!analysisContext) return null;
+    return analyzeCorrelationsFromContext(analysisContext);
+  }, [analysisContext]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -139,6 +137,7 @@ export default function App() {
   const [traditionalEntries, setTraditionalEntries] = useState<TraditionalSubjectEntry[]>(
     savedState?.traditionalSubjectRadar?.entries ?? []
   );
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
 
   // ===== 分析解释派生（只读，不修改任何状态） =====
   const analysisExplanation = useMemo(() => {
@@ -223,19 +222,26 @@ export default function App() {
     } catch { /* 忽略 */ }
   }, [rawText]);
 
-  // ===== 字段值提取（使用统一分析引擎） =====
-  const fieldAnalysisResult = useMemo(() => {
-    if (!parsedData || !selectedField) return null;
-    return extractFieldValues(parsedData.rows, selectedField);
-  }, [parsedData, selectedField]);
+  // ===== 使用 computeMetric 计算指标结果 =====
+  const metricResult = useMemo(() => {
+    if (!analysisContext || !selectedField) return null;
+    
+    const userValue = inputValue ? parseFloat(inputValue) : undefined;
+    return computeMetric(analysisContext, selectedField, userValue);
+  }, [analysisContext, selectedField, inputValue]);
 
-  const rawFieldValues = useMemo(() => {
-    return fieldAnalysisResult?.values || [];
-  }, [fieldAnalysisResult]);
+  // ===== 从 metricResult 提取 stats 和 position =====
+  const stats: StatsResult | null = useMemo(() => {
+    return metricResult?.stats || null;
+  }, [metricResult]);
+
+  const position: PositionResult | null = useMemo(() => {
+    return metricResult?.position || null;
+  }, [metricResult]);
 
   const fieldValues = useMemo(() => {
-    return rawFieldValues.filter((v): v is number => v !== null && Number.isFinite(v));
-  }, [rawFieldValues]);
+    return metricResult?.values || [];
+  }, [metricResult]);
 
   // ===== 字段判断（使用统一分析引擎） =====
   const isNumericField = useCallback((header: string): boolean => {
@@ -326,23 +332,6 @@ export default function App() {
     
     return { recommended, adjustment, identity, textMeta, others };
   }, [parsedData, showAllFields, getFieldAnalysisRole]);
-
-  // ===== 统计计算（使用统一分析引擎） =====
-  const stats: StatsResult | null = useMemo(() => {
-    if (!parsedData || !selectedField || fieldValues.length === 0) return null;
-    
-    // 使用统一分析引擎的 computeStats，它已经处理了 5000 行截断
-    return computeStats(fieldValues, fieldAnalysisResult?.truncatedRows || parsedData.rows.length);
-  }, [fieldValues, fieldAnalysisResult, parsedData, selectedField]);
-
-  const position: PositionResult | null = useMemo(() => {
-    if (!inputValue || fieldValues.length === 0) return null;
-    const val = parseFloat(inputValue);
-    if (isNaN(val)) return null;
-    
-    // 使用统一分析引擎的 computePosition
-    return computePosition(fieldValues, val);
-  }, [fieldValues, inputValue]);
 
   const inputNum = inputValue ? parseFloat(inputValue) : NaN;
   const hasInputError = inputValue.trim() !== '' && isNaN(inputNum);
@@ -912,13 +901,13 @@ export default function App() {
               <section style={styles.section}>
                 <h2 style={styles.sectionTitle}>图表分析</h2>
 
-                {selectedField && fieldValues.length > 0 && (
+                {selectedField && metricResult && (
                   <>
                     <ChartTabs activeTab={activeChartTab} onChange={setActiveChartTab} />
-                    {activeChartTab === 'histogram' && <HistogramChart values={fieldValues} fieldName={selectedField} userValue={isNaN(inputNum) ? undefined : inputNum} />}
-                    {activeChartTab === 'boxplot' && <BoxPlotChart values={fieldValues} fieldName={selectedField} stats={stats ? { min: stats.min, q25: stats.q25, median: stats.median, q75: stats.q75, max: stats.max } : undefined} userValue={isNaN(inputNum) ? undefined : inputNum} />}
-                    {activeChartTab === 'cdf' && <CdfChart values={fieldValues} fieldName={selectedField} userValue={isNaN(inputNum) ? undefined : inputNum} />}
-                    {activeChartTab === 'quartile' && <QuartilePieChart values={fieldValues} fieldName={selectedField} userValue={isNaN(inputNum) ? undefined : inputNum} />}
+                    {activeChartTab === 'histogram' && <HistogramChart {...toHistogramProps(metricResult)} />}
+                    {activeChartTab === 'boxplot' && <BoxPlotChart {...toBoxPlotProps(metricResult)} />}
+                    {activeChartTab === 'cdf' && <CdfChart {...toCdfProps(metricResult)} />}
+                    {activeChartTab === 'quartile' && <QuartilePieChart {...toQuartilePieProps(metricResult)} />}
                   </>
                 )}
 
@@ -949,6 +938,51 @@ export default function App() {
           </>
         )}
       </main>
+
+      {/* 调试面板开关：仅开发环境 */}
+      {import.meta.env.DEV && (
+        <>
+          <button
+            onClick={() => setShowDebugPanel(prev => !prev)}
+            style={{
+              position: 'fixed',
+              right: 16,
+              bottom: 16,
+              zIndex: 9999,
+              padding: '8px 16px',
+              backgroundColor: showDebugPanel ? '#ef4444' : '#3b82f6',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+            }}
+          >
+            {showDebugPanel ? '隐藏调试面板' : '显示调试面板'}
+          </button>
+
+          {showDebugPanel && selectedField && metricResult && (
+            <div style={{
+              position: 'fixed',
+              right: 16,
+              bottom: 60,
+              zIndex: 9998,
+              maxWidth: '400px',
+              maxHeight: '60vh',
+              overflow: 'auto',
+            }}>
+              <ErrorBoundary>
+                <DebugPanel
+                  context={analysisContext}
+                  metricResult={metricResult}
+                  selectedField={selectedField}
+                />
+              </ErrorBoundary>
+            </div>
+          )}
+        </>
+      )}
 
       <footer style={styles.footer}>
         <div style={styles.footerVersion}>版本：{APP_VERSION}</div>

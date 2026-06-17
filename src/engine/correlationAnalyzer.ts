@@ -7,6 +7,7 @@
 import type { FeatureSchema } from './types';
 import type { FieldMeta, AnalysisRole } from '../utils/tableParser/types';
 import { MAX_ROWS } from './analysisEngine';
+import type { AnalysisContext } from './context';
 
 // 一对字段的相关性结果
 export interface CorrelationPair {
@@ -375,6 +376,39 @@ export function analyzeCorrelations(
     weakCorrelations,
     warnings,
   };
+}
+
+/**
+ * 基于 AnalysisContext 的相关性分析（统一入口）
+ * 
+ * 从 AnalysisContext 中提取数据，不再独立解析 rows
+ * 
+ * @param context 分析上下文
+ * @param config 配置
+ * @returns 相关性分析结果
+ */
+export function analyzeCorrelationsFromContext(
+  context: AnalysisContext,
+  config: CorrelationConfig = {}
+): CorrelationResult {
+  // 1. 从 context 提取 headers 和 rows
+  const headers = context.fields.map(f => f.header);
+  const rows = context.rawRows;
+  
+  // 2. 从 context.metrics 构建 FeatureSchema 数组
+  // 只包含可分析的指标（排除 adjustment）
+  const features: FeatureSchema[] = context.metrics
+    .filter(m => m.isRecommended)
+    .map(m => ({
+      fieldName: m.sourceField,
+      displayName: m.displayName,
+      featureType: 'numerical' as const,
+      confidence: 1.0,
+      reason: `从 metricLayer 派生，direction=${m.direction}`,
+    }));
+  
+  // 3. 调用原有的分析函数
+  return analyzeCorrelations(headers, rows, features, config, context.fields);
 }
 
 /**
