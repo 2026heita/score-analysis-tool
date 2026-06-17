@@ -1,7 +1,7 @@
 /**
  * 通用数据概览面板
  * 使用 general engine 对任意表格提供基础数据概况
- * 默认折叠，不影响现有成绩分析功能
+ * 默认折叠，不影响现有表格数据分析功能
  */
 
 import { useState, useMemo } from 'react';
