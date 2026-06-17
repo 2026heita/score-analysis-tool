@@ -6,12 +6,13 @@
  * 1. 一个数据 → 一次计算 → 多处复用
  * 2. 统一 5000 行截断
  * 3. 统一数值过滤（Number.isFinite）
- * 4. 统一 rank 字段方向处理
+ * 4. 统一 rank 字段方向处理（从 MetricDefinition 读取）
  * 5. 统一 percentile 计算
  */
 
 import type { StatsResult, PositionResult } from '../types';
 import { calculateQuantile } from '../utils/stats';
+import type { AnalysisContext, MetricResult } from './context';
 
 // 大表格保护：统一截断阈值
 export const MAX_ROWS = 5000;
@@ -26,19 +27,9 @@ const DEFAULT_CONFIG: AnalysisConfig = {
 };
 
 /**
- * 从原始行数据中提取数值数组（统一入口）
+ * 从原始行数据中提取数值数组
  * 
- * 统一规则：
- * 1. 超过 maxRows 行时，只提取前 maxRows 行
- * 2. 使用 parseFloat 解析
- * 3. 只保留 Number.isFinite 的值
- * 4. 0 值有效
- * 5. NaN / undefined / '' 不参与计算
- * 
- * @param rows 原始行数据
- * @param fieldName 字段名
- * @param config 配置
- * @returns 有效数值数组、无效计数、总行数
+ * @deprecated 仅供 computeMetric() 内部使用，外部应通过 computeMetric() 统一入口。
  */
 export function extractFieldValues(
   rows: Record<string, string>[],
@@ -76,16 +67,9 @@ export function extractFieldValues(
 }
 
 /**
- * 计算统计指标（统一入口）
+ * 计算统计指标
  * 
- * 统一规则：
- * 1. 先过滤无效值（Number.isFinite）
- * 2. 排序后计算
- * 3. 使用 calculateQuantile 计算分位数
- * 
- * @param values 原始数值数组（包含无效值会被自动过滤）
- * @param totalRows 总行数（用于计算 invalidCount）
- * @returns 统计结果
+ * @deprecated 仅供 computeMetric() 内部使用，外部应通过 computeMetric() 统一入口。
  */
 export function computeStats(
   values: (number | null)[],
@@ -121,20 +105,14 @@ export function computeStats(
 }
 
 /**
- * 计算位置排名（统一入口）
+ * 计算位置排名
  * 
- * 统一规则：
- * 1. 先过滤无效值（Number.isFinite）
- * 2. 计算高于、等于、低于的人数
- * 3. 计算百分位（低于该值人数 / 有效人数 * 100）
- * 
- * @param values 原始数值数组
- * @param inputValue 输入值
- * @returns 位置结果
+ * @deprecated 仅供 computeMetric() 内部使用，外部应通过 computeMetric() 统一入口。
  */
 export function computePosition(
   values: number[],
-  inputValue: number
+  inputValue: number,
+  direction: 'higher-is-better' | 'lower-is-better' = 'higher-is-better'
 ): PositionResult {
   const cleanValues = values.filter(v => Number.isFinite(v));
   const total = cleanValues.length;
@@ -143,11 +121,28 @@ export function computePosition(
   const equalCount = cleanValues.filter(v => v === inputValue).length;
   const lowerCount = cleanValues.filter(v => v < inputValue).length;
 
-  const bestRank = higherCount + 1;
-  const worstRank = higherCount + equalCount;
+  let bestRank: number;
+  let worstRank: number;
+  let estimatedRank: number;
+  let percentile: number;
 
-  // 百分位口径：低于该值人数 / 有效人数 * 100
-  const percentile = total === 0 ? 0 : (lowerCount / total) * 100;
+  if (direction === 'lower-is-better') {
+    // rank 字段：数值越小越好
+    // 排名 = 低于该值人数 + 1
+    bestRank = lowerCount + 1;
+    worstRank = lowerCount + equalCount;
+    estimatedRank = lowerCount + 1;
+    // 百分位：高于该值人数 / 有效人数 * 100（反转）
+    percentile = total === 0 ? 0 : (higherCount / total) * 100;
+  } else {
+    // 普通字段：数值越大越好
+    // 排名 = 高于该值人数 + 1
+    bestRank = higherCount + 1;
+    worstRank = higherCount + equalCount;
+    estimatedRank = higherCount + 1;
+    // 百分位：低于该值人数 / 有效人数 * 100
+    percentile = total === 0 ? 0 : (lowerCount / total) * 100;
+  }
 
   return {
     total,
@@ -156,7 +151,7 @@ export function computePosition(
     lowerCount,
     bestRank,
     worstRank,
-    estimatedRank: higherCount + 1,
+    estimatedRank,
     percentile,
     existsInData: equalCount > 0,
   };
@@ -195,6 +190,8 @@ export function computePercentile(
 
 /**
  * 判断字段是否为排名字段（统一入口）
+ * 
+ * @deprecated 使用 MetricDefinition.direction 替代。新代码应从 AnalysisContext 读取 direction 属性。
  * 
  * 统一规则：
  * 1. 检查字段名是否包含排名相关关键词
@@ -328,6 +325,95 @@ export function analyzeMultipleFields(
       truncatedRows,
       stats,
     });
+  }
+
+  return results;
+}
+
+// ============================================================
+// 统一指标计算入口（基于 AnalysisContext）
+// ============================================================
+
+/**
+ * 计算单个指标的完整结果（统一入口）
+ * 
+ * 核心原则：
+ * 1. 从 AnalysisContext 读取原始数据和指标定义
+ * 2. 使用 MetricDefinition.direction 判断方向，不再硬编码 isRankField()
+ * 3. 返回 MetricResult 供 UI 直接使用
+ * 
+ * @param context 分析上下文
+ * @param metricName 指标名称（对应 MetricDefinition.name）
+ * @param userValue 用户输入值（可选，用于计算排名位置）
+ * @param config 配置
+ * @returns 指标计算结果
+ */
+export function computeMetric(
+  context: AnalysisContext,
+  metricName: string,
+  userValue?: number,
+  config: AnalysisConfig = {}
+): MetricResult | null {
+  // 1. 从 context 中查找指标定义
+  const metricDef = context.metrics.find(m => m.name === metricName);
+  if (!metricDef) {
+    return null;
+  }
+
+  // 2. 提取字段值（使用统一的截断和过滤逻辑）
+  const { values, invalidCount, totalRows, truncatedRows } = extractFieldValues(
+    context.rawRows,
+    metricDef.sourceField,
+    config
+  );
+
+  // 3. 计算统计指标
+  const stats = computeStats(values, truncatedRows);
+
+  // 4. 计算位置（如果有用户输入值）
+  let position: PositionResult | undefined;
+  if (userValue !== undefined && Number.isFinite(userValue) && values.length > 0) {
+    position = computePosition(values, userValue, metricDef.direction);
+  }
+
+  // 5. 构建 MetricResult
+  return {
+    metricName: metricDef.name,
+    displayName: metricDef.displayName,
+    direction: metricDef.direction,
+    values,
+    invalidCount,
+    totalRows,
+    truncatedRows,
+    stats,
+    position,
+    userValue,
+  };
+}
+
+/**
+ * 批量计算多个指标（统一入口）
+ * 
+ * @param context 分析上下文
+ * @param metricNames 指标名称数组（不传则计算所有指标）
+ * @param userValues 用户输入值映射（metricName -> userValue）
+ * @param config 配置
+ * @returns 指标结果映射
+ */
+export function computeMetrics(
+  context: AnalysisContext,
+  metricNames?: string[],
+  userValues?: Record<string, number>,
+  config: AnalysisConfig = {}
+): Map<string, MetricResult> {
+  const results = new Map<string, MetricResult>();
+  const names = metricNames || context.metrics.map(m => m.name);
+
+  for (const name of names) {
+    const result = computeMetric(context, name, userValues?.[name], config);
+    if (result) {
+      results.set(name, result);
+    }
   }
 
   return results;
