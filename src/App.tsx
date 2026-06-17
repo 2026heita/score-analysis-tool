@@ -6,7 +6,7 @@ import { usePersistedState } from './hooks/usePersistedState';
 import { buildParseReport } from './utils/tableParser';
 import { generateExplanation } from './utils/analysisExplainer';
 import { APP_VERSION } from './config/version';
-import type { ParsedTable, StatsResult, PositionResult, ChartTab, OriginalFieldRadarState, TraditionalSubjectEntry } from './types';
+import type { ParsedTable, StatsResult, PositionResult, ChartTab, OriginalFieldRadarState } from './types';
 import type { ParseSummary } from './utils/tableParser/types';
 import UsageGuide from './components/UsageGuide';
 import UpdateNotice from './components/UpdateNotice';
@@ -134,9 +134,6 @@ export default function App() {
   const [originalFieldState, setOriginalFieldState] = useState<OriginalFieldRadarState>(
     savedState?.originalFieldRadar ?? { selections: [], viewMode: 'bar' }
   );
-  const [traditionalEntries, setTraditionalEntries] = useState<TraditionalSubjectEntry[]>(
-    savedState?.traditionalSubjectRadar?.entries ?? []
-  );
   const [showDebugPanel, setShowDebugPanel] = useState(false);
 
   // ===== 分析解释派生（只读，不修改任何状态） =====
@@ -193,10 +190,9 @@ export default function App() {
       showAllFields,
       activeChartTab,
       originalFieldRadar: originalFieldState,
-      traditionalSubjectRadar: { entries: traditionalEntries },
       analysisMode: 'scoreRate',
     });
-  }, [rawText, selectedField, inputValue, showAllFields, activeChartTab, originalFieldState, traditionalEntries, save]);
+  }, [rawText, selectedField, inputValue, showAllFields, activeChartTab, originalFieldState, save]);
 
   // ===== 页面加载后恢复保存状态 =====
   useEffect(() => {
@@ -207,7 +203,6 @@ export default function App() {
       setShowAllFields(savedState.showAllFields ?? false);
       setActiveChartTab((savedState.activeChartTab as ChartTab) ?? 'histogram');
       setOriginalFieldState(savedState.originalFieldRadar ?? { selections: [], viewMode: 'bar' });
-      setTraditionalEntries(savedState.traditionalSubjectRadar?.entries ?? []);
     }
   }, []);
 
@@ -374,12 +369,11 @@ export default function App() {
       showAllFields,
       activeChartTab,
       originalFieldRadar: originalFieldState,
-      traditionalSubjectRadar: { entries: traditionalEntries },
       analysisMode: 'scoreRate',
     });
     setSaveMsg('已保存当前输入');
     setTimeout(() => setSaveMsg(null), 2000);
-  }, [rawText, selectedField, inputValue, showAllFields, activeChartTab, originalFieldState, traditionalEntries, save]);
+  }, [rawText, selectedField, inputValue, showAllFields, activeChartTab, originalFieldState, save]);
 
   const handleReset = useCallback(() => {
     const def = getDefault();
@@ -389,7 +383,6 @@ export default function App() {
     setShowAllFields(def.showAllFields);
     setActiveChartTab(def.activeChartTab as ChartTab);
     setOriginalFieldState(def.originalFieldRadar);
-    setTraditionalEntries(def.traditionalSubjectRadar.entries);
     try {
       const result = parseTableText(def.rawText);
       setParsedData(result);
@@ -409,7 +402,6 @@ export default function App() {
     setSelectedField(''); setInputValue(''); setShowAllFields(false);
     setActiveChartTab('histogram');
     setOriginalFieldState({ selections: [], viewMode: 'bar' });
-    setTraditionalEntries([]);
     setSaveMsg('已清空数据');
     setTimeout(() => setSaveMsg(null), 2000);
   }, [clear]);
@@ -423,7 +415,6 @@ export default function App() {
 
     // 清空旧状态
     setOriginalFieldState({ selections: [], viewMode: 'bar' });
-    setTraditionalEntries([]);
     setSelectedField('');
     setInputValue('');
     setActiveChartTab('histogram');
@@ -921,9 +912,7 @@ export default function App() {
                     rows={parsedData.rows}
                     isNumericField={isNumericField}
                     originalFieldState={originalFieldState}
-                    traditionalEntries={traditionalEntries}
                     onOriginalFieldChange={setOriginalFieldState}
-                    onTraditionalChange={setTraditionalEntries}
                   />
                 </div>
 

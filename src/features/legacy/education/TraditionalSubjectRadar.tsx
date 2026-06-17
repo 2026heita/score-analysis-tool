@@ -1,8 +1,13 @@
+/**
+ * @deprecated 教育/高考功能已收敛至 legacy 区。
+ * 此组件为教育科目雷达图，不再被主链路引用。
+ * 替代方案：使用通用的雷达图分析组件 OriginalFieldRadar。
+ */
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
-import { normalizeScore } from '../../utils/chartData';
-import type { TraditionalSubjectEntry } from '../../types';
+import { normalizeScore } from '../../../utils/chartData';
+import type { TraditionalSubjectEntry } from '../../../types';
 
 interface TraditionalSubjectRadarProps {
   initialEntries?: TraditionalSubjectEntry[];
@@ -39,6 +44,7 @@ const SUBJECTS: TraditionalSubject[] = [
   ], defaultOption: '生物' },
 ];
 
+/** @deprecated 教育/高考功能已收敛至 legacy 区 */
 export default function TraditionalSubjectRadar({ initialEntries, onStateChange }: TraditionalSubjectRadarProps) {
   const defaultEntries = useMemo(() =>
     SUBJECTS.map(s => ({ name: s.defaultOption || s.label, score: 0, maxScore: s.defaultMax })),

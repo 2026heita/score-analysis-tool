@@ -52,6 +52,16 @@ export interface UpdateLogItem {
 
 const _updateLogsData: UpdateLogItem[] = [
   {
+    date: '2026-06-17',
+    version: 'v1.1.4',
+    title: '传统科目雷达图入口下线',
+    type: 'notice',
+    items: [
+      '传统科目得分率雷达图入口已下线，相关功能迁移为底层兼容保留',
+      '分析引擎和图表功能不受影响，主分析链路更加通用'
+    ]
+  },
+  {
     date: '2026-06-16',
     version: 'v1.1.3',
     title: '更通用的数据分析',

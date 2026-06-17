@@ -32,6 +32,66 @@
 
 ---
 
+## 2026-06-17 - Education UI Legacy Isolation
+
+### Refactor
+- remove `TraditionalSubjectRadar` from main UI link:
+  - delete duplicate `src/components/charts/TraditionalSubjectRadar.tsx`
+  - retained only at `src/features/legacy/education/TraditionalSubjectRadar.tsx`
+  - `RadarAnalysis.tsx` simplified: no tab switching, direct render of `OriginalFieldRadar`
+- extract `FIXED_SUBJECT_ORDER` to `src/config/education.ts` (legacy config)
+- remove `traditionalEntries` state from `App.tsx` — no longer persisted or rendered
+- `TraditionalSubjectRadarState` and `TraditionalSubjectEntry` types retained in `types.ts` with `@deprecated` for legacy component compatibility
+- `SavedState.traditionalSubjectRadar` made optional — backward-compatible reads, no new writes
+- `storage.ts` default states no longer emit `traditionalSubjectRadar`
+
+### Analysis Engine
+- no changes to `computeMetric`, `metricRegistry`, `chartAdapter`, `MetricResult`, or `AnalysisContext`
+- analysis engine is fully education-domain agnostic
+
+### Parser Heuristics
+- education-related keywords in `fieldClassifier.ts`, `headerDetection.ts`, `sheetDetection.ts`, `chartData.ts` retained intentionally
+- these are infrastructure-level heuristics for detecting column/field types, not education-specific features
+
+### Deprecated (still accessible)
+- `TraditionalSubjectRadar` component at `src/features/legacy/education/`
+- `FIXED_SUBJECT_ORDER` at `src/config/education.ts`
+- `TraditionalSubjectEntry`, `TraditionalSubjectRadarState` types
+- `DEFAULT_TRADITIONAL_ENTRIES`, `DEFAULT_SAMPLE_TEXT` in `storage.ts`
+
+### Verification
+- `tsc --noEmit` — clean
+- `testComputeMetric.mjs` — 21/21 passed
+- `testMetricRegistry.mjs` — 16/16 passed
+- `vite build` — success
+
+---
+
+## 2026-06-17 - Metric Registry Introduction
+
+### Refactor
+- introduce `src/metrics/metricRegistry.ts` — metricId → compute function mapping
+- `analysisEngine.computeMetric()` is now a pure dispatcher: delegates to `metric.compute()`
+- compute logic extracted into `createGenericCompute()` factory, injected into registry
+- `legacyComputeMetric` alias added as deprecated compatibility layer
+
+### Architecture
+- dependency direction: `metricRegistry` → `context` (types only), no circular deps
+- `analysisEngine` → `metricRegistry` (imports `getOrCreateMetricDef`)
+- `chartAdapter` already accepts only `MetricResult` — no changes needed
+
+### Tests
+- `scripts/testMetricRegistry.mjs` — 16/16 passed
+- `scripts/testComputeMetric.mjs` — 21/21 still passing
+- `tsc --noEmit` — clean
+
+### Notes
+- no behavior changes — same input produces same output
+- registry uses dynamic creation pattern (any metricId auto-creates entry)
+- future: pre-registered metrics (avg_score, pass_rate) can override generic compute
+
+---
+
 ## 2026-06-16 - Semantic Layer V2 (v1.1.2)
 
 ### Refactor
