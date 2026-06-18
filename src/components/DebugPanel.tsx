@@ -1,16 +1,19 @@
-import { type AnalysisContext, type MetricResult } from '../engine/context';
+import type { DerivedDataContext, MetricResult } from '../engine/context';
+import type { MetricDefinition } from '../engine/metricLayer';
 
 interface DebugPanelProps {
-  context: AnalysisContext | null;
+  context: DerivedDataContext | null;
   metricResult: MetricResult | null;
   selectedField: string;
+  /** v1.4 Phase 4：MetricDefinition 由 View 层传入，不再从 context 中查找 */
+  metricDef?: MetricDefinition;
 }
 
 /**
  * 调试面板：在开发模式下展示当前 metric 的详细信息
  * 用于人工核对 direction 是否真正生效
  */
-export function DebugPanel({ context, metricResult, selectedField }: DebugPanelProps) {
+export function DebugPanel({ context, metricResult, selectedField, metricDef }: DebugPanelProps) {
   // 仅在开发模式下显示
   if (import.meta.env.PROD) return null;
   
@@ -22,8 +25,6 @@ export function DebugPanel({ context, metricResult, selectedField }: DebugPanelP
       </div>
     );
   }
-
-  const metricDef = context.metrics.find(m => m.name === selectedField);
 
   return (
     <div style={styles.debugPanel}>

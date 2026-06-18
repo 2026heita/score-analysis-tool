@@ -1,3 +1,5 @@
+import type { FilterCondition } from './engine/filterRows';
+
 export interface ParsedTable {
   headers: string[];
   rows: Record<string, string>[];
@@ -54,7 +56,8 @@ export interface TraditionalSubjectRadarState {
 }
 
 export interface SavedState {
-  version: number;
+  /** 持久化版本号，由 saveState() 统一注入，调用方无需手动设置 */
+  version?: number;
   rawText: string;
   selectedField: string;
   inputValue: string;
@@ -64,6 +67,10 @@ export interface SavedState {
   /** @deprecated 教育/高考功能已收敛至 legacy 区，仅保留旧数据兼容读取 */
   traditionalSubjectRadar?: TraditionalSubjectRadarState;
   analysisMode: AnalysisMode;
+  /** v1.3 新增：筛选条件 */
+  filterConditions?: FilterCondition[];
+  /** v1.3 新增：分组维度 */
+  selectedDimension?: string;
 }
 
 // 分析解释类型定义

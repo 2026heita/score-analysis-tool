@@ -250,3 +250,74 @@ export function isSuitableForNumericalAnalysis(
   const values = extractNumericalValues(vectors, fieldName);
   return values.length >= minValidCount;
 }
+
+// ============================================================
+// v1.4 Phase 2：异常值策略统一层
+// ============================================================
+
+/** 异常值策略类型 */
+export type OutlierStrategy = 'auto-exclude' | 'mark' | 'keep';
+
+/** 异常值分类类型 */
+export type OutlierClass = 'extremeHigh' | 'extremeLow' | 'outlier';
+
+/** 异常值分类结果 */
+export interface OutlierClassification {
+  type: OutlierClass;
+  strategy: OutlierStrategy;
+}
+
+/** 错误值阈值：低于此值视为明显错误 */
+export const ERROR_VALUE_THRESHOLD = -900;
+
+/**
+ * 从数值数组检测 IQR 异常值（唯一计算源）
+ * 
+ * 内部将 number[] 转为 FeatureVector[] 后调用 detectOutliers
+ */
+export function detectOutliersFromValues(
+  values: number[]
+): Array<{ rowIndex: number; value: number; zScore: number }> {
+  if (values.length < 4) return [];
+  
+  const vectors: FeatureVector[] = values.map((v, i) => ({
+    rowIndex: i,
+    values: { _val: v },
+  }));
+  
+  return detectOutliers(vectors, '_val');
+}
+
+/**
+ * 判断异常值策略（v1.4 统一规则）
+ * 
+ * 规则：
+ * 1. 明显错误值（如 -999）→ 默认排除
+ * 2. 真实极端值（z-score > 3）→ 默认保留 + 标记
+ * 3. 不确定异常 → 默认保留
+ */
+export function classifyOutlierStrategy(value: number, zScore: number): OutlierClassification {
+  if (value <= ERROR_VALUE_THRESHOLD) {
+    return { type: value < 0 ? 'extremeLow' : 'extremeHigh', strategy: 'auto-exclude' };
+  }
+  if (zScore > 3) {
+    return { type: value > 0 ? 'extremeHigh' : 'extremeLow', strategy: 'mark' };
+  }
+  return { type: value > 0 ? 'extremeHigh' : 'extremeLow', strategy: 'keep' };
+}
+
+/**
+ * 计算排除异常值后的均值变化
+ */
+export function computeMeanChange(values: number[], excludedIndices: Set<number>): string {
+  if (excludedIndices.size === 0) return '无变化';
+  const remaining = values.filter((_, i) => !excludedIndices.has(i));
+  if (remaining.length === 0) return '全部排除';
+
+  const oldMean = values.reduce((a, b) => a + b, 0) / values.length;
+  const newMean = remaining.reduce((a, b) => a + b, 0) / remaining.length;
+  const diff = newMean - oldMean;
+  const sign = diff > 0 ? '+' : '';
+  const pct = oldMean !== 0 ? ((diff / Math.abs(oldMean)) * 100) : 0;
+  return `${sign}${diff.toFixed(2)}（${sign}${pct.toFixed(1)}%）`;
+}

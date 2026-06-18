@@ -18,6 +18,7 @@
     "test:analysis-engine": "node scripts/testAnalysisEngine.mjs",
     "test:sample-data": "node scripts/testSampleData.mjs",
     "test:metric-layer": "node scripts/testMetricLayer.mjs",
+    "test:export-analysis": "node scripts/testExportAnalysis.mjs",
     "check:release-note": "node scripts/checkReleaseNote.mjs",
     "finalAcceptance": "node scripts/finalAcceptance.mjs"
   },
