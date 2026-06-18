@@ -1,14 +1,15 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { parseTableText } from './utils/parseTable';
 import { parseTableFile, type ParsedFileResult } from './utils/fileImport';
 import { formatNumber } from './utils/stats';
 import { usePersistedState } from './hooks/usePersistedState';
-import { buildParseReport } from './utils/tableParser';
+import { useParsedTable } from './hooks/useParsedTable';
+import { useAnalysisOrchestrator } from './hooks/useAnalysisOrchestrator';
+import { useMetricResult } from './hooks/useMetricResult';
 import { generateExplanation } from './utils/analysisExplainer';
 import { APP_VERSION } from './config/version';
 import { APP_NAME } from './config/app';
-import type { ParsedTable, StatsResult, PositionResult, ChartTab, OriginalFieldRadarState } from './types';
-import type { ParseSummary } from './utils/tableParser/types';
+import type { ChartTab, OriginalFieldRadarState } from './types';
 import UsageGuide from './components/UsageGuide';
 import UpdateNotice from './components/UpdateNotice';
 import ChartTabs from './components/charts/ChartTabs';
@@ -16,28 +17,32 @@ import HistogramChart from './components/charts/HistogramChart';
 import BoxPlotChart from './components/charts/BoxPlotChart';
 import CdfChart from './components/charts/CdfChart';
 import RadarAnalysis from './components/charts/RadarAnalysis';
+import { clearOriginalFieldRadarCache } from './components/charts/OriginalFieldRadar';
 import QuartilePieChart from './components/charts/QuartilePieChart';
 import ParseReportPanel from './components/ParseReportPanel';
 import AnalysisExplainer from './components/AnalysisExplainer';
 import GeneralDataOverview from './components/GeneralDataOverview';
 import RelationshipAnalysisPanel from './components/RelationshipAnalysisPanel';
 import SampleDataSelector from './components/SampleDataSelector';
-import { analyzeCorrelationsFromContext } from './engine/correlationAnalyzer';
 import { isNumericField as checkIsNumericField } from './engine/analysisEngine';
-import { buildAnalysisContext } from './engine/context';
-import { computeMetric } from './engine/analysisEngine';
-import { buildSemanticDefinitions } from './engine/metricLayer';
 import { toHistogramProps, toBoxPlotProps, toCdfProps, toQuartilePieProps } from './engine/chartAdapter';
 import { DebugPanel } from './components/DebugPanel';
 import type { SampleDataset } from './data/sampleDatasets';
+import GroupAnalysis from './components/GroupAnalysis';
+import GroupBarChart from './components/charts/GroupBarChart';
+import FilterPanel from './components/FilterPanel';
+import OutlierPanel from './components/OutlierPanel';
+import AnalysisContextHint from './components/AnalysisContextHint';
 import { ErrorBoundary } from './components/ErrorBoundary';
-
-const EXCLUDED_KEYWORDS = ['名次', '排名', '序号', '编号', '序号号'];
+import { useFilterState } from './hooks/useFilterState';
+import { useGroupAnalysis } from './hooks/useGroupAnalysis';
+import { useExportActions } from './hooks/useExportActions';
+import { calculateFieldAnalyticScore } from './utils/tableParser/fieldClassifier';
 
 export default function App() {
   const { loadState, save, clear, getDefault } = usePersistedState();
   const [showSampleSelector, setShowSampleSelector] = useState(false);
-  
+
   // ===== 注入全局动画样式 =====
   useEffect(() => {
     const style = document.createElement('style');
@@ -77,71 +82,70 @@ export default function App() {
 
   const savedState = useMemo(() => loadState(), [loadState]);
 
-  const [rawText, setRawText] = useState('');
-  const [parsedData, setParsedData] = useState<ParsedTable | null>(null);
-  const [parseError, setParseError] = useState<string | null>(null);
-  const [parseWarnings, setParseWarnings] = useState<string[]>([]);
-  const [fileError, setFileError] = useState<string | null>(null);
-  const [parseSummary, setParseSummary] = useState<ParseSummary | null>(null);
-  const [availableSheets, setAvailableSheets] = useState<string[] | null>(null);
-  const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
+  // ===== Hooks：解析 / 上下文 / 指标计算 =====
+  const {
+    rawText, setRawText,
+    parsedData, setParsedData,
+    parseError, setParseError,
+    parseWarnings, setParseWarnings,
+    fileError, setFileError,
+    parseSummary, setParseSummary,
+    availableSheets, setAvailableSheets,
+    selectedSheet, setSelectedSheet,
+    isParsing, setIsParsing,
+    parseReport,
+    textareaRef,
+    activeTableId,
+  } = useParsedTable();
+
+  // ===== 用户交互状态 =====
   const [selectedField, setSelectedField] = useState('');
   const [inputValue, setInputValue] = useState('');
   const [showAllFields, setShowAllFields] = useState(false);
   const [activeChartTab, setActiveChartTab] = useState<ChartTab>('histogram');
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
-  const [isParsing, setIsParsing] = useState(false);
-
-  // ===== 解析报告派生（只读，不修改任何状态） =====
-  const parseReport = useMemo(() => {
-    if (!parsedData || !parseSummary?.fieldTypes) return null;
-    // recommended 基于 analysisRole 判断，不依赖 showAllFields 开关
-    const recommendedFields = parseSummary.fieldTypes
-      .filter(meta => {
-        const role = meta.analysisRole;
-        return role === 'primaryTotal' || role === 'rank' || role === 'sectionTotal' || role === 'courseScore';
-      })
-      .map(meta => meta.header);
-    return buildParseReport(
-      parsedData.headers,
-      parsedData.rows,
-      parseSummary.fieldTypes,
-      recommendedFields
-    );
-  }, [parsedData, parseSummary]);
-
-  // ===== 构建统一分析上下文（AnalysisContext） =====
-  const analysisContext = useMemo(() => {
-    if (!parsedData || !parseSummary?.fieldTypes) return null;
-    
-    const semanticDefs = buildSemanticDefinitions(parseSummary.fieldTypes);
-    
-    return buildAnalysisContext(
-      parseSummary.fieldTypes,
-      parsedData.rows,
-      semanticDefs.metrics,
-      semanticDefs.dimensions
-    );
-  }, [parsedData, parseSummary]);
-
-  // ===== 相关性分析派生（只读，不修改任何状态） =====
-  const correlationResult = useMemo(() => {
-    if (!analysisContext) return null;
-    return analyzeCorrelationsFromContext(analysisContext);
-  }, [analysisContext]);
-
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const [originalFieldState, setOriginalFieldState] = useState<OriginalFieldRadarState>(
     savedState?.originalFieldRadar ?? { selections: [], viewMode: 'bar' }
   );
   const [showDebugPanel, setShowDebugPanel] = useState(false);
 
+  // ===== v1.3 Hooks：筛选 / 分组 / 导出 =====
+  const {
+    filterConditions, setFilterConditions,
+    filterCollapsed, setFilterCollapsed,
+    numericFieldSet,
+    filterResult,
+    filteredParsedData,
+    resetFilter,
+  } = useFilterState(parsedData, parseSummary, activeTableId);
+
+  const {
+    selectedDimension, setSelectedDimension,
+    availableDimensions,
+    resetGroupAnalysis,
+  } = useGroupAnalysis(filteredParsedData, parseSummary);
+
+  // ===== v1.5 Orchestration：统一调度层 =====
+  const {
+    core: { metricResult, correlationResult },
+    derived: { derivedData },
+    view: { viewContext },
+    metricDefs,
+  } = useAnalysisOrchestrator(filteredParsedData, parseSummary, selectedField, inputValue, selectedDimension);
+
+  const { stats, position, fieldValues } = useMetricResult(metricResult);
+
+  const {
+    handleExportFilteredData,
+    handleExportGroupAnalysis,
+    handleExportMetricSummary,
+  } = useExportActions(filteredParsedData, filterResult, viewContext?.groupStats ?? null, metricResult, stats, position, selectedField);
+
   // ===== 分析解释派生（只读，不修改任何状态） =====
   const analysisExplanation = useMemo(() => {
     if (!parsedData || !originalFieldState?.selections?.length) return null;
-    
-    // 构建排名字段集合（用于反转百分位计算方向）
+
     const rankFields = new Set<string>();
     if (parseSummary?.fieldTypes) {
       for (const meta of parseSummary.fieldTypes) {
@@ -150,18 +154,16 @@ export default function App() {
         }
       }
     }
-    
-    // 构建 fieldValues 和 fieldData
+
     const fieldValues: Record<string, number> = {};
     const fieldData: Record<string, number[]> = {};
-    
+
     for (const selection of originalFieldState.selections) {
       const { field, userValue } = selection;
       if (!field || userValue === undefined || isNaN(userValue)) continue;
-      
+
       fieldValues[field] = userValue;
-      
-      // 提取该字段的所有数据
+
       const values = parsedData.rows
         .map(row => {
           const val = row[field];
@@ -170,21 +172,20 @@ export default function App() {
           return isNaN(num) ? null : num;
         })
         .filter((v): v is number => v !== null && Number.isFinite(v));
-      
+
       if (values.length > 0) {
         fieldData[field] = values;
       }
     }
-    
+
     if (Object.keys(fieldValues).length === 0) return null;
-    
+
     return generateExplanation(fieldValues, fieldData, rankFields);
   }, [parsedData, originalFieldState, parseSummary]);
 
   // ===== 自动保存 =====
   useEffect(() => {
     save({
-      version: 2,
       rawText,
       selectedField,
       inputValue,
@@ -192,8 +193,10 @@ export default function App() {
       activeChartTab,
       originalFieldRadar: originalFieldState,
       analysisMode: 'scoreRate',
+      filterConditions,
+      selectedDimension,
     });
-  }, [rawText, selectedField, inputValue, showAllFields, activeChartTab, originalFieldState, save]);
+  }, [rawText, selectedField, inputValue, showAllFields, activeChartTab, originalFieldState, filterConditions, selectedDimension, save]);
 
   // ===== 页面加载后恢复保存状态 =====
   useEffect(() => {
@@ -204,40 +207,10 @@ export default function App() {
       setShowAllFields(savedState.showAllFields ?? false);
       setActiveChartTab((savedState.activeChartTab as ChartTab) ?? 'histogram');
       setOriginalFieldState(savedState.originalFieldRadar ?? { selections: [], viewMode: 'bar' });
+      setFilterConditions(savedState.filterConditions ?? [{ field: '', operator: 'equals', value: '' }]);
+      setSelectedDimension(savedState.selectedDimension ?? '');
     }
   }, []);
-
-  // ===== 自动解析已粘贴的数据 =====
-  useEffect(() => {
-    if (!rawText.trim()) return;
-    try {
-      const result = parseTableText(rawText);
-      setParsedData(result);
-      setParseWarnings(result.warnings || []);
-      setParseError(null);
-    } catch { /* 忽略 */ }
-  }, [rawText]);
-
-  // ===== 使用 computeMetric 计算指标结果 =====
-  const metricResult = useMemo(() => {
-    if (!analysisContext || !selectedField) return null;
-    
-    const userValue = inputValue ? parseFloat(inputValue) : undefined;
-    return computeMetric(analysisContext, selectedField, userValue);
-  }, [analysisContext, selectedField, inputValue]);
-
-  // ===== 从 metricResult 提取 stats 和 position =====
-  const stats: StatsResult | null = useMemo(() => {
-    return metricResult?.stats || null;
-  }, [metricResult]);
-
-  const position: PositionResult | null = useMemo(() => {
-    return metricResult?.position || null;
-  }, [metricResult]);
-
-  const fieldValues = useMemo(() => {
-    return metricResult?.values || [];
-  }, [metricResult]);
 
   // ===== 字段判断（使用统一分析引擎） =====
   const isNumericField = useCallback((header: string): boolean => {
@@ -246,71 +219,63 @@ export default function App() {
   }, [parsedData]);
 
   const shouldExclude = useCallback((header: string): boolean => {
-    return EXCLUDED_KEYWORDS.some(kw => header.includes(kw));
-  }, []);
+    if (!parseSummary?.fieldTypes) return false;
+    const meta = parseSummary.fieldTypes.find(f => f.header === header);
+    if (!meta) return false;
+    const score = calculateFieldAnalyticScore(meta);
+    return !score.isAnalyzable;
+  }, [parseSummary]);
 
-  // 获取字段的 analysisRole（从 parseSummary.fieldTypes）
   const getFieldAnalysisRole = useCallback((header: string): string => {
     if (!parseSummary?.fieldTypes) return 'unknown';
     const meta = parseSummary.fieldTypes.find(f => f.header === header);
     return meta?.analysisRole || 'unknown';
   }, [parseSummary]);
 
-  // 判断是否为推荐分析字段（基于 analysisRole）
   const isRecommendedField = useCallback((header: string): boolean => {
     const role = getFieldAnalysisRole(header);
-    // 只推荐 primaryTotal、rank、sectionTotal、courseScore
     return role === 'primaryTotal' || role === 'rank' || role === 'sectionTotal' || role === 'courseScore';
   }, [getFieldAnalysisRole]);
 
   const availableFields = useMemo(() => {
     if (!parsedData) return [];
     if (showAllFields) {
-      // 显示全部字段时，返回所有字段（用于分组显示）
       return parsedData.headers;
     }
-    // 默认视图：只显示推荐分析字段
     const recommended = parsedData.headers.filter(h => isRecommendedField(h) && !shouldExclude(h));
-    
-    // 兜底：如果推荐字段为空，但有数值字段，提供手动选择入口
+
     if (recommended.length === 0 && parsedData.headers.length > 0) {
-      // 找出数值比例较高的 unknown 字段（排除 identity/textMeta/invalid）
       const numericCandidates = parsedData.headers.filter(h => {
         const role = getFieldAnalysisRole(h);
-        // 排除身份、文本、无效字段
         if (role === 'identity' || role === 'textMeta' || role === 'invalid' || role === 'adjustment') {
           return false;
         }
-        // 检查是否为数值字段
         return isNumericField(h) && !shouldExclude(h);
       });
-      
+
       if (numericCandidates.length > 0) {
-        // 返回数值候选字段，但不自动推荐，只提供手动选择入口
         return numericCandidates;
       }
     }
-    
+
     return recommended;
   }, [parsedData, showAllFields, isRecommendedField, shouldExclude, getFieldAnalysisRole, isNumericField]);
 
-  // 判断是否处于兜底状态（recommendedFields 为空但存在数值候选字段）
   const isFallbackFieldMode = useMemo(() => {
     if (!parsedData || showAllFields) return false;
     const recommended = parsedData.headers.filter(h => isRecommendedField(h) && !shouldExclude(h));
     return recommended.length === 0 && availableFields.length > 0;
   }, [parsedData, showAllFields, isRecommendedField, shouldExclude, availableFields]);
 
-  // 分组字段（用于"显示全部字段"时的 optgroup）
   const groupedFields = useMemo(() => {
     if (!parsedData || !showAllFields) return null;
-    
+
     const recommended: string[] = [];
     const adjustment: string[] = [];
     const identity: string[] = [];
     const textMeta: string[] = [];
     const others: string[] = [];
-    
+
     for (const header of parsedData.headers) {
       const role = getFieldAnalysisRole(header);
       if (role === 'primaryTotal' || role === 'rank' || role === 'sectionTotal' || role === 'courseScore') {
@@ -325,14 +290,13 @@ export default function App() {
         others.push(header);
       }
     }
-    
+
     return { recommended, adjustment, identity, textMeta, others };
   }, [parsedData, showAllFields, getFieldAnalysisRole]);
 
   const inputNum = inputValue ? parseFloat(inputValue) : NaN;
   const hasInputError = inputValue.trim() !== '' && isNaN(inputNum);
 
-  // ===== 自然语言总结 =====
   const summaryText = useMemo(() => {
     if (!position || !stats || isNaN(inputNum)) return '';
     const numStr = formatNumber(inputNum);
@@ -342,7 +306,7 @@ export default function App() {
     return `该值在表中不存在。如果按该值插入全表，估算名次为第 ${position.estimatedRank} 名，约高于 ${position.percentile.toFixed(1)}% 的有效数据。`;
   }, [position, stats, selectedField, inputNum]);
 
-  // ===== 事件处理（部分依赖于 stats/position，必须在它们之后定义） =====
+  // ===== 事件处理 =====
   const handleParse = useCallback(() => {
     if (!rawText.trim()) {
       setParseError('请先粘贴表格数据。');
@@ -359,11 +323,10 @@ export default function App() {
       setParseError(e instanceof Error ? e.message : '解析失败');
       setParsedData(null);
     }
-  }, [rawText]);
+  }, [rawText, setParsedData, setParseWarnings, setParseError]);
 
   const handleSave = useCallback(() => {
     save({
-      version: 1,
       rawText,
       selectedField,
       inputValue,
@@ -371,10 +334,12 @@ export default function App() {
       activeChartTab,
       originalFieldRadar: originalFieldState,
       analysisMode: 'scoreRate',
+      filterConditions,
+      selectedDimension,
     });
     setSaveMsg('已保存当前输入');
     setTimeout(() => setSaveMsg(null), 2000);
-  }, [rawText, selectedField, inputValue, showAllFields, activeChartTab, originalFieldState, save]);
+  }, [rawText, selectedField, inputValue, showAllFields, activeChartTab, originalFieldState, filterConditions, selectedDimension, save]);
 
   const handleReset = useCallback(() => {
     const def = getDefault();
@@ -383,6 +348,8 @@ export default function App() {
     setInputValue(def.inputValue);
     setShowAllFields(def.showAllFields);
     setActiveChartTab(def.activeChartTab as ChartTab);
+    resetGroupAnalysis();
+    resetFilter();
     setOriginalFieldState(def.originalFieldRadar);
     try {
       const result = parseTableText(def.rawText);
@@ -393,19 +360,21 @@ export default function App() {
     save(def);
     setSaveMsg('已恢复默认设置');
     setTimeout(() => setSaveMsg(null), 2000);
-    // textarea 回到顶部
     setTimeout(() => { textareaRef.current?.scrollTo({ top: 0 }); }, 0);
-  }, [getDefault, save]);
+  }, [getDefault, save, setRawText, setParsedData, setParseWarnings, setParseError, textareaRef, resetFilter, resetGroupAnalysis]);
 
   const handleClear = useCallback(() => {
     clear();
+    clearOriginalFieldRadarCache();
     setRawText(''); setParsedData(null); setParseError(null); setParseWarnings([]);
     setSelectedField(''); setInputValue(''); setShowAllFields(false);
+    resetGroupAnalysis();
+    resetFilter();
     setActiveChartTab('histogram');
     setOriginalFieldState({ selections: [], viewMode: 'bar' });
     setSaveMsg('已清空数据');
     setTimeout(() => setSaveMsg(null), 2000);
-  }, [clear]);
+  }, [clear, setRawText, setParsedData, setParseError, setParseWarnings, resetFilter, resetGroupAnalysis]);
 
   const handleFillSample = useCallback(() => {
     setShowSampleSelector(true);
@@ -414,14 +383,15 @@ export default function App() {
   const handleLoadSampleDataset = useCallback((dataset: SampleDataset) => {
     if (rawText.trim() && !window.confirm('当前输入会被示例数据覆盖，是否继续？')) return;
 
-    // 清空旧状态
+    clearOriginalFieldRadarCache();
     setOriginalFieldState({ selections: [], viewMode: 'bar' });
     setSelectedField('');
     setInputValue('');
+    resetGroupAnalysis();
+    resetFilter();
     setActiveChartTab('histogram');
     setParseSummary(null);
 
-    // 将示例数据转换为文本格式
     const text = [
       dataset.headers.join('\t'),
       ...dataset.rows.map(row => dataset.headers.map(h => row[h] ?? '').join('\t'))
@@ -433,11 +403,9 @@ export default function App() {
       setParsedData(result);
       setParseWarnings(result.warnings || []);
       setParseError(null);
-
-      // textarea 回到顶部
       setTimeout(() => { textareaRef.current?.scrollTo({ top: 0 }); }, 0);
     } catch { /* 静默 */ }
-  }, [rawText]);
+  }, [rawText, setRawText, setParsedData, setParseWarnings, setParseError, setParseSummary, textareaRef, resetFilter, resetGroupAnalysis]);
 
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -446,44 +414,39 @@ export default function App() {
     setParseSummary(null);
     setAvailableSheets(null);
     setSelectedSheet(null);
+    clearOriginalFieldRadarCache();
     setOriginalFieldState({ selections: [], viewMode: 'bar' });
     setIsParsing(true);
-    
-    // 大文件提示
+
     if (file.size > 5 * 1024 * 1024) {
       setTimeout(() => {
         setParseWarnings(['文件较大，解析可能需要几秒，请耐心等待...']);
       }, 100);
     }
-    
+
     parseTableFile(file)
       .then(result => {
         setParsedData(result);
         setParseWarnings(result.warnings || []);
         setParseError(null);
         setIsParsing(false);
-        
-        // 大表格提示
+
         if (result.rows.length > 5000) {
           setParseWarnings([
             ...result.warnings,
             `当前数据量较大（${result.rows.length} 行），为避免卡顿，所有分析结果（包括排名、百分位等）仅基于前 5000 行数据计算。如需全表分析，请谨慎核对结果。`
           ]);
         }
-        
-        // 保存解析摘要
+
         if (result.summary) {
           setParseSummary(result.summary);
-          // 自动选择推荐字段
           if (result.summary.recommendedField) {
             setSelectedField(result.summary.recommendedField);
           }
         }
-        // 保存可用 sheet 列表
         if (result.availableSheets && result.availableSheets.length > 1) {
           setAvailableSheets(result.availableSheets);
         }
-        // 将文件内容也转为文本填入 textarea，方便保存
         const text = [result.headers.join('\t'), ...result.rows.map(r => result.headers.map(h => r[h] ?? '').join('\t'))].join('\n');
         setRawText(text);
         setActiveChartTab('histogram');
@@ -495,15 +458,13 @@ export default function App() {
         setParseSummary(null);
         setIsParsing(false);
       });
-    // 重置 input，允许重复选择同一文件
     e.target.value = '';
-  }, []);
+  }, [setRawText, setParsedData, setParseWarnings, setParseError, setFileError, setParseSummary, setAvailableSheets, setSelectedSheet, setIsParsing]);
 
-  // 切换 sheet 重新解析
   const handleSheetChange = useCallback((sheetName: string) => {
     setSelectedSheet(sheetName);
+    clearOriginalFieldRadarCache();
     setOriginalFieldState({ selections: [], viewMode: 'bar' });
-    // 需要重新上传文件来解析不同 sheet，这里提示用户
     if (parsedData && (parsedData as ParsedFileResult).reparseSheet) {
       (parsedData as ParsedFileResult).reparseSheet!(sheetName)
         .then(result => {
@@ -523,7 +484,7 @@ export default function App() {
           setFileError(err instanceof Error ? err.message : '切换工作表失败');
         });
     }
-  }, [parsedData]);
+  }, [parsedData, setRawText, setParsedData, setParseWarnings, setParseError, setFileError, setParseSummary, setSelectedSheet]);
 
   const fallbackCopy = useCallback((text: string) => {
     try {
@@ -658,7 +619,6 @@ export default function App() {
           <section style={{ ...styles.section, ...styles.errorSection }}>
             <p style={styles.errorText}>
               {(() => {
-                // 诊断不同原因显示不同提示
                 if (!parsedData.rows || parsedData.rows.length === 0) {
                   return '表格数据为空，请检查是否成功读取到数据行。';
                 }
@@ -746,8 +706,45 @@ export default function App() {
                 <span style={styles.infoValue}>{parsedData.headers.length}</span>
                 <span style={styles.infoLabel}>数据行数：</span>
                 <span style={styles.infoValue}>{parsedData.rows.length}</span>
+                {filteredParsedData && filterResult && filterResult.filterSummary.activeConditions > 0 && (
+                  <button
+                    className="copy-btn"
+                    style={styles.exportButton}
+                    onClick={handleExportFilteredData}
+                  >
+                    导出筛选后数据 CSV
+                  </button>
+                )}
               </div>
             </section>
+
+            <ErrorBoundary>
+              <FilterPanel
+                headers={parsedData.headers}
+                numericFields={numericFieldSet}
+                conditions={filterConditions}
+                onConditionsChange={setFilterConditions}
+                filterSummary={filterResult?.filterSummary ?? null}
+                collapsed={filterCollapsed}
+                onToggleCollapse={() => setFilterCollapsed(!filterCollapsed)}
+              />
+            </ErrorBoundary>
+
+            <AnalysisContextHint
+              originalCount={parsedData.rows.length}
+              filteredCount={filterResult?.filterSummary.filteredCount ?? parsedData.rows.length}
+              activeConditions={filterResult?.filterSummary.activeConditions ?? 0}
+              selectedDimension={selectedDimension}
+              isFilteredEmpty={filterResult ? filterResult.filterSummary.filteredCount === 0 && filterResult.filterSummary.activeConditions > 0 : false}
+            />
+
+            {filterResult?.filterSummary && filterResult.filterSummary.activeConditions > 0 && filterResult.filterSummary.filteredCount === 0 && (
+              <section style={{ ...styles.section, ...styles.errorSection }}>
+                <p style={styles.errorText}>
+                  当前筛选条件下无可分析数据，请调整筛选条件后重试。
+                </p>
+              </section>
+            )}
 
             <section style={styles.section}>
               <h2 style={styles.sectionTitle}>分析设置</h2>
@@ -819,6 +816,32 @@ export default function App() {
                   </label>
                 </div>
               </div>
+              {availableDimensions.length > 0 && (
+                <div style={{ ...styles.settingsRow, marginTop: '12px' }}>
+                  <div style={styles.settingItem}>
+                    <label style={styles.settingLabel}>分组维度（可选）</label>
+                    <select
+                      style={styles.select}
+                      value={selectedDimension}
+                      onChange={e => setSelectedDimension(e.target.value)}
+                    >
+                      <option value="">不分组</option>
+                      {availableDimensions.map(dim => (
+                        <option key={dim.header} value={dim.header}>
+                          {dim.header}{dim.riskLevel === 'warning' ? ' ⚠' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {(() => {
+                      const selected = availableDimensions.find(d => d.header === selectedDimension);
+                      if (selected?.riskLevel === 'warning') {
+                        return <p style={styles.warning}>{selected.riskHint}</p>;
+                      }
+                      return null;
+                    })()}
+                  </div>
+                </div>
+              )}
               {hasInputError && <p style={styles.error}>请输入有效数字。</p>}
               {inputValue === '' && position === null && selectedField && (
                 <p style={styles.hint}>请输入你的数值后再查看排名定位。</p>
@@ -856,7 +879,17 @@ export default function App() {
               <section style={styles.section}>
                 <div style={styles.positionHeader}>
                   <h2 style={styles.sectionTitle}>排名定位</h2>
-                  <button className="copy-btn" style={styles.copyButton} onClick={handleCopySummary}>复制分析摘要</button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button className="copy-btn" style={styles.copyButton} onClick={handleCopySummary}>复制分析摘要</button>
+                    <button
+                      className="copy-btn"
+                      style={styles.exportButton}
+                      disabled={!stats && !position}
+                      onClick={handleExportMetricSummary}
+                    >
+                      导出指标摘要 CSV
+                    </button>
+                  </div>
                 </div>
 
                 {summaryText && <div style={styles.summaryBox}>{summaryText}</div>}
@@ -912,6 +945,7 @@ export default function App() {
                     headers={parsedData.headers}
                     rows={parsedData.rows}
                     isNumericField={isNumericField}
+                    getFieldAnalysisRole={getFieldAnalysisRole}
                     originalFieldState={originalFieldState}
                     onOriginalFieldChange={setOriginalFieldState}
                   />
@@ -922,8 +956,52 @@ export default function App() {
                     <AnalysisExplainer explanation={analysisExplanation} />
                   </ErrorBoundary>
                 )}
+
+                {selectedField && fieldValues && stats && fieldValues.length > 0 && (
+                  <ErrorBoundary>
+                    <OutlierPanel
+                      selectedField={selectedField}
+                      values={fieldValues}
+                    />
+                  </ErrorBoundary>
+                )}
               </section>
               </ErrorBoundary>
+            )}
+
+            {viewContext?.groupStats && viewContext.groupStats.length > 0 && (
+              <ErrorBoundary>
+              <section style={styles.section}>
+                <div style={styles.positionHeader}>
+                  <h2 style={styles.sectionTitle}>分组分析</h2>
+                  <button
+                    className="copy-btn"
+                    style={styles.exportButton}
+                    onClick={handleExportGroupAnalysis}
+                  >
+                    导出分组分析 CSV
+                  </button>
+                </div>
+                <GroupBarChart
+                  groupStats={viewContext.groupStats}
+                  metricField={selectedField}
+                  dimensionField={selectedDimension}
+                />
+                <GroupAnalysis
+                  groupStats={viewContext.groupStats}
+                  metricField={selectedField}
+                  dimensionField={selectedDimension}
+                />
+              </section>
+              </ErrorBoundary>
+            )}
+
+            {viewContext?.groupStats !== null && viewContext?.groupStats !== undefined && viewContext.groupStats.length === 0 && selectedField && selectedDimension && (
+              <section style={{ ...styles.section, ...styles.errorSection }}>
+                <p style={styles.errorText}>
+                  所选维度【{selectedDimension}】下没有可分析的数值数据，请检查指标字段和维度字段是否匹配。
+                </p>
+              </section>
             )}
           </>
         )}
@@ -964,9 +1042,10 @@ export default function App() {
             }}>
               <ErrorBoundary>
                 <DebugPanel
-                  context={analysisContext}
+                  context={derivedData}
                   metricResult={metricResult}
                   selectedField={selectedField}
+                  metricDef={metricDefs.find(m => m.name === selectedField)}
                 />
               </ErrorBoundary>
             </div>
@@ -1041,6 +1120,7 @@ const styles: Record<string, React.CSSProperties> = {
   parseButton: { padding: '10px 24px', background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)', color: '#fff', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 8px rgba(99,102,241,0.3)', transition: 'all 0.15s' },
   sampleButton: { padding: '10px 24px', background: 'linear-gradient(135deg, #eef2ff 0%, #f5f3ff 100%)', color: '#6366f1', border: '1px solid #c7d2fe', borderRadius: '10px', fontSize: '14px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s' },
   copyButton: { padding: '4px 12px', background: '#f0f7ff', color: '#3b82f6', border: '1px solid #93c5fd', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 500, whiteSpace: 'nowrap', transition: 'all 0.15s' },
+  exportButton: { padding: '4px 12px', background: '#f0fdf4', color: '#16a34a', border: '1px solid #86efac', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 500, whiteSpace: 'nowrap', transition: 'all 0.15s', display: 'inline-flex', alignItems: 'center', gap: '4px' },
   error: { margin: '8px 0 0', color: '#ef4444', fontSize: '14px' },
   warning: { margin: '8px 0 0', color: '#92400e', fontSize: '13px', background: '#fffbeb', padding: '6px 10px', borderRadius: '6px' },
   loading: { margin: '8px 0 0', color: '#6366f1', fontSize: '14px', fontWeight: 500 },

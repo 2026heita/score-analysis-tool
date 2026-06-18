@@ -12,8 +12,8 @@
 
 import type { StatsResult, PositionResult } from '../types';
 import { calculateQuantile } from '../utils/stats';
-import type { AnalysisContext, MetricResult } from './context';
-import { getOrCreateMetricDef } from '../metrics/metricRegistry';
+import type { DerivedDataContext, MetricResult } from './context';
+import type { MetricDefinition } from './metricLayer';
 
 // 大表格保护：统一截断阈值
 export const MAX_ROWS = 5000;
@@ -192,7 +192,7 @@ export function computePercentile(
 /**
  * 判断字段是否为排名字段（统一入口）
  * 
- * @deprecated 使用 MetricDefinition.direction 替代。新代码应从 AnalysisContext 读取 direction 属性。
+ * @deprecated 使用 MetricDefinition.direction 替代。新代码应从 DerivedDataContext 读取 direction 属性。
  * 
  * 统一规则：
  * 1. 检查字段名是否包含排名相关关键词
@@ -242,11 +242,19 @@ export function isNumericField(
 /**
  * 分析单个字段（统一入口）
  * 
+ * @deprecated 主链路应使用 computeMetric()。此函数绕过 metricRegistry，不读取
+ * MetricDefinition.direction，对 rank 字段使用默认方向（higher-is-better），
+ * 导致 rank 字段的排名和百分位结果与 computeMetric() 不一致。
+ * 
+ * 无法委托 computeMetric() 的原因：computeMetric 需要 DerivedDataContext（含 metrics 数组），
+ * 而本函数仅接受原始 rows。类型体系不兼容，强行委托需引入语义层构建，风险过高。
+ * 本函数已冻结，仅保留供旧测试脚本（testAnalysisEngine.mjs）使用。
+ * 请使用 computeMetric(context, fieldName, inputValue) 替代。
+ * 
  * 统一规则：
  * 1. 提取字段值（含 5000 行截断）
  * 2. 计算统计指标
- * 3. 计算位置（如果有 inputValue）
- * 4. 处理 rank 字段方向
+ * 3. 计算位置（如果有 inputValue）—— 注意：默认 direction='higher-is-better'
  * 
  * @param rows 原始行数据
  * @param fieldName 字段名
@@ -292,6 +300,10 @@ export function analyzeField(
 /**
  * 分析多个字段（统一入口）
  * 
+ * @deprecated 主链路应使用 computeMetrics()。此函数绕过 metricRegistry，不读取
+ * MetricDefinition.direction。与 analyzeField 相同，已冻结，仅保留供旧测试脚本使用。
+ * 请使用 computeMetrics(context, fieldNames, userValues) 替代。
+ * 
  * 统一规则：
  * 1. 批量提取字段值
  * 2. 批量计算统计指标
@@ -332,118 +344,76 @@ export function analyzeMultipleFields(
 }
 
 // ============================================================
-// 统一指标计算入口（基于 Metric Registry）
+// 统一指标计算入口（v1.4 Phase 4：直接计算，不再依赖 metricRegistry）
 // ============================================================
 
 /**
- * 创建通用 compute 函数工厂
+ * 计算单个指标的完整结果（统一入口）
  * 
- * 封装当前 computeMetric 的内部实现逻辑，
- * 作为 factory 注入给 metricRegistry。
+ * v1.4 Phase 4：engine 只产出 DerivedData，View 层负责调用 computeMetric。
+ * MetricDefinition 由 View 层从 parseSummary 构建，不再通过 context 传递。
  * 
- * 这是唯一的 compute 实现，analysisEngine 不再直接计算。
- */
-function createGenericCompute(
-  metricId: string
-): (ctx: AnalysisContext, userValue?: number) => MetricResult | null {
-  return (ctx: AnalysisContext, userValue?: number): MetricResult | null => {
-    // 1. 从 context 中查找指标定义
-    const metricDef = ctx.metrics.find(m => m.name === metricId);
-    if (!metricDef) {
-      return null;
-    }
-
-    // 2. 提取字段值（使用统一的截断和过滤逻辑）
-    const { values, invalidCount, totalRows, truncatedRows } = extractFieldValues(
-      ctx.rawRows,
-      metricDef.sourceField
-    );
-
-    // 3. 计算统计指标
-    const stats = computeStats(values, truncatedRows);
-
-    // 4. 计算位置（如果有用户输入值）
-    let position: PositionResult | undefined;
-    if (userValue !== undefined && Number.isFinite(userValue) && values.length > 0) {
-      position = computePosition(values, userValue, metricDef.direction);
-    }
-
-    // 5. 构建 MetricResult
-    return {
-      metricName: metricDef.name,
-      displayName: metricDef.displayName,
-      direction: metricDef.direction,
-      values,
-      invalidCount,
-      totalRows,
-      truncatedRows,
-      stats,
-      position,
-      userValue,
-    };
-  };
-}
-
-/**
- * 计算单个指标的完整结果（统一入口 - Registry Dispatcher）
- * 
- * 核心原则：
- * 1. analysisEngine 是 dispatcher，不直接包含计算逻辑
- * 2. 从 metricRegistry 查找 metric，委托给 metric.compute()
- * 3. 如果 metric 不在 registry 中，通过 factory 动态创建通用 entry
- * 4. 返回 MetricResult 供 UI 直接使用
- * 
- * @param context 分析上下文
- * @param metricName 指标名称（对应 MetricDefinition.name / registry key）
+ * @param context 派生数据上下文（filteredRows + fieldScores + outliers）
+ * @param metricDef 指标定义（由 View 层从 parseSummary 构建）
  * @param userValue 用户输入值（可选，用于计算排名位置）
- * @param config 配置（保留兼容，当前未使用）
  * @returns 指标计算结果
  */
 export function computeMetric(
-  context: AnalysisContext,
-  metricName: string,
+  context: DerivedDataContext,
+  metricDef: MetricDefinition,
   userValue?: number,
-  _config: AnalysisConfig = {}
 ): MetricResult | null {
-  // 1. 从 registry 获取或创建 metric definition（通过 factory 注入 compute 逻辑）
-  const metricDef = getOrCreateMetricDef(metricName, createGenericCompute);
-  
-  // 2. 委托给 metric.compute() — engine 不再直接计算
-  return metricDef.compute(context, userValue);
+  // 1. 提取字段值（使用统一的截断和过滤逻辑）
+  const { values, invalidCount, totalRows, truncatedRows } = extractFieldValues(
+    context.filteredRows,
+    metricDef.sourceField
+  );
+
+  // 2. 计算统计指标
+  const stats = computeStats(values, truncatedRows);
+
+  // 3. 计算位置（如果有用户输入值）
+  let position: PositionResult | undefined;
+  if (userValue !== undefined && Number.isFinite(userValue) && values.length > 0) {
+    position = computePosition(values, userValue, metricDef.direction);
+  }
+
+  // 4. 构建 MetricResult
+  return {
+    metricName: metricDef.name,
+    displayName: metricDef.displayName,
+    direction: metricDef.direction,
+    values,
+    invalidCount,
+    totalRows,
+    truncatedRows,
+    stats,
+    position,
+    userValue,
+  };
 }
 
 /**
  * 批量计算多个指标（统一入口）
  * 
- * @param context 分析上下文
- * @param metricNames 指标名称数组（不传则计算所有指标）
+ * @param context 派生数据上下文
+ * @param metricDefs 指标定义数组
  * @param userValues 用户输入值映射（metricName -> userValue）
- * @param config 配置
  * @returns 指标结果映射
  */
 export function computeMetrics(
-  context: AnalysisContext,
-  metricNames?: string[],
+  context: DerivedDataContext,
+  metricDefs: MetricDefinition[],
   userValues?: Record<string, number>,
-  config: AnalysisConfig = {}
 ): Map<string, MetricResult> {
   const results = new Map<string, MetricResult>();
-  const names = metricNames || context.metrics.map(m => m.name);
 
-  for (const name of names) {
-    const result = computeMetric(context, name, userValues?.[name], config);
+  for (const def of metricDefs) {
+    const result = computeMetric(context, def, userValues?.[def.name]);
     if (result) {
-      results.set(name, result);
+      results.set(def.name, result);
     }
   }
 
   return results;
 }
-
-/**
- * 旧版 computeMetric 兼容层
- * 
- * @deprecated 仅供过渡期使用，新代码应直接调用 computeMetric()。
- * 后续版本将移除此别名。
- */
-export const legacyComputeMetric = computeMetric;

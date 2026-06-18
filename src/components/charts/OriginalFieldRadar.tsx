@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
-import { extractFieldValues, computeStats, computePercentile, isRankField as checkIsRankField } from '../../engine/analysisEngine';
+import { extractFieldValues, computeStats, computePercentile } from '../../engine/analysisEngine';
 import { parseNumericValue } from '../../utils/tableParser/numericParser';
 import type { OriginalFieldRadarState } from '../../types';
 // @deprecated 教育/高考功能已收敛至 legacy 区
@@ -34,6 +34,16 @@ let _cachedSelectedFields: string[] | null = null;
 let _cachedFieldValues: Record<string, number> | null = null;
 let _cachedViewMode: 'bar' | 'radar' | null = null;
 
+/**
+ * 显式清除模块级缓存
+ * 应在切换数据集、清空数据、加载示例数据时调用，防止旧数据污染新数据集。
+ */
+export function clearOriginalFieldRadarCache(): void {
+  _cachedSelectedFields = null;
+  _cachedFieldValues = null;
+  _cachedViewMode = null;
+}
+
 // 字段分组配置：每个字段只属于一个分组
 const FIELD_GROUP_CONFIG = [
   { key: 'totalRank', label: '总分 / 排名', roles: ['primaryTotal', 'rank'], defaultExpanded: true },
@@ -60,76 +70,6 @@ const ROLE_BADGE_MAP: Record<string, { label: string; color: string; bg: string 
 
 // 是否推荐分析
 const RECOMMENDED_ROLES = new Set(['primaryTotal', 'rank', 'sectionTotal', 'courseScore']);
-
-// 本地字段分类函数（基于字段名关键词）
-function classifyFieldLocally(header: string): string {
-  const headerLower = header.toLowerCase().trim();
-
-  // 1. 未命名字段 → invalid
-  if (headerLower.startsWith('未命名字段') || headerLower === '' || /^[\s_\-\.]+$/.test(headerLower)) {
-    return 'invalid';
-  }
-
-  // 2. 总分相关 → primaryTotal
-  const PRIMARY_TOTAL_KEYWORDS = ['总分', '总成绩', '综合成绩', '总评', '最终成绩',
-    '高考成绩', '赋分后成绩', '语数英总', '等级分', '标准分'];
-  for (const kw of PRIMARY_TOTAL_KEYWORDS) {
-    if (headerLower.includes(kw.toLowerCase())) {
-      // 排除纯加分字段
-      if (!headerLower.includes('不含加分') && !headerLower.includes('不含优惠')) {
-        return 'primaryTotal';
-      }
-    }
-  }
-
-  // 3. 排名相关 → rank
-  const RANK_KEYWORDS = ['名次', '排名', '位次', '年级名次', '班级名次', '校排', '班排', '年排', '级排'];
-  for (const kw of RANK_KEYWORDS) {
-    if (headerLower.includes(kw.toLowerCase())) {
-      return 'rank';
-    }
-  }
-
-  // 4. 合计相关 → sectionTotal
-  const SECTION_TOTAL_KEYWORDS = ['合计', '总计', '小计', '模块合计'];
-  for (const kw of SECTION_TOTAL_KEYWORDS) {
-    if (headerLower.includes(kw.toLowerCase())) {
-      return 'sectionTotal';
-    }
-  }
-
-  // 5. 加分/扣分 → adjustment
-  const BONUS_KEYWORDS = ['加分', '区内加分', '区外加分', '政策加分', '优惠加分', '特长加分'];
-  const PENALTY_KEYWORDS = ['扣分'];
-  for (const kw of BONUS_KEYWORDS) {
-    if (headerLower.includes(kw.toLowerCase())) {
-      return 'adjustment';
-    }
-  }
-  for (const kw of PENALTY_KEYWORDS) {
-    if (headerLower.includes(kw.toLowerCase())) {
-      return 'adjustment';
-    }
-  }
-
-  // 6. 身份字段 → identity
-  const IDENTITY_KEYWORDS = ['学校代码', '学校名称', '姓名', '班级', '考号', '座号', '学号',
-    '考生号', '准考证', '考生姓名', '身份证号', '性别', '民族'];
-  for (const kw of IDENTITY_KEYWORDS) {
-    if (headerLower.includes(kw.toLowerCase())) {
-      return 'identity';
-    }
-  }
-
-  // 7. 课程成绩 → courseScore（排除已匹配的字段）
-  // 如果字段名包含中文字符且是数值字段，认为是课程成绩
-  if (/[\u4e00-\u9fa5]/.test(headerLower)) {
-    return 'courseScore';
-  }
-
-  // 8. 其他 → unknown
-  return 'unknown';
-}
 
 export default function OriginalFieldRadar({
   headers, rows, isNumericField, getFieldAnalysisRole, excludedKeywords,
@@ -277,15 +217,12 @@ export default function OriginalFieldRadar({
     return headers.filter(h => isNumericField(h) && !excluded.some(kw => h.includes(kw)));
   }, [headers, isNumericField, excluded]);
 
-  // 获取字段角色的辅助函数（优先使用传入的函数，否则使用本地分类）
+  // 获取字段角色的辅助函数（仅使用 parseSummary 传入的分类，不做本地推断）
   const getFieldRole = useCallback((header: string): string => {
     if (getFieldAnalysisRole) {
-      const role = getFieldAnalysisRole(header);
-      // 如果返回的不是 'unknown'，使用传入的函数结果
-      if (role !== 'unknown') return role;
+      return getFieldAnalysisRole(header);
     }
-    // 否则使用本地分类
-    return classifyFieldLocally(header);
+    return 'unknown';
   }, [getFieldAnalysisRole]);
 
   // 按 analysisRole 分组字段，每个字段只属于一个分组
@@ -729,7 +666,7 @@ export default function OriginalFieldRadar({
   // @deprecated 教育/高考功能已收敛至 legacy 区，排序逻辑见 config/education.ts
   // FIXED_SUBJECT_ORDER 从 config/education.ts 导入，为 legacy behavior
 
-  // 计算各字段的百分位（使用统一分析引擎）
+  // 计算各字段的百分位（使用 parseSummary 传入的 analysisRole 判断 rank 方向）
   const rawStats = useMemo(() => {
     return selections.map(s => {
       const result = extractFieldValues(rows, s.field);
@@ -739,12 +676,13 @@ export default function OriginalFieldRadar({
         return { field: s.field, userValue: s.userValue, percentile: 0, max: 0, min: 0, mean: 0, median: 0, count: 0 };
       }
 
-      // 使用统一分析引擎的百分位计算和 rank 判断
-      const percentile = computePercentile(result.values, s.userValue, checkIsRankField(s.field));
+      // 使用 parseSummary 的 analysisRole 判断是否为排名字段
+      const isRank = getFieldRole(s.field) === 'rank';
+      const percentile = computePercentile(result.values, s.userValue, isRank);
 
       return { field: s.field, userValue: s.userValue, percentile, max: stats.max, min: stats.min, mean: stats.mean, median: stats.median, count: stats.count };
     });
-  }, [selections, rows]);
+  }, [selections, rows, getFieldRole]);
 
   const sortedStats = useMemo(() => {
     return [...rawStats].sort((a, b) => b.percentile - a.percentile);

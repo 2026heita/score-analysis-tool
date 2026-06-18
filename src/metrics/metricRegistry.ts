@@ -5,13 +5,14 @@
  * 
  * 核心原则：
  * 1. analysisEngine.computeMetric 是 dispatcher，不直接包含计算逻辑
- * 2. 每个 metric 的 compute 函数从 AnalysisContext 中读取数据
+ * 2. 每个 metric 的 compute 函数从 DerivedDataContext 中读取数据
  * 3. 保持与现有行为完全一致（零行为变化）
  * 
  * 依赖方向：metricRegistry → analysisEngine（单向，无循环依赖）
  */
 
-import type { AnalysisContext, MetricResult } from '../engine/context';
+import type { DerivedDataContext, MetricResult } from '../engine/context';
+import type { MetricDefinition } from '../engine/metricLayer';
 
 // ============================================================
 // 类型定义
@@ -34,8 +35,8 @@ export interface MetricDef {
   /** 描述（可选） */
   description?: string;
   
-  /** 核心：计算函数 */
-  compute: (ctx: AnalysisContext, userValue?: number) => MetricResult | null;
+  /** 核心：计算函数（v1.4 Phase 4：接受 MetricDefinition 参数） */
+  compute: (ctx: DerivedDataContext, def: MetricDefinition, userValue?: number) => MetricResult | null;
 }
 
 // ============================================================
@@ -65,7 +66,7 @@ export const metricRegistry: Record<string, MetricDef> = {};
  */
 export function getOrCreateMetricDef(
   metricId: string,
-  computeFactory: (id: string) => (ctx: AnalysisContext, userValue?: number) => MetricResult | null
+  computeFactory: (id: string) => (ctx: DerivedDataContext, def: MetricDefinition, userValue?: number) => MetricResult | null
 ): MetricDef {
   if (!metricRegistry[metricId]) {
     metricRegistry[metricId] = {

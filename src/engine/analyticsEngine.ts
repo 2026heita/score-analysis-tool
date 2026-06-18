@@ -1,7 +1,15 @@
 /**
  * 通用分析引擎入口
- * 整合 schemaDetector、featureStandardizer、univariateAnalyzer
- * 提供统一的分析接口
+ * 
+ * @deprecated 此模块整合 schemaDetector、featureStandardizer、univariateAnalyzer，
+ * 提供独立于主链路的通用分析能力。从未接入 App.tsx 主 UI，仅由 testGeneralEngine.mjs 引用。
+ * 
+ * 与主链路 analysisEngine 的关系：
+ * - analysisEngine：主链路入口，基于 MetricRegistry + DerivedDataContext，供 UI 使用
+ * - analyticsEngine：独立分析管线（schema 检测 → 特征标准化 → 单变量分析），架构完全不同
+ * 
+ * 未来不会并入 analysisEngine：两者分析范式不同（schema-driven vs metric-driven），
+ * 强行合并会引入不必要的复杂度。此模块保留供参考，新功能应在 analysisEngine 上扩展。
  */
 
 import type {

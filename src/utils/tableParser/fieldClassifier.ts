@@ -661,3 +661,230 @@ export function getAnalyzableFields(fieldMetas: FieldMeta[], showAll: boolean = 
     .filter(meta => meta.validCount > 0 && meta.confidence >= 0.55 && shouldIncludeInRecommendationByRole(meta.analysisRole))
     .map(meta => meta.header);
 }
+
+// ============================================================
+// v1.4：字段可分析性评分（替代硬编码排除逻辑）
+// ============================================================
+
+/**
+ * 分析评分结果
+ */
+export interface AnalyticScore {
+  /** 综合评分 0-1，> 0.5 为可分析字段 */
+  score: number;
+  /** 是否可分析 */
+  isAnalyzable: boolean;
+  /** 各维度明细（可解释） */
+  breakdown: {
+    numericRatio: number;
+    variance: number;
+    uniquenessPenalty: number;
+    monotonicPenalty: number;
+    nameSignal: number;
+  };
+  /** 排除原因（isAnalyzable=false 时） */
+  reason?: string;
+}
+
+/**
+ * 计算字段的可分析性评分
+ * 
+ * 评分维度：
+ * - numericRatio (+)：数值比例越高越可分析
+ * - variance (+)：方差越大越有分析价值
+ * - uniquenessPenalty (-)：唯一率越高越像 ID 字段
+ * - monotonicPenalty (-)：单调递增趋势越明显越像序号
+ * - nameSignal (+/-)：字段名语义加权
+ * 
+ * @param meta - 字段元数据
+ * @param sampleValues - 该列样本值（可选，用于方差计算）
+ * @returns 分析评分结果
+ */
+export function calculateFieldAnalyticScore(
+  meta: FieldMeta,
+  sampleValues?: string[]
+): AnalyticScore {
+  const cf = meta.contentFeature;
+  const role = meta.analysisRole;
+
+  // ---- 1. numericRatio (0-1) → 权重 0.30 ----
+  const numericRatio = cf?.numericRatio ?? 0;
+
+  // ---- 2. varianceScore (0-1) → 权重 0.20 ----
+  let varianceScore = 0;
+  if (cf && cf.min !== null && cf.max !== null && cf.min !== cf.max) {
+    // 变异系数近似：(max - min) / (mean || 1)
+    const range = cf.max - cf.min;
+    const avg = cf.mean !== null && cf.mean !== 0 ? cf.mean : 1;
+    const cv = Math.min(range / Math.abs(avg), 10); // cap at 10
+    varianceScore = Math.min(cv / 5, 1); // normalize to 0-1
+  } else if (sampleValues && sampleValues.length > 0) {
+    // 从样本值重新计算
+    const nums = sampleValues
+      .map(v => parseFloat(v))
+      .filter(v => !isNaN(v));
+    if (nums.length >= 2) {
+      const mean = nums.reduce((a, b) => a + b, 0) / nums.length;
+      const variance = nums.reduce((a, b) => a + (b - mean) ** 2, 0) / nums.length;
+      const std = Math.sqrt(variance);
+      const cv = mean !== 0 ? std / Math.abs(mean) : 0;
+      varianceScore = Math.min(Math.max(cv, 0), 1);
+    }
+  }
+
+  // ---- 3. uniquePenalty (0-1) → 权重 0.25 ----
+  // 唯一率越高，越像 ID/学号/序号
+  const uniqueRatio = cf?.uniqueRatio ?? 0;
+  // 唯一率 > 0.7 时开始惩罚，> 0.9 时严重惩罚
+  let uniquePenalty = 0;
+  if (uniqueRatio > 0.7) {
+    uniquePenalty = Math.min((uniqueRatio - 0.7) / 0.3, 1);
+  }
+
+  // ---- 4. monotonicPenalty (0-1) → 权重 0.15 ----
+  // rankLike 模式 + 高唯一率 → 序号/排名特征
+  let monotonicPenalty = 0;
+  if (cf?.valuePattern === 'rankLike' && uniqueRatio > 0.5) {
+    monotonicPenalty = Math.min(uniqueRatio, 0.8);
+  }
+  // 分析角色为 rank 的字段，唯一率特别高时更像序号
+  if (role === 'rank' && uniqueRatio > 0.9) {
+    monotonicPenalty = Math.max(monotonicPenalty, 0.7);
+  }
+
+  // ---- 5. nameSignal (0-1) → 权重 0.10 ----
+  // 基于 analysisRole 的语义加权
+  let nameSignal = 0.5; // 默认中性
+  switch (role) {
+    case 'primaryTotal':
+    case 'courseScore':
+      nameSignal = 1.0; // 明确可分析
+      break;
+    case 'sectionTotal':
+      nameSignal = 0.9;
+      break;
+    case 'rank':
+      nameSignal = 0.7; // 排名可分析但不是主要指标
+      break;
+    case 'adjustment':
+      nameSignal = 0.4; // 加分项可分析但分数分布特殊
+      break;
+    case 'identity':
+      nameSignal = 0.0; // 身份字段不可分析
+      break;
+    case 'textMeta':
+    case 'invalid':
+      nameSignal = 0.0;
+      break;
+    default:
+      // unknown → 根据内容特征推测
+      if (numericRatio > 0.5) {
+        nameSignal = 0.5;
+      } else {
+        nameSignal = 0.1;
+      }
+  }
+
+  // ---- 综合评分 ----
+  const score =
+    numericRatio * 0.30 +
+    varianceScore * 0.20 +
+    (1 - uniquePenalty) * 0.25 +
+    (1 - monotonicPenalty) * 0.15 +
+    nameSignal * 0.10;
+
+  const threshold = 0.5;
+  const isAnalyzable = score >= threshold;
+
+  let reason: string | undefined;
+  if (!isAnalyzable) {
+    const reasons: string[] = [];
+    if (numericRatio < 0.3) reasons.push('数值比例过低');
+    if (uniquePenalty > 0.5) reasons.push('唯一率过高，疑似ID/序号');
+    if (monotonicPenalty > 0.5) reasons.push('单调递增，疑似序号');
+    if (nameSignal < 0.3) reasons.push(`字段语义为非分析型(${role})`);
+    reason = reasons.join('；') || '综合评分未达标';
+  }
+
+  return {
+    score: Math.round(score * 1000) / 1000,
+    isAnalyzable,
+    breakdown: {
+      numericRatio: Math.round(numericRatio * 1000) / 1000,
+      variance: Math.round(varianceScore * 1000) / 1000,
+      uniquenessPenalty: Math.round(uniquePenalty * 1000) / 1000,
+      monotonicPenalty: Math.round(monotonicPenalty * 1000) / 1000,
+      nameSignal: Math.round(nameSignal * 1000) / 1000,
+    },
+    reason,
+  };
+}
+
+/**
+ * 获取字段的快速分析评分（仅基于 FieldMeta，无需样本值）
+ */
+export function getFieldAnalyticScore(meta: FieldMeta): AnalyticScore {
+  return calculateFieldAnalyticScore(meta);
+}
+
+// ============================================================
+// v1.4 Phase 3：字段评分策略抽象
+// ============================================================
+
+/**
+ * 字段评分策略接口
+ * 
+ * 支持不同场景使用不同的评分策略：
+ * - generic：通用场景（默认），平衡所有维度
+ * - numericHeavy：数值密集型场景，提高数值维度权重
+ */
+export interface FieldScoringStrategy {
+  /** 策略名称 */
+  name: string;
+  /** 计算字段可分析性评分 */
+  score(meta: FieldMeta, sampleValues?: string[]): AnalyticScore;
+}
+
+/**
+ * 通用评分策略（当前默认）
+ * 
+ * 权重分配：
+ * - numericRatio: 0.30
+ * - variance: 0.20
+ * - uniquenessPenalty: 0.25
+ * - monotonicPenalty: 0.15
+ * - nameSignal: 0.10
+ */
+export const genericScoringStrategy: FieldScoringStrategy = {
+  name: 'generic',
+  score: calculateFieldAnalyticScore,
+};
+
+/**
+ * 数值密集型评分策略（预留，暂不启用）
+ * 
+ * 提高 numerical 和 variance 权重，降低语义权重
+ * 适用于已知所有字段都是数值的场景（如纯数据表）
+ * 
+ * 权重：numericRatio 0.35, variance 0.30, uniquenessPenalty 0.20, monotonicPenalty 0.10, nameSignal 0.05
+ */
+export const numericHeavyScoringStrategy: FieldScoringStrategy = {
+  name: 'numericHeavy',
+  score(meta: FieldMeta, sampleValues?: string[]): AnalyticScore {
+    // 复用现有计算逻辑，但调整权重
+    const base = calculateFieldAnalyticScore(meta, sampleValues);
+    const b = base.breakdown;
+    const score =
+      b.numericRatio * 0.35 +
+      b.variance * 0.30 +
+      (1 - b.uniquenessPenalty) * 0.20 +
+      (1 - b.monotonicPenalty) * 0.10 +
+      b.nameSignal * 0.05;
+    return {
+      score: Math.round(score * 1000) / 1000,
+      isAnalyzable: score >= 0.5,
+      breakdown: b,
+      reason: base.reason,
+    };
+  },
+};
