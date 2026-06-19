@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
 import { generateBins } from '../../utils/chartData';
+import EChartsWrapper from './EChartsWrapper';
 
 interface HistogramChartProps {
   values: number[];
@@ -102,5 +102,5 @@ export default function HistogramChart({ values, fieldName, userValue, binCount 
     } as EChartsOption;
   }, [cleanValues, fieldName, userValue, binCount]);
 
-  return <ReactECharts option={option} style={{ height: '350px', width: '100%' }} />;
+  return <EChartsWrapper option={option} chartTypes={['bar']} style={{ height: '350px', width: '100%' }} />;
 }

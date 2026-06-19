@@ -11,10 +11,10 @@
  */
 
 import { useMemo } from 'react';
-import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
 import { topN, DEFAULT_TOP_N } from '../../engine/groupByDimension';
 import type { GroupStats } from '../../engine/groupByDimension';
+import EChartsWrapper from './EChartsWrapper';
 
 interface GroupBarChartProps {
   /** 分组统计结果 */
@@ -110,5 +110,5 @@ export default function GroupBarChart({ groupStats, metricField, dimensionField 
     return null;
   }
 
-  return <ReactECharts option={option} style={{ height: `${Math.max(300, displayed.length * 24)}px`, width: '100%' }} />;
+  return <EChartsWrapper option={option} chartTypes={['bar']} style={{ height: `${Math.max(300, displayed.length * 24)}px`, width: '100%' }} />;
 }

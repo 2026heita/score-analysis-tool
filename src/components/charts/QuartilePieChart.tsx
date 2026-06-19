@@ -1,6 +1,6 @@
-import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
 import { buildQuartilePieData, formatNumber } from '../../utils/chartData';
+import EChartsWrapper from './EChartsWrapper';
 
 interface QuartilePieChartProps {
   values: number[];
@@ -86,7 +86,7 @@ export default function QuartilePieChart({ values, fieldName, userValue }: Quart
     <div>
       {chartOption ? (
         <>
-          <ReactECharts option={chartOption} style={{ height: '360px', width: '100%' }} />
+          <EChartsWrapper option={chartOption} chartTypes={['pie']} style={{ height: '360px', width: '100%' }} />
           {userHintText && (
             <p style={styles.userHint}>{userHintText}</p>
           )}
