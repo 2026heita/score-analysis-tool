@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
 import { formatNumber } from '../../utils/chartData';
+import EChartsWrapper from './EChartsWrapper';
 
 interface BoxPlotChartProps {
   values: number[];
@@ -123,7 +123,7 @@ export default function BoxPlotChart({ values, fieldName, stats, userValue }: Bo
 
   return (
     <div>
-      <ReactECharts option={option} style={{ height: '350px', width: '100%' }} />
+      <EChartsWrapper option={option} chartTypes={['boxplot', 'scatter']} style={{ height: '350px', width: '100%' }} />
 
       {/* 五数摘要 */}
       {stats && (

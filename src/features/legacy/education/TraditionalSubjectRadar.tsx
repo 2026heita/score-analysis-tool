@@ -4,10 +4,10 @@
  * 替代方案：使用通用的雷达图分析组件 OriginalFieldRadar。
  */
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
 import { normalizeScore } from '../../../utils/chartData';
 import type { TraditionalSubjectEntry } from '../../../types';
+import EChartsWrapper from '../../../components/charts/EChartsWrapper';
 
 interface TraditionalSubjectRadarProps {
   initialEntries?: TraditionalSubjectEntry[];
@@ -220,7 +220,7 @@ export default function TraditionalSubjectRadar({ initialEntries, onStateChange 
       {/* 雷达图 */}
       {chartOption && (
         <>
-          <ReactECharts option={chartOption} style={{ height: '400px', width: '100%' }} />
+          <EChartsWrapper option={chartOption} chartTypes={['radar']} style={{ height: '400px', width: '100%' }} />
 
           {conclusion && (
             <div style={styles.conclusionBox}>

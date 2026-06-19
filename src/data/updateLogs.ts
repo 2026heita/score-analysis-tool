@@ -1,42 +1,54 @@
 /**
- * 更新日志（不可变版本结构）
+ * 更新日志（不可变版本结构） — 用户公告（release changelog）
  * 
- * ⚠️ ⚠️ ⚠️ 强约束规则（必须遵守）⚠️ ⚠️ ⚠️
+ * ⚠️ ⚠️ ⚠️ 发布规则（v1.7 强化）⚠️ ⚠️ ⚠️
  * 
- * ❗ updateLogs 是不可变数据结构，默认禁止任何修改
- * ❗ 禁止任何直接数组修改行为：push/unshift/索引修改/splice
- * ❗ 禁止修改已有 entry 的任何属性
- * ❗ 禁止修改 entry.items 数组
- * ❗ 新增版本必须使用 createUpdateLogEntry() 函数
+ * 公告必须满足以下全部条件才能写入：
+ * 1. tsc --noEmit 通过
+ * 2. vite build 通过
+ * 3. 全部测试通过
+ * 4. 人工验收通过（如存在）
+ * 5. 该版本为 release candidate（非开发阶段）
+ * 
+ * 禁止：
+ * ❌ 每完成一个开发阶段就发布公告
+ * ❌ 按时间（按天）发布公告
+ * ❌ 包含 hook / context / orchestrator / cache / trace / slice 等技术术语
+ * ❌ 包含测试新增与调整
+ * ❌ 包含文件拆分 / 重构说明
+ * 
+ * 公告结构：
+ * - version（语义版本号）
+ * - date（发布日期）
+ * - title（用户可理解的一句话）
+ * - 3~6 条 items（用户可感知变化）
+ * 
+ * 与 internalChangelog 的关系：
+ * - internalChangelog：开发日志，可频繁更新，包含技术细节
+ * - updateLogs：用户公告，仅 release 时生成，禁止技术术语
  * 
  * 设计原则：
  * 1. 每个 entry 一旦创建就不可修改
  * 2. 版本号必须唯一，不能重复
- * 3. 不允许 mutate / append 到旧版本
- * 4. 每次更新生成新的 release entry
+ * 3. 一个版本 = 一次清晰认知，不碎片化
+ * 4. 公告 ≠ 开发过程记录
  * 
  * 版本号规范：
  * - 格式：v{major}.{minor}.{patch}
- * - major：重大重构或不兼容变更
+ * - major：重大不兼容变更
  * - minor：新功能或重要改进
  * - patch：修复或小优化
  * 
  * 正确用法示例：
  * ```ts
- * // ✅ 正确：使用 createUpdateLogEntry 创建新版本
+ * // ✅ 正确：release 时使用 createUpdateLogEntry 创建新版本
  * const newLogs = createUpdateLogEntry(updateLogs, {
- *   date: '2026-06-16',
- *   version: 'v1.2.0',
- *   title: '新增功能',
- *   items: ['功能1', '功能2'],
+ *   date: '2026-06-18',
+ *   version: 'v1.8.0',
+ *   title: '新增数据导出功能',
+ *   items: ['支持导出为 PDF 格式', '导出时保留筛选条件'],
  *   type: 'feature'
  * });
- * 
- * // ❌ 错误：直接修改数组（运行时会抛出错误或被静默忽略）
- * updateLogs.push(newEntry);           // TypeError in strict mode
- * (updateLogs as any)[0] = newEntry;   // TypeError in strict mode
- * updateLogs[0].items.push('新内容');   // TypeError in strict mode
- * updateLogs[0].title = '新标题';       // TypeError in strict mode
  * ```
  */
 
@@ -51,6 +63,19 @@ export interface UpdateLogItem {
 // ─── 内部数据（不可变） ─────────────────────────────────────────
 
 const _updateLogsData: UpdateLogItem[] = [
+  {
+    date: '2026-06-19',
+    version: 'v1.9.2',
+    title: '性能与稳定性全面提升',
+    type: 'improvement',
+    items: [
+      '图表加载速度明显提升，首次打开图表几乎无等待',
+      '图表切换体验更顺滑，不同图表之间切换响应更快',
+      'Excel 文件解析不再卡顿，大文件上传时页面保持流畅',
+      '数据分析整体响应速度优化，字段切换和筛选结果即时反馈',
+      '系统整体稳定性提升，长时间使用更加可靠'
+    ]
+  },
   {
     date: '2026-06-18',
     version: 'v1.7.0',
@@ -175,7 +200,7 @@ for (const entry of _updateLogsData) {
  */
 export const updateLogs: readonly UpdateLogItem[] = Object.freeze(_updateLogsData);
 
-// ─── DEV 环境防误用检测 ─────────────────────────────────────────
+// ─── DEV 环境防误用检测 + 内容边界校验 ─────────────────────────
 
 if (import.meta.env.DEV) {
   // 1. 验证冻结状态
@@ -191,7 +216,57 @@ if (import.meta.env.DEV) {
     }
   }
 
-  // 2. 原型方法调用检测（捕获 attempted mutations）
+  // 2. 内容边界校验：禁止技术术语出现在用户公告中
+  const forbiddenTerms = [
+    'hook', 'context', 'orchestrator', 'orchestrator',
+    'cache', 'trace', 'slice', 'dependency',
+    'useMemo', 'useCallback', 'useRef',
+    'DerivedData', 'ViewContext', 'RawData',
+    'engine', 'pipeline', 'memoization',
+    '重构', '架构', '拆分', '抽象',
+    '测试', 'test', 'coverage',
+  ];
+
+  for (let i = 0; i < updateLogs.length; i++) {
+    const entry = updateLogs[i];
+    const prefix = `[updateLogs] ${entry.version}`;
+
+    // 检查 title
+    for (const term of forbiddenTerms) {
+      if (entry.title.toLowerCase().includes(term.toLowerCase())) {
+        console.warn(
+          `${prefix}: title 包含禁止术语 "${term}"。` +
+          `用户公告应使用用户可理解的语言。`
+        );
+      }
+    }
+
+    // 检查 items
+    for (let j = 0; j < entry.items.length; j++) {
+      for (const term of forbiddenTerms) {
+        if (entry.items[j].toLowerCase().includes(term.toLowerCase())) {
+          console.warn(
+            `${prefix}: items[${j}] 包含禁止术语 "${term}"。` +
+            `用户公告应使用用户可理解的语言。`
+          );
+        }
+      }
+    }
+  }
+
+  // 3. 结构校验：3~6 条 items
+  for (let i = 0; i < updateLogs.length; i++) {
+    const entry = updateLogs[i];
+    const prefix = `[updateLogs] ${entry.version}`;
+    if (entry.items.length < 3) {
+      console.warn(`${prefix}: items 数量 ${entry.items.length} < 3，公告过于碎片化`);
+    }
+    if (entry.items.length > 6) {
+      console.warn(`${prefix}: items 数量 ${entry.items.length} > 6，公告过度膨胀`);
+    }
+  }
+
+  // 4. 原型方法调用检测（捕获 attempted mutations）
   const mutationMethods = ['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'] as const;
   for (const method of mutationMethods) {
     const original = Array.prototype[method] as (...args: unknown[]) => unknown;
@@ -232,7 +307,6 @@ if (import.meta.env.DEV) {
 export function validateUpdateLogs(logs: readonly UpdateLogItem[]): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
   const versions = new Set<string>();
-  const dateVersionCombos = new Set<string>();
 
   for (let i = 0; i < logs.length; i++) {
     const log = logs[i];
@@ -249,16 +323,68 @@ export function validateUpdateLogs(logs: readonly UpdateLogItem[]): { valid: boo
       errors.push(`${prefix}: version "${log.version}" 重复`);
     }
     versions.add(log.version);
-
-    // 检查 date+version 组合唯一性
-    const combo = `${log.date}|${log.version}`;
-    if (dateVersionCombos.has(combo)) {
-      errors.push(`${prefix}: date+version 组合 "${combo}" 重复`);
-    }
-    dateVersionCombos.add(combo);
   }
 
   return { valid: errors.length === 0, errors };
+}
+
+/**
+ * 校验单条 release 公告是否合规（v1.7 新增）
+ * 
+ * 检查项：
+ * - 公告结构完整性
+ * - items 数量 3~6
+ * - 禁止技术术语
+ * - type 字段合法性
+ */
+export function validateReleaseAnnouncement(
+  entry: UpdateLogItem
+): { valid: boolean; warnings: string[]; errors: string[] } {
+  const warnings: string[] = [];
+  const errors: string[] = [];
+
+  // 结构检查
+  if (!entry.version) errors.push('version 不能为空');
+  if (!entry.date) errors.push('date 不能为空');
+  if (!entry.title) errors.push('title 不能为空');
+  if (!entry.items || entry.items.length === 0) {
+    errors.push('items 不能为空');
+  } else {
+    if (entry.items.length < 3) warnings.push(`items 数量 ${entry.items.length} < 3，公告过于碎片化`);
+    if (entry.items.length > 6) warnings.push(`items 数量 ${entry.items.length} > 6，公告过度膨胀`);
+  }
+
+  // type 合法性检查
+  const validTypes = ['feature', 'fix', 'improvement', 'notice'];
+  if (entry.type && !validTypes.includes(entry.type)) {
+    errors.push(`type "${entry.type}" 不合法，必须是: ${validTypes.join(', ')}`);
+  }
+
+  // 内容边界检查：禁止技术术语
+  const forbiddenTerms = [
+    'hook', 'context', 'orchestrator',
+    'cache', 'trace', 'slice', 'dependency',
+    'useMemo', 'useCallback', 'useRef',
+    'DerivedData', 'ViewContext', 'RawData',
+    'engine', 'pipeline', 'memoization',
+    '重构', '架构优化', '执行引擎',
+  ];
+
+  const checkText = (text: string, label: string) => {
+    for (const term of forbiddenTerms) {
+      if (text.toLowerCase().includes(term.toLowerCase())) {
+        warnings.push(`${label} 包含禁止术语 "${term}"，应使用用户可理解的语言`);
+        break; // 每个文本只报告一次
+      }
+    }
+  };
+
+  checkText(entry.title, 'title');
+  for (let i = 0; i < entry.items.length; i++) {
+    checkText(entry.items[i], `items[${i}]`);
+  }
+
+  return { valid: errors.length === 0, warnings, errors };
 }
 
 // ─── 写入函数（唯一合法写入路径） ────────────────────────────────

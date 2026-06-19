@@ -2,7 +2,7 @@
 // 成绩表智能解析器 - 工作簿解析主入口
 // ============================================================
 
-import { read, utils } from 'xlsx';
+// v1.9: xlsx 解析已移至 Worker 线程（src/workers/xlsx.worker.ts）
 import type { ParsedTableResult, WorkbookCandidate, ParseSummary } from './types';
 import type { MergeRange } from './headerFlattener';
 import { detectMainWorksheet, getPrimarySheetName, getAvailableSheetNames } from './sheetDetection';
@@ -10,6 +10,7 @@ import { detectHeaderRow, dedupeHeaders } from './headerDetection';
 import { classifyFields, recommendAnalysisField } from './fieldClassifier';
 import { classifyDataRows } from './rowClassifier';
 import { throwEmptyFile, throwNoHeader, throwNoData, throwNoSheet, throwNoDataInSheet } from './errors';
+import { parseXlsxInWorker } from '../parseInWorker';
 
 // ============================================================
 // 安全限制
@@ -30,30 +31,24 @@ export async function parseWorkbook(
   _fileName?: string,
   targetSheetName?: string,
 ): Promise<ParsedTableResult> {
-  // 读取工作簿
-  const workbook = read(arrayBuffer, { type: 'array', cellFormula: false, cellHTML: false });
-  const sheetNames = workbook.SheetNames;
+  // v1.9: 使用 Worker 解析 xlsx（避免主线程阻塞）
+  const rawSheets = await parseXlsxInWorker(arrayBuffer);
+
+  const sheetNames = rawSheets.map(s => s.name);
 
   if (!sheetNames || sheetNames.length === 0) {
     throwNoSheet();
   }
 
-  // 将每个 sheet 转为二维数组，同时提取合并单元格信息
-  const sheetsData: { name: string; data: unknown[][]; merges: MergeRange[] }[] = sheetNames.map(name => {
-    const sheet = workbook.Sheets[name];
-    const data = utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '', raw: false });
-    // 提取合并单元格信息
-    const merges: MergeRange[] = (sheet['!merges'] || []).map((m: any) => ({
-      s: { r: m.s.r, c: m.s.c },
-      e: { r: m.e.r, c: m.e.c },
-    }));
-    // 限制列数
-    const trimmed = data.map(row => {
+  // 限制列数并包装为统一格式
+  const sheetsData: { name: string; data: unknown[][]; merges: MergeRange[] }[] = rawSheets.map(s => ({
+    name: s.name,
+    data: s.data.map(row => {
       if (!Array.isArray(row)) return [String(row ?? '')];
       return row.slice(0, MAX_COLS);
-    });
-    return { name, data: trimmed, merges };
-  });
+    }),
+    merges: s.merges,
+  }));
 
   // 检测主工作表
   const candidates = detectMainWorksheet(sheetsData);

@@ -1,8 +1,8 @@
 import { useState, useMemo, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
-import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
 import { extractFieldValues, computeStats, computePercentile } from '../../engine/analysisEngine';
 import { parseNumericValue } from '../../utils/tableParser/numericParser';
+import EChartsWrapper from './EChartsWrapper';
 import type { OriginalFieldRadarState } from '../../types';
 // @deprecated 教育/高考功能已收敛至 legacy 区
 import { FIXED_SUBJECT_ORDER } from '../../config/education';
@@ -1058,12 +1058,12 @@ export default function OriginalFieldRadar({
       {/* 图表 */}
       {viewMode === 'bar' && barOption && (
         <div style={{ minHeight: '320px', width: '100%' }}>
-          <ReactECharts option={barOption} style={{ height: Math.max(320, validStats.length * 40 + 80), width: '100%' }} />
+          <EChartsWrapper option={barOption} chartTypes={['bar', 'radar']} style={{ height: Math.max(320, validStats.length * 40 + 80), width: '100%' }} />
         </div>
       )}
       {viewMode === 'radar' && radarOption && (
         <div style={{ minHeight: '320px', width: '100%' }}>
-          <ReactECharts option={radarOption} style={{ height: '400px', width: '100%' }} />
+          <EChartsWrapper option={radarOption} chartTypes={['bar', 'radar']} style={{ height: '400px', width: '100%' }} />
         </div>
       )}
       

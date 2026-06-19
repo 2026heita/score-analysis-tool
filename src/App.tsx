@@ -1,43 +1,23 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
 import { parseTableText } from './utils/parseTable';
 import { parseTableFile, type ParsedFileResult } from './utils/fileImport';
-import { formatNumber } from './utils/stats';
 import { usePersistedState } from './hooks/usePersistedState';
 import { useParsedTable } from './hooks/useParsedTable';
-import { useAnalysisOrchestrator } from './hooks/useAnalysisOrchestrator';
-import { useMetricResult } from './hooks/useMetricResult';
-import { generateExplanation } from './utils/analysisExplainer';
 import { APP_VERSION } from './config/version';
 import { APP_NAME } from './config/app';
 import type { ChartTab, OriginalFieldRadarState } from './types';
 import UsageGuide from './components/UsageGuide';
 import UpdateNotice from './components/UpdateNotice';
-import ChartTabs from './components/charts/ChartTabs';
-import HistogramChart from './components/charts/HistogramChart';
-import BoxPlotChart from './components/charts/BoxPlotChart';
-import CdfChart from './components/charts/CdfChart';
-import RadarAnalysis from './components/charts/RadarAnalysis';
 import { clearOriginalFieldRadarCache } from './components/charts/OriginalFieldRadar';
-import QuartilePieChart from './components/charts/QuartilePieChart';
-import ParseReportPanel from './components/ParseReportPanel';
-import AnalysisExplainer from './components/AnalysisExplainer';
-import GeneralDataOverview from './components/GeneralDataOverview';
-import RelationshipAnalysisPanel from './components/RelationshipAnalysisPanel';
 import SampleDataSelector from './components/SampleDataSelector';
 import { isNumericField as checkIsNumericField } from './engine/analysisEngine';
-import { toHistogramProps, toBoxPlotProps, toCdfProps, toQuartilePieProps } from './engine/chartAdapter';
-import { DebugPanel } from './components/DebugPanel';
 import type { SampleDataset } from './data/sampleDatasets';
-import GroupAnalysis from './components/GroupAnalysis';
-import GroupBarChart from './components/charts/GroupBarChart';
-import FilterPanel from './components/FilterPanel';
-import OutlierPanel from './components/OutlierPanel';
-import AnalysisContextHint from './components/AnalysisContextHint';
-import { ErrorBoundary } from './components/ErrorBoundary';
 import { useFilterState } from './hooks/useFilterState';
 import { useGroupAnalysis } from './hooks/useGroupAnalysis';
-import { useExportActions } from './hooks/useExportActions';
 import { calculateFieldAnalyticScore } from './utils/tableParser/fieldClassifier';
+
+// v1.8: Lazy load analysis section — 分析引擎 + 图表不在首屏加载
+const AnalysisSection = lazy(() => import('./components/AnalysisSection'));
 
 export default function App() {
   const { loadState, save, clear, getDefault } = usePersistedState();
@@ -125,63 +105,6 @@ export default function App() {
     availableDimensions,
     resetGroupAnalysis,
   } = useGroupAnalysis(filteredParsedData, parseSummary);
-
-  // ===== v1.5 Orchestration：统一调度层 =====
-  const {
-    core: { metricResult, correlationResult },
-    derived: { derivedData },
-    view: { viewContext },
-    metricDefs,
-  } = useAnalysisOrchestrator(filteredParsedData, parseSummary, selectedField, inputValue, selectedDimension);
-
-  const { stats, position, fieldValues } = useMetricResult(metricResult);
-
-  const {
-    handleExportFilteredData,
-    handleExportGroupAnalysis,
-    handleExportMetricSummary,
-  } = useExportActions(filteredParsedData, filterResult, viewContext?.groupStats ?? null, metricResult, stats, position, selectedField);
-
-  // ===== 分析解释派生（只读，不修改任何状态） =====
-  const analysisExplanation = useMemo(() => {
-    if (!parsedData || !originalFieldState?.selections?.length) return null;
-
-    const rankFields = new Set<string>();
-    if (parseSummary?.fieldTypes) {
-      for (const meta of parseSummary.fieldTypes) {
-        if (meta.analysisRole === 'rank') {
-          rankFields.add(meta.header);
-        }
-      }
-    }
-
-    const fieldValues: Record<string, number> = {};
-    const fieldData: Record<string, number[]> = {};
-
-    for (const selection of originalFieldState.selections) {
-      const { field, userValue } = selection;
-      if (!field || userValue === undefined || isNaN(userValue)) continue;
-
-      fieldValues[field] = userValue;
-
-      const values = parsedData.rows
-        .map(row => {
-          const val = row[field];
-          if (val === undefined || val === '' || val === null) return null;
-          const num = parseFloat(val);
-          return isNaN(num) ? null : num;
-        })
-        .filter((v): v is number => v !== null && Number.isFinite(v));
-
-      if (values.length > 0) {
-        fieldData[field] = values;
-      }
-    }
-
-    if (Object.keys(fieldValues).length === 0) return null;
-
-    return generateExplanation(fieldValues, fieldData, rankFields);
-  }, [parsedData, originalFieldState, parseSummary]);
 
   // ===== 自动保存 =====
   useEffect(() => {
@@ -293,18 +216,6 @@ export default function App() {
 
     return { recommended, adjustment, identity, textMeta, others };
   }, [parsedData, showAllFields, getFieldAnalysisRole]);
-
-  const inputNum = inputValue ? parseFloat(inputValue) : NaN;
-  const hasInputError = inputValue.trim() !== '' && isNaN(inputNum);
-
-  const summaryText = useMemo(() => {
-    if (!position || !stats || isNaN(inputNum)) return '';
-    const numStr = formatNumber(inputNum);
-    if (position.existsInData) {
-      return `你的【${selectedField}】为 ${numStr}。全表 ${position.total} 人中，高于你的人有 ${position.higherCount} 人，与你同分的有 ${position.equalCount} 人。你的名次区间为第 ${position.bestRank} 名 ~ 第 ${position.worstRank} 名，约高于 ${position.percentile.toFixed(1)}% 的有效数据。`;
-    }
-    return `该值在表中不存在。如果按该值插入全表，估算名次为第 ${position.estimatedRank} 名，约高于 ${position.percentile.toFixed(1)}% 的有效数据。`;
-  }, [position, stats, selectedField, inputNum]);
 
   // ===== 事件处理 =====
   const handleParse = useCallback(() => {
@@ -486,72 +397,6 @@ export default function App() {
     }
   }, [parsedData, setRawText, setParsedData, setParseWarnings, setParseError, setFileError, setParseSummary, setSelectedSheet]);
 
-  const fallbackCopy = useCallback((text: string) => {
-    try {
-      const textarea = document.createElement('textarea');
-      textarea.value = text;
-      textarea.style.position = 'fixed';
-      textarea.style.opacity = '0';
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textarea);
-      setSaveMsg('已复制分析摘要');
-    } catch {
-      setSaveMsg('当前浏览器不支持自动复制，请手动复制。');
-    }
-    setTimeout(() => setSaveMsg(null), 3000);
-  }, []);
-
-  const handleCopySummary = useCallback(() => {
-    if (!stats || !position || !selectedField) return;
-
-    const lines: string[] = [];
-    lines.push('【数据分析摘要】');
-    lines.push('');
-    lines.push(`分析字段：${selectedField}`);
-    lines.push(`你的数值：${inputValue}`);
-    lines.push('');
-    lines.push('一、统计指标');
-    lines.push(`有效数值：${stats.validCount}`);
-    lines.push(`无效/空值：${stats.invalidCount}`);
-    lines.push(`最高值：${formatNumber(stats.max)}`);
-    lines.push(`最低值：${formatNumber(stats.min)}`);
-    lines.push(`平均值：${formatNumber(stats.mean)}`);
-    lines.push(`中位数：${formatNumber(stats.median)}`);
-    lines.push(`25% 分位：${formatNumber(stats.q25)}`);
-    lines.push(`75% 分位：${formatNumber(stats.q75)}`);
-    lines.push(`90% 分位：${formatNumber(stats.q90)}`);
-    lines.push(`95% 分位：${formatNumber(stats.q95)}`);
-    lines.push('');
-    lines.push('二、排名定位');
-    lines.push(`高于该值人数：${position.higherCount}`);
-    lines.push(`等于该值人数：${position.equalCount}`);
-    lines.push(`低于该值人数：${position.lowerCount}`);
-    if (position.existsInData) {
-      lines.push(`名次区间：第 ${position.bestRank} 名 ~ 第 ${position.worstRank} 名`);
-    } else {
-      lines.push(`估算名次：第 ${position.estimatedRank} 名`);
-      lines.push('该值在表中不存在，名次为插入估算结果。');
-    }
-    lines.push(`百分位：约高于 ${position.percentile.toFixed(1)}% 的有效数据`);
-    lines.push('');
-    lines.push('三、口径说明');
-    lines.push('百分位口径：低于该值人数 / 有效数值数量 × 100%。');
-    lines.push('同分情况下使用名次区间，不强行给出单一名次。');
-
-    const text = lines.join('\n');
-
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(() => {
-        setSaveMsg('已复制分析摘要');
-        setTimeout(() => setSaveMsg(null), 2000);
-      }).catch(() => fallbackCopy(text));
-    } else {
-      fallbackCopy(text);
-    }
-  }, [stats, position, selectedField, inputValue, fallbackCopy]);
-
   // ===== 渲染 =====
   return (
     <div style={styles.container}>
@@ -615,443 +460,47 @@ export default function App() {
           <p style={styles.emptyHint}>请先粘贴表格数据。</p>
         )}
 
-        {parsedData && availableFields.length === 0 && (
-          <section style={{ ...styles.section, ...styles.errorSection }}>
-            <p style={styles.errorText}>
-              {(() => {
-                if (!parsedData.rows || parsedData.rows.length === 0) {
-                  return '表格数据为空，请检查是否成功读取到数据行。';
-                }
-                if (!parsedData.headers || parsedData.headers.length === 0) {
-                  return '未识别到表头字段，请确认第一行为字段名。';
-                }
-                if (parseSummary?.fieldTypes) {
-                  const allInvalid = parseSummary.fieldTypes.every(
-                    m => m.analysisRole === 'invalid' || m.analysisRole === 'identity' || m.analysisRole === 'textMeta'
-                  );
-                  if (allInvalid) {
-                    return '已识别字段，但未发现推荐分析字段，请尝试打开"显示全部字段"并手动选择数值字段。';
-                  }
-                }
-                return '当前表格没有可分析的数值字段，请尝试打开"显示全部字段"并手动选择。';
-              })()}
-            </p>
-            <p style={styles.hint}>
-              如果文件包含复杂表头，建议使用 Excel 复制表格后粘贴文本方式。
-            </p>
-          </section>
-        )}
-
-        {parsedData && availableFields.length > 0 && (
-          <>
-            {parseSummary && (
-              <section style={styles.section}>
-                <h2 style={styles.sectionTitle}>识别摘要</h2>
-                <div style={styles.summaryGrid}>
-                  <SummaryItem label="已识别主表" value={parseSummary.sheetName} />
-                  <SummaryItem label="识别字段" value={`${parseSummary.fieldCount} 个`} />
-                  <SummaryItem label="有效数据行" value={`${parseSummary.validDataRows} 行`} />
-                  {parseSummary.emptyRows > 0 && <SummaryItem label="跳过空行" value={`${parseSummary.emptyRows} 行`} />}
-                  {parseSummary.summaryRows > 0 && <SummaryItem label="跳过统计行" value={`${parseSummary.summaryRows} 行`} />}
-                  {parseSummary.statusRows > 0 && <SummaryItem label="状态/无效行" value={`${parseSummary.statusRows} 行`} />}
-                  {parseSummary.recommendedField && (
-                    <SummaryItem label="推荐分析字段" value={parseSummary.recommendedField} highlight />
-                  )}
-                </div>
-              </section>
-            )}
-
-            {parseReport && (
-              <section style={styles.section}>
-                <h2 style={styles.sectionTitle}>解析报告</h2>
-                <ParseReportPanel report={parseReport} />
-              </section>
-            )}
-
-            <ErrorBoundary>
-            <section style={styles.section}>
-              <GeneralDataOverview headers={parsedData.headers} rows={parsedData.rows} />
-            </section>
-            </ErrorBoundary>
-
-            <ErrorBoundary>
-            <RelationshipAnalysisPanel correlationResult={correlationResult} />
-            </ErrorBoundary>
-
-            {availableSheets && availableSheets.length > 1 && (
-              <section style={styles.section}>
-                <h2 style={styles.sectionTitle}>工作表选择</h2>
-                <div style={styles.sheetSelector}>
-                  {availableSheets.map(sheet => (
-                    <button
-                      key={sheet}
-                      style={{
-                        ...styles.sheetButton,
-                        ...(selectedSheet === sheet ? styles.sheetButtonActive : {}),
-                        ...(parseSummary?.sheetName === sheet && !selectedSheet ? styles.sheetButtonActive : {}),
-                      }}
-                      onClick={() => handleSheetChange(sheet)}
-                    >
-                      {sheet}
-                    </button>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            <section style={styles.section}>
-              <h2 style={styles.sectionTitle}>解析结果</h2>
-              <div style={styles.infoRow}>
-                <span style={styles.infoLabel}>字段数：</span>
-                <span style={styles.infoValue}>{parsedData.headers.length}</span>
-                <span style={styles.infoLabel}>数据行数：</span>
-                <span style={styles.infoValue}>{parsedData.rows.length}</span>
-                {filteredParsedData && filterResult && filterResult.filterSummary.activeConditions > 0 && (
-                  <button
-                    className="copy-btn"
-                    style={styles.exportButton}
-                    onClick={handleExportFilteredData}
-                  >
-                    导出筛选后数据 CSV
-                  </button>
-                )}
-              </div>
-            </section>
-
-            <ErrorBoundary>
-              <FilterPanel
-                headers={parsedData.headers}
-                numericFields={numericFieldSet}
-                conditions={filterConditions}
-                onConditionsChange={setFilterConditions}
-                filterSummary={filterResult?.filterSummary ?? null}
-                collapsed={filterCollapsed}
-                onToggleCollapse={() => setFilterCollapsed(!filterCollapsed)}
-              />
-            </ErrorBoundary>
-
-            <AnalysisContextHint
-              originalCount={parsedData.rows.length}
-              filteredCount={filterResult?.filterSummary.filteredCount ?? parsedData.rows.length}
-              activeConditions={filterResult?.filterSummary.activeConditions ?? 0}
+        {parsedData && (
+          <Suspense fallback={<div style={{ textAlign: 'center', padding: '40px', color: '#64748b', fontSize: '14px' }}>加载分析引擎...</div>}>
+            <AnalysisSection
+              parsedData={parsedData}
+              parseSummary={parseSummary}
+              parseReport={parseReport}
+              filteredParsedData={filteredParsedData}
+              filterResult={filterResult}
+              filterConditions={filterConditions}
+              setFilterConditions={setFilterConditions}
+              filterCollapsed={filterCollapsed}
+              setFilterCollapsed={setFilterCollapsed}
+              numericFieldSet={numericFieldSet}
               selectedDimension={selectedDimension}
-              isFilteredEmpty={filterResult ? filterResult.filterSummary.filteredCount === 0 && filterResult.filterSummary.activeConditions > 0 : false}
+              setSelectedDimension={setSelectedDimension}
+              availableDimensions={availableDimensions}
+              selectedField={selectedField}
+              setSelectedField={setSelectedField}
+              inputValue={inputValue}
+              setInputValue={setInputValue}
+              showAllFields={showAllFields}
+              setShowAllFields={setShowAllFields}
+              activeChartTab={activeChartTab}
+              setActiveChartTab={setActiveChartTab}
+              originalFieldState={originalFieldState}
+              setOriginalFieldState={setOriginalFieldState}
+              availableSheets={availableSheets}
+              selectedSheet={selectedSheet}
+              handleSheetChange={handleSheetChange}
+              isNumericField={isNumericField}
+              getFieldAnalysisRole={getFieldAnalysisRole}
+              availableFields={availableFields}
+              isFallbackFieldMode={isFallbackFieldMode}
+              groupedFields={groupedFields}
+              analysisExplanationRef={{ parsedData, originalFieldState, parseSummary }}
+              showDebugPanel={showDebugPanel}
+              setShowDebugPanel={setShowDebugPanel}
             />
-
-            {filterResult?.filterSummary && filterResult.filterSummary.activeConditions > 0 && filterResult.filterSummary.filteredCount === 0 && (
-              <section style={{ ...styles.section, ...styles.errorSection }}>
-                <p style={styles.errorText}>
-                  当前筛选条件下无可分析数据，请调整筛选条件后重试。
-                </p>
-              </section>
-            )}
-
-            <section style={styles.section}>
-              <h2 style={styles.sectionTitle}>分析设置</h2>
-              {isFallbackFieldMode && (
-                <div style={styles.fallbackHint}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: 500 }}>系统未能自动推荐字段，但检测到若干数值字段，可手动选择后分析。</p>
-                  <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>
-                    建议打开"显示全部字段"以查看完整字段列表，或尝试粘贴表格文本方式。
-                  </p>
-                </div>
-              )}
-              <div style={styles.settingsRow}>
-                <div style={styles.settingItem}>
-                  <label style={styles.settingLabel}>分析字段</label>
-                  <select style={styles.select} value={selectedField} onChange={e => setSelectedField(e.target.value)}>
-                    {showAllFields && groupedFields ? (
-                      <>
-                        {groupedFields.recommended.length > 0 && (
-                          <optgroup label="推荐分析字段">
-                            {groupedFields.recommended.map(header => (
-                              <option key={header} value={header}>{header}</option>
-                            ))}
-                          </optgroup>
-                        )}
-                        {groupedFields.adjustment.length > 0 && (
-                          <optgroup label="加扣分/调整项">
-                            {groupedFields.adjustment.map(header => (
-                              <option key={header} value={header}>{header}</option>
-                            ))}
-                          </optgroup>
-                        )}
-                        {groupedFields.identity.length > 0 && (
-                          <optgroup label="身份信息">
-                            {groupedFields.identity.map(header => (
-                              <option key={header} value={header}>{header}</option>
-                            ))}
-                          </optgroup>
-                        )}
-                        {groupedFields.textMeta.length > 0 && (
-                          <optgroup label="文本/备注字段">
-                            {groupedFields.textMeta.map(header => (
-                              <option key={header} value={header}>{header}</option>
-                            ))}
-                          </optgroup>
-                        )}
-                        {groupedFields.others.length > 0 && (
-                          <optgroup label="其他字段">
-                            {groupedFields.others.map(header => (
-                              <option key={header} value={header}>{header}</option>
-                            ))}
-                          </optgroup>
-                        )}
-                      </>
-                    ) : (
-                      availableFields.map(header => (
-                        <option key={header} value={header}>{header}</option>
-                      ))
-                    )}
-                  </select>
-                </div>
-                <div style={styles.settingItem}>
-                  <label style={styles.settingLabel}>你的数值</label>
-                  <input type="number" style={styles.input} placeholder="输入数值" value={inputValue} onChange={e => setInputValue(e.target.value)} />
-                </div>
-                <div style={styles.settingActions}>
-                  <label style={styles.toggleLabel}>
-                    <input type="checkbox" checked={showAllFields} onChange={e => setShowAllFields(e.target.checked)} style={styles.checkbox} />
-                    显示全部字段
-                  </label>
-                </div>
-              </div>
-              {availableDimensions.length > 0 && (
-                <div style={{ ...styles.settingsRow, marginTop: '12px' }}>
-                  <div style={styles.settingItem}>
-                    <label style={styles.settingLabel}>分组维度（可选）</label>
-                    <select
-                      style={styles.select}
-                      value={selectedDimension}
-                      onChange={e => setSelectedDimension(e.target.value)}
-                    >
-                      <option value="">不分组</option>
-                      {availableDimensions.map(dim => (
-                        <option key={dim.header} value={dim.header}>
-                          {dim.header}{dim.riskLevel === 'warning' ? ' ⚠' : ''}
-                        </option>
-                      ))}
-                    </select>
-                    {(() => {
-                      const selected = availableDimensions.find(d => d.header === selectedDimension);
-                      if (selected?.riskLevel === 'warning') {
-                        return <p style={styles.warning}>{selected.riskHint}</p>;
-                      }
-                      return null;
-                    })()}
-                  </div>
-                </div>
-              )}
-              {hasInputError && <p style={styles.error}>请输入有效数字。</p>}
-              {inputValue === '' && position === null && selectedField && (
-                <p style={styles.hint}>请输入你的数值后再查看排名定位。</p>
-              )}
-            </section>
-
-            {selectedField && stats === null && fieldValues.length === 0 && (
-              <section style={{ ...styles.section, ...styles.errorSection }}>
-                <p style={styles.errorText}>当前字段没有可分析的有效数值，请选择其他字段。</p>
-              </section>
-            )}
-
-            {stats && (
-              <ErrorBoundary>
-              <section style={styles.section}>
-                <h2 style={styles.sectionTitle}>统计指标</h2>
-                <div style={styles.statsGrid}>
-                  <StatCard label="有效数值" value={stats.validCount.toString()} />
-                  <StatCard label="无效/空值" value={stats.invalidCount.toString()} />
-                  <StatCard label="最高" value={formatNumber(stats.max)} />
-                  <StatCard label="最低" value={formatNumber(stats.min)} />
-                  <StatCard label="平均值" value={formatNumber(stats.mean)} />
-                  <StatCard label="中位数" value={formatNumber(stats.median)} />
-                  <StatCard label="25% 分位" value={formatNumber(stats.q25)} />
-                  <StatCard label="75% 分位" value={formatNumber(stats.q75)} />
-                  <StatCard label="90% 分位" value={formatNumber(stats.q90)} />
-                  <StatCard label="95% 分位" value={formatNumber(stats.q95)} />
-                </div>
-              </section>
-              </ErrorBoundary>
-            )}
-
-            {position && stats && !isNaN(inputNum) && (
-              <ErrorBoundary>
-              <section style={styles.section}>
-                <div style={styles.positionHeader}>
-                  <h2 style={styles.sectionTitle}>排名定位</h2>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button className="copy-btn" style={styles.copyButton} onClick={handleCopySummary}>复制分析摘要</button>
-                    <button
-                      className="copy-btn"
-                      style={styles.exportButton}
-                      disabled={!stats && !position}
-                      onClick={handleExportMetricSummary}
-                    >
-                      导出指标摘要 CSV
-                    </button>
-                  </div>
-                </div>
-
-                {summaryText && <div style={styles.summaryBox}>{summaryText}</div>}
-
-                <div style={styles.positionGrid}>
-                  <PositionItem label="与平均值对比" value={formatComparisonText(inputNum, stats.mean)} />
-                  <PositionItem label="与中位数对比" value={formatComparisonText(inputNum, stats.median)} />
-                  <PositionItem label="低于该值人数" value={`${position.lowerCount} 人`} />
-                  <PositionItem label="等于该值人数" value={`${position.equalCount} 人`} />
-                  <PositionItem label="高于该值人数" value={`${position.higherCount} 人`} />
-                  {position.existsInData ? (
-                    <PositionItem label="名次区间" value={`第 ${position.bestRank} 名 ~ 第 ${position.worstRank} 名`} />
-                  ) : (
-                    <PositionItem label="估算名次" value={`第 ${position.estimatedRank} 名`} />
-                  )}
-                </div>
-
-                <div style={styles.positionHighlight}>
-                  <div style={styles.positionHighlightLabel}>百分位</div>
-                  <div style={styles.positionHighlightValue}>约 {position.percentile.toFixed(1)}%</div>
-                </div>
-
-                <p style={styles.note}>百分位口径：低于该值人数 / 有效数值数量 × 100%。</p>
-
-                {!position.existsInData && (
-                  <p style={styles.warning}>你的数值超出当前字段数据范围，排名结果仅作为插入估算。</p>
-                )}
-              </section>
-              </ErrorBoundary>
-            )}
-
-            {parsedData && (
-              <ErrorBoundary>
-              <section style={styles.section}>
-                <h2 style={styles.sectionTitle}>图表分析</h2>
-
-                {selectedField && metricResult && (
-                  <>
-                    <ChartTabs activeTab={activeChartTab} onChange={setActiveChartTab} />
-                    {activeChartTab === 'histogram' && <HistogramChart {...toHistogramProps(metricResult)} />}
-                    {activeChartTab === 'boxplot' && <BoxPlotChart {...toBoxPlotProps(metricResult)} />}
-                    {activeChartTab === 'cdf' && <CdfChart {...toCdfProps(metricResult)} />}
-                    {activeChartTab === 'quartile' && <QuartilePieChart {...toQuartilePieProps(metricResult)} />}
-                  </>
-                )}
-
-                {selectedField && fieldValues.length === 0 && (
-                  <div style={styles.emptyChart}>暂无可视化数据</div>
-                )}
-
-                <div style={styles.radarSection}>
-                  <RadarAnalysis
-                    headers={parsedData.headers}
-                    rows={parsedData.rows}
-                    isNumericField={isNumericField}
-                    getFieldAnalysisRole={getFieldAnalysisRole}
-                    originalFieldState={originalFieldState}
-                    onOriginalFieldChange={setOriginalFieldState}
-                  />
-                </div>
-
-                {analysisExplanation && (
-                  <ErrorBoundary>
-                    <AnalysisExplainer explanation={analysisExplanation} />
-                  </ErrorBoundary>
-                )}
-
-                {selectedField && fieldValues && stats && fieldValues.length > 0 && (
-                  <ErrorBoundary>
-                    <OutlierPanel
-                      selectedField={selectedField}
-                      values={fieldValues}
-                    />
-                  </ErrorBoundary>
-                )}
-              </section>
-              </ErrorBoundary>
-            )}
-
-            {viewContext?.groupStats && viewContext.groupStats.length > 0 && (
-              <ErrorBoundary>
-              <section style={styles.section}>
-                <div style={styles.positionHeader}>
-                  <h2 style={styles.sectionTitle}>分组分析</h2>
-                  <button
-                    className="copy-btn"
-                    style={styles.exportButton}
-                    onClick={handleExportGroupAnalysis}
-                  >
-                    导出分组分析 CSV
-                  </button>
-                </div>
-                <GroupBarChart
-                  groupStats={viewContext.groupStats}
-                  metricField={selectedField}
-                  dimensionField={selectedDimension}
-                />
-                <GroupAnalysis
-                  groupStats={viewContext.groupStats}
-                  metricField={selectedField}
-                  dimensionField={selectedDimension}
-                />
-              </section>
-              </ErrorBoundary>
-            )}
-
-            {viewContext?.groupStats !== null && viewContext?.groupStats !== undefined && viewContext.groupStats.length === 0 && selectedField && selectedDimension && (
-              <section style={{ ...styles.section, ...styles.errorSection }}>
-                <p style={styles.errorText}>
-                  所选维度【{selectedDimension}】下没有可分析的数值数据，请检查指标字段和维度字段是否匹配。
-                </p>
-              </section>
-            )}
-          </>
+          </Suspense>
         )}
       </main>
-
-      {/* 调试面板开关：仅开发环境 */}
-      {import.meta.env.DEV && (
-        <>
-          <button
-            onClick={() => setShowDebugPanel(prev => !prev)}
-            style={{
-              position: 'fixed',
-              right: 16,
-              bottom: 16,
-              zIndex: 9999,
-              padding: '8px 16px',
-              backgroundColor: showDebugPanel ? '#ef4444' : '#3b82f6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-            }}
-          >
-            {showDebugPanel ? '隐藏调试面板' : '显示调试面板'}
-          </button>
-
-          {showDebugPanel && selectedField && metricResult && (
-            <div style={{
-              position: 'fixed',
-              right: 16,
-              bottom: 60,
-              zIndex: 9998,
-              maxWidth: '400px',
-              maxHeight: '60vh',
-              overflow: 'auto',
-            }}>
-              <ErrorBoundary>
-                <DebugPanel
-                  context={derivedData}
-                  metricResult={metricResult}
-                  selectedField={selectedField}
-                  metricDef={metricDefs.find(m => m.name === selectedField)}
-                />
-              </ErrorBoundary>
-            </div>
-          )}
-        </>
-      )}
 
       <footer style={styles.footer}>
         <div style={styles.footerVersion}>版本：{APP_VERSION}</div>
@@ -1066,41 +515,6 @@ export default function App() {
       </footer>
     </div>
   );
-}
-
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="stat-card-hover" style={styles.statCard}>
-      <div style={styles.statLabel}>{label}</div>
-      <div style={styles.statValue}>{value}</div>
-    </div>
-  );
-}
-
-function PositionItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={styles.positionItem}>
-      <div style={styles.positionLabel}>{label}</div>
-      <div style={styles.positionValue}>{value}</div>
-    </div>
-  );
-}
-
-function SummaryItem({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
-  return (
-    <div style={styles.summaryItem}>
-      <span style={styles.summaryLabel}>{label}：</span>
-      <span style={{ ...styles.summaryValue, ...(highlight ? styles.summaryHighlight : {}) }}>{value}</span>
-    </div>
-  );
-}
-
-function formatComparisonText(input: number, ref: number): string {
-  if (!Number.isFinite(input) || !Number.isFinite(ref)) return '-';
-  const diff = input - ref;
-  if (Math.abs(diff) < 0.005) return '持平';
-  const absDiff = Number.isInteger(Math.abs(diff)) ? Math.abs(diff).toString() : Math.abs(diff).toFixed(2);
-  return diff > 0 ? `高 ${absDiff} 分` : `低 ${absDiff} 分`;
 }
 
 const styles: Record<string, React.CSSProperties> = {

@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
-import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
 import { generateCdf } from '../../utils/chartData';
 import { computePercentile } from '../../engine/analysisEngine';
+import EChartsWrapper from './EChartsWrapper';
 
 interface CdfChartProps {
   values: number[];
@@ -103,5 +103,5 @@ export default function CdfChart({ values, fieldName, userValue }: CdfChartProps
     } as EChartsOption;
   }, [cleanValues, fieldName, userValue]);
 
-  return <ReactECharts option={option} style={{ height: '350px', width: '100%' }} />;
+  return <EChartsWrapper option={option} chartTypes={['line']} style={{ height: '350px', width: '100%' }} />;
 }
