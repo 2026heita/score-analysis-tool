@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import type { EChartsOption } from 'echarts';
 import { generateCdf } from '../../utils/chartData';
 import { computePercentile } from '../../engine/analysisEngine';
+import { safeFormatNumber, safeFormatPercent, extractNumericFromEChartsParam } from '../../utils/safeFormat';
 import EChartsWrapper from './EChartsWrapper';
 
 interface CdfChartProps {
@@ -52,7 +53,7 @@ export default function CdfChart({ values, fieldName, userValue }: CdfChartProps
         symbolSize: 28,
         itemStyle: { color: '#ef4444' },
         label: {
-          formatter: `你的数值：${Number.isInteger(userValue) ? userValue : userValue.toFixed(2)}\n约高于 ${percentile.toFixed(1)}% 的有效数据`,
+          formatter: `你的数值：${safeFormatNumber(userValue, 2)}\n约高于 ${safeFormatPercent(percentile)} 的有效数据`,
           position: 'top',
           fontSize: 11,
           color: '#dc2626',
@@ -70,7 +71,9 @@ export default function CdfChart({ values, fieldName, userValue }: CdfChartProps
         trigger: 'axis',
         formatter: (params: any) => {
           const p = params[0];
-          return `${p.value[0]}<br/>低于该值比例：${p.value[1].toFixed(1)}%`;
+          const value = extractNumericFromEChartsParam(p.value[0]);
+          const percentile = extractNumericFromEChartsParam(p.value[1]);
+          return `${safeFormatNumber(value)}<br/>低于该值比例：${safeFormatPercent(percentile)}`;
         },
       },
       grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },

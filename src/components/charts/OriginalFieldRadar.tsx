@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useEffect, useLayoutEffect, useRef } fr
 import type { EChartsOption } from 'echarts';
 import { extractFieldValues, computeStats, computePercentile } from '../../engine/analysisEngine';
 import { parseNumericValue } from '../../utils/tableParser/numericParser';
+import { safeFormatPercent, extractNumericFromEChartsParam, isValidPercentile } from '../../utils/safeFormat';
 import EChartsWrapper from './EChartsWrapper';
 import type { OriginalFieldRadarState } from '../../types';
 // @deprecated 教育/高考功能已收敛至 legacy 区
@@ -699,8 +700,16 @@ export default function OriginalFieldRadar({
     });
   }, [rawStats, selections]);
 
-  const validStats = useMemo(() => sortedStats.filter(s => s.userValue !== undefined && Number.isFinite(s.userValue)), [sortedStats]);
-  const validRadarStats = useMemo(() => radarStats.filter(s => s.userValue !== undefined && Number.isFinite(s.userValue)), [radarStats]);
+  const validStats = useMemo(() => sortedStats.filter(s => 
+    s.userValue !== undefined && 
+    Number.isFinite(s.userValue) && 
+    isValidPercentile(s.percentile)
+  ), [sortedStats]);
+  const validRadarStats = useMemo(() => radarStats.filter(s => 
+    s.userValue !== undefined && 
+    Number.isFinite(s.userValue) && 
+    isValidPercentile(s.percentile)
+  ), [radarStats]);
 
   // 条形图
   const barOption: EChartsOption | null = useMemo(() => {
@@ -728,7 +737,7 @@ export default function OriginalFieldRadar({
         formatter: (params: any) => {
           const idx = reversed.length - 1 - params[0].dataIndex;
           const s = validStats[idx];
-          return `字段：${s.field}<br/>你的输入值：${s.userValue}<br/>百分位：${s.percentile.toFixed(1)}%`;
+          return `字段：${s.field}<br/>你的输入值：${s.userValue}<br/>百分位：${safeFormatPercent(s.percentile)}`;
         },
       },
       grid: { left: '3%', right: '8%', bottom: '3%', containLabel: true },
@@ -752,7 +761,10 @@ export default function OriginalFieldRadar({
         })),
         label: {
           show: true, position: 'right',
-          formatter: (p: any) => `${p.value.toFixed(1)}%`, fontSize: 11,
+          formatter: (p: any) => {
+            const value = extractNumericFromEChartsParam(p.value);
+            return safeFormatPercent(value);
+          }, fontSize: 11,
         },
         barMaxWidth: 28,
       }],
@@ -765,7 +777,7 @@ export default function OriginalFieldRadar({
     const indicator = validRadarStats.map(s => ({ name: s.field, max: 100 }));
     const data = validRadarStats.map(s => s.percentile);
     const allFieldInfo = validRadarStats
-      .map(s => `${s.field}: ${s.userValue} → ${s.percentile.toFixed(1)}%`)
+      .map(s => `${s.field}: ${s.userValue} → ${safeFormatPercent(s.percentile)}`)
       .join('<br/>');
 
     // 只有当 token 未被消费时才播放动画
@@ -785,7 +797,7 @@ export default function OriginalFieldRadar({
         formatter: (params: any) => {
           const idx = params.dataIndex;
           const hovered = validRadarStats[idx];
-          return `当前悬停字段：${hovered.field}<br/>你的输入值：${hovered.userValue}<br/>百分位：${hovered.percentile.toFixed(1)}%<br/><br/>该图同时包含其他字段，见下方字段列表。<br/>──────────────<br/>${allFieldInfo}`;
+          return `当前悬停字段：${hovered.field}<br/>你的输入值：${hovered.userValue}<br/>百分位：${safeFormatPercent(hovered.percentile)}<br/><br/>该图同时包含其他字段，见下方字段列表。<br/>──────────────<br/>${allFieldInfo}`;
         },
       },
       radar: { indicator, radius: '65%', axisName: { fontSize: 11 } },
@@ -1085,7 +1097,7 @@ export default function OriginalFieldRadar({
           <span style={styles.fieldTagLabel}>当前参与分析字段：</span>
           {validRadarStats.map(s => (
             <span key={s.field} style={styles.fieldTag}>
-              {s.field}（{s.percentile.toFixed(1)}%）
+              {s.field}（{safeFormatPercent(s.percentile)}）
             </span>
           ))}
         </div>
@@ -1097,13 +1109,13 @@ export default function OriginalFieldRadar({
           <div style={styles.conclusionItem}>
             <span style={styles.conclusionLabel}>相对优势字段：</span>
             <span style={{ ...styles.conclusionValue, color: '#10b981' }}>
-              {conclusion.advantages.map(a => `${a.field}（${a.percentile.toFixed(1)}%）`).join('、')}
+              {conclusion.advantages.map(a => `${a.field}（${safeFormatPercent(a.percentile)}）`).join('、')}
             </span>
           </div>
           <div style={styles.conclusionItem}>
             <span style={styles.conclusionLabel}>相对弱势字段：</span>
             <span style={{ ...styles.conclusionValue, color: '#ef4444' }}>
-              {conclusion.weaknesses.map(w => `${w.field}（${w.percentile.toFixed(1)}%）`).join('、')}
+              {conclusion.weaknesses.map(w => `${w.field}（${safeFormatPercent(w.percentile)}）`).join('、')}
             </span>
           </div>
         </div>

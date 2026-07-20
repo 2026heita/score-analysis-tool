@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { EChartsOption } from 'echarts';
 import { generateBins } from '../../utils/chartData';
+import { safeFormatNumber } from '../../utils/safeFormat';
 import EChartsWrapper from './EChartsWrapper';
 
 interface HistogramChartProps {
@@ -46,7 +47,7 @@ export default function HistogramChart({ values, fieldName, userValue, binCount 
       markLineData.push({
         xAxis: userValue,
         label: {
-          formatter: `你的数值：${Number.isInteger(userValue) ? userValue : userValue.toFixed(2)}`,
+          formatter: `你的数值：${safeFormatNumber(userValue, 2)}`,
           position: 'end',
         },
         lineStyle: { color: '#ef4444', type: 'dashed', width: 2 },
