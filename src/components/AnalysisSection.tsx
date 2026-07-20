@@ -11,6 +11,7 @@ import { useMetricResult } from '../hooks/useMetricResult';
 import { useExportActions } from '../hooks/useExportActions';
 import { formatNumber } from '../utils/stats';
 import { generateExplanation } from '../utils/analysisExplainer';
+import { safeFormatPercent } from '../utils/safeFormat';
 import { toHistogramProps, toBoxPlotProps, toCdfProps, toQuartilePieProps } from '../engine/chartAdapter';
 import { preloadECharts } from '../utils/echartsSetup';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -197,9 +198,9 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
     if (!position || !stats || isNaN(inputNum)) return '';
     const numStr = formatNumber(inputNum);
     if (position.existsInData) {
-      return `你的【${selectedField}】为 ${numStr}。全表 ${position.total} 人中，高于你的人有 ${position.higherCount} 人，与你同分的有 ${position.equalCount} 人。你的名次区间为第 ${position.bestRank} 名 ~ 第 ${position.worstRank} 名，约高于 ${position.percentile.toFixed(1)}% 的有效数据。`;
+      return `你的【${selectedField}】为 ${numStr}。全表 ${position.total} 人中，高于你的人有 ${position.higherCount} 人，与你同分的有 ${position.equalCount} 人。你的名次区间为第 ${position.bestRank} 名 ~ 第 ${position.worstRank} 名，约高于 ${safeFormatPercent(position.percentile)} 的有效数据。`;
     }
-    return `该值在表中不存在。如果按该值插入全表，估算名次为第 ${position.estimatedRank} 名，约高于 ${position.percentile.toFixed(1)}% 的有效数据。`;
+    return `该值在表中不存在。如果按该值插入全表，估算名次为第 ${position.estimatedRank} 名，约高于 ${safeFormatPercent(position.percentile)} 的有效数据。`;
   }, [position, stats, selectedField, inputNum]);
 
   // ===== 复制摘要 =====
@@ -249,7 +250,7 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
       lines.push(`估算名次：第 ${position.estimatedRank} 名`);
       lines.push('该值在表中不存在，名次为插入估算结果。');
     }
-    lines.push(`百分位：约高于 ${position.percentile.toFixed(1)}% 的有效数据`);
+    lines.push(`百分位：约高于 ${safeFormatPercent(position.percentile)} 的有效数据`);
     lines.push('');
     lines.push('三、口径说明');
     lines.push('百分位口径：低于该值人数 / 有效数值数量 × 100%。');
@@ -279,6 +280,7 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
     const absDiff = Number.isInteger(Math.abs(diff)) ? Math.abs(diff).toString() : Math.abs(diff).toFixed(2);
     return diff > 0 ? `高 ${absDiff} 分` : `低 ${absDiff} 分`;
   }
+  // 注意：第280行的 Math.abs(diff).toFixed(2) 是安全的，因为前面已经用 Number.isFinite 验证了 input 和 ref
 
   // ===== 渲染 =====
   return (
@@ -577,7 +579,7 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
 
               <div style={styles.positionHighlight}>
                 <div style={styles.positionHighlightLabel}>百分位</div>
-                <div style={styles.positionHighlightValue}>约 {position.percentile.toFixed(1)}%</div>
+                <div style={styles.positionHighlightValue}>约 {safeFormatPercent(position.percentile)}</div>
               </div>
 
               <p style={styles.note}>百分位口径：低于该值人数 / 有效数值数量 × 100%。</p>

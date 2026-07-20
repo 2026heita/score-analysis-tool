@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { AnalysisExplanation, FieldExplanation } from '../types';
+import { safeFormatNumber, safeFormatPercent } from '../utils/safeFormat';
 
 interface AnalysisExplainerProps {
   explanation: AnalysisExplanation;
@@ -27,7 +28,7 @@ export default function AnalysisExplainer({ explanation }: AnalysisExplainerProp
           <>
             <p style={styles.summaryText}>
               综合 {multiFieldSummary.fieldCount} 个字段，平均百分位{' '}
-              <strong>{multiFieldSummary.averagePercentile.toFixed(1)}%</strong>
+              <strong>{safeFormatPercent(multiFieldSummary.averagePercentile)}</strong>
             </p>
             {multiFieldSummary.top3Fields.length > 0 && (
               <p style={styles.summaryText}>
@@ -92,9 +93,9 @@ function FieldExplanationCard({ explanation }: { explanation: FieldExplanation }
         </div>
         <div style={styles.statRow}>
           <span style={styles.statLabel}>平均分：</span>
-          <span>{mean.toFixed(2)}</span>
+          <span>{safeFormatNumber(mean, 2)}</span>
           <span style={getDiffStyle(diffFromMean)}>
-            ({diffFromMean >= 0 ? '+' : ''}{diffFromMean.toFixed(2)})
+            ({diffFromMean >= 0 ? '+' : ''}{safeFormatNumber(diffFromMean, 2)})
           </span>
         </div>
         <div style={styles.statRow}>
@@ -103,7 +104,7 @@ function FieldExplanationCard({ explanation }: { explanation: FieldExplanation }
         </div>
         <div style={styles.statRow}>
           <span style={styles.statLabel}>百分位：</span>
-          <span>{percentile.toFixed(1)}%</span>
+          <span>{safeFormatPercent(percentile)}</span>
         </div>
       </div>
 
@@ -111,19 +112,19 @@ function FieldExplanationCard({ explanation }: { explanation: FieldExplanation }
         <div style={styles.percentileRow}>
           <span style={styles.percentileLabel}>与 P75 差距：</span>
           <span style={getDiffStyle(diffFromP75)}>
-            {diffFromP75 >= 0 ? '+' : ''}{diffFromP75.toFixed(2)}
+            {diffFromP75 >= 0 ? '+' : ''}{safeFormatNumber(diffFromP75, 2)}
           </span>
         </div>
         <div style={styles.percentileRow}>
           <span style={styles.percentileLabel}>与 P90 差距：</span>
           <span style={getDiffStyle(diffFromP90)}>
-            {diffFromP90 >= 0 ? '+' : ''}{diffFromP90.toFixed(2)}
+            {diffFromP90 >= 0 ? '+' : ''}{safeFormatNumber(diffFromP90, 2)}
           </span>
         </div>
         <div style={styles.percentileRow}>
           <span style={styles.percentileLabel}>与 P95 差距：</span>
           <span style={getDiffStyle(diffFromP95)}>
-            {diffFromP95 >= 0 ? '+' : ''}{diffFromP95.toFixed(2)}
+            {diffFromP95 >= 0 ? '+' : ''}{safeFormatNumber(diffFromP95, 2)}
           </span>
         </div>
       </div>

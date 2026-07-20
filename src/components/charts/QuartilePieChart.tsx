@@ -1,5 +1,6 @@
 import type { EChartsOption } from 'echarts';
 import { buildQuartilePieData, formatNumber } from '../../utils/chartData';
+import { safeFormatPercent } from '../../utils/safeFormat';
 import EChartsWrapper from './EChartsWrapper';
 
 interface QuartilePieChartProps {
@@ -39,7 +40,7 @@ export default function QuartilePieChart({ values, fieldName, userValue }: Quart
           if (pieData.isAllSame) {
             return `${d.name}<br/>人数：${d.value}<br/>占比：100%<br/>数值：${d.rangeText}`;
           }
-          return `${d.name}<br/>人数：${d.value}<br/>占比：${d.percentage.toFixed(1)}%<br/>范围：${d.rangeText}`;
+          return `${d.name}<br/>人数：${d.value}<br/>占比：${safeFormatPercent(d.percentage)}<br/>范围：${d.rangeText}`;
         },
       },
       series: [
