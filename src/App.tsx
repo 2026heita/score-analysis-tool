@@ -76,6 +76,7 @@ export default function App() {
     parseReport,
     textareaRef,
     activeTableId,
+    dataVolumeState, // Stage 0A-1: 数据量状态
   } = useParsedTable();
 
   // ===== 用户交互状态 =====
@@ -90,6 +91,13 @@ export default function App() {
   );
   const [showDebugPanel, setShowDebugPanel] = useState(false);
 
+  // ===== Stage 0A-1: 分析能力判断 =====
+  const canAnalyze = useMemo(() => {
+    return parsedData != null && 
+           dataVolumeState != null && 
+           !dataVolumeState.isParseTruncated;
+  }, [parsedData, dataVolumeState]);
+
   // ===== v1.3 Hooks：筛选 / 分组 / 导出 =====
   const {
     filterConditions, setFilterConditions,
@@ -98,13 +106,13 @@ export default function App() {
     filterResult,
     filteredParsedData,
     resetFilter,
-  } = useFilterState(parsedData, parseSummary, activeTableId);
+  } = useFilterState(canAnalyze ? parsedData : null, parseSummary, activeTableId);
 
   const {
     selectedDimension, setSelectedDimension,
     availableDimensions,
     resetGroupAnalysis,
-  } = useGroupAnalysis(filteredParsedData, parseSummary);
+  } = useGroupAnalysis(canAnalyze ? filteredParsedData : null, parseSummary);
 
   // ===== 自动保存 =====
   useEffect(() => {
@@ -460,7 +468,27 @@ export default function App() {
           <p style={styles.emptyHint}>请先粘贴表格数据。</p>
         )}
 
-        {parsedData && (
+        {parsedData && dataVolumeState?.isParseTruncated && (
+          <section style={{ ...styles.card, marginTop: '20px', borderColor: '#f59e0b', backgroundColor: '#fef3c7' }}>
+            <h3 style={{ margin: '0 0 12px', color: '#92400e', fontSize: '16px' }}>⚠️ 数据量超出分析上限</h3>
+            <p style={{ margin: '0 0 8px', color: '#78350f', fontSize: '14px', lineHeight: '1.6' }}>
+              当前数据包含 <strong>{dataVolumeState.rawRowCount.toLocaleString()}</strong> 行，超出系统分析上限（20,000 行）。
+            </p>
+            <p style={{ margin: '0 0 8px', color: '#78350f', fontSize: '14px', lineHeight: '1.6' }}>
+              已解析前 <strong>{dataVolumeState.parsedRowCount.toLocaleString()}</strong> 行用于数据预览，但<strong>不生成正式分析结果</strong>。
+            </p>
+            {dataVolumeState.parseTruncationWarning && (
+              <p style={{ margin: '8px 0 0', color: '#92400e', fontSize: '13px', fontStyle: 'italic' }}>
+                {dataVolumeState.parseTruncationWarning}
+              </p>
+            )}
+            <p style={{ margin: '12px 0 0', color: '#78350f', fontSize: '13px', fontWeight: '500' }}>
+              请减少数据量后重新解析，或联系技术支持获取企业版全量分析能力。
+            </p>
+          </section>
+        )}
+
+        {parsedData && !dataVolumeState?.isParseTruncated && (
           <Suspense fallback={<div style={{ textAlign: 'center', padding: '40px', color: '#64748b', fontSize: '14px' }}>加载分析引擎...</div>}>
             <AnalysisSection
               parsedData={parsedData}
