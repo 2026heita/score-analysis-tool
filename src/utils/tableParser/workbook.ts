@@ -96,19 +96,37 @@ function parseSheetData(
   merges: MergeRange[],
   allCandidates?: WorkbookCandidate[],
 ): ParsedTableResult {
-  // 限制行数
-  const trimmedData = rawData.slice(0, MAX_ROWS);
+  // 保存物理总行数（截断前）
+  const physicalRowCount = rawData.length;
 
-  if (trimmedData.length === 0) {
+  if (physicalRowCount === 0) {
     throwEmptyFile();
   }
 
   // 表头识别（支持多级表头）
-  const detection = detectHeaderRow(trimmedData, merges);
+  const detection = detectHeaderRow(rawData, merges);
 
   if (detection.headerRowIndex < 0) {
     throwNoHeader();
   }
+
+  // 计算表头占用行数和原始数据行数
+  const headerRowCount = detection.headerRowIndex + 1;
+  const rawRowCount = physicalRowCount - headerRowCount;
+
+  // 限制解析行数（20000）
+  const parsedRowCount = Math.min(rawRowCount, MAX_ROWS);
+  const isParseTruncated = rawRowCount > MAX_ROWS;
+
+  // 如果发生截断，生成警告
+  let parseTruncationWarning: string | undefined;
+  if (isParseTruncated) {
+    const unparsedRows = rawRowCount - parsedRowCount;
+    parseTruncationWarning = `原始文件包含 ${physicalRowCount} 行数据，当前解析上限为 20,000 行，尚有 ${unparsedRows} 行未解析。`;
+  }
+
+  // 限制数据行用于后续处理
+  const trimmedDataRows = detection.dataRows.slice(0, parsedRowCount);
 
   // 清洗表头
   const warnings: string[] = [];
@@ -116,7 +134,7 @@ function parseSheetData(
 
   // 构建原始行对象
   const rawRows: Record<string, string>[] = [];
-  for (const row of detection.dataRows) {
+  for (const row of trimmedDataRows) {
     if (!row || !Array.isArray(row)) continue;
     const obj: Record<string, string> = {};
     for (let i = 0; i < headers.length; i++) {
@@ -171,6 +189,20 @@ function parseSheetData(
     ? rowClassification.validRows
     : rawRows; // 如果没有有效行，使用全部行（保守策略）
 
+  // 构建数据量状态
+  const dataVolumeState: import('../../types').DataVolumeState = {
+    physicalRowCount,
+    headerRowCount,
+    rawRowCount,
+    parsedRowCount,
+    validRowCount: rowClassification.validData,
+    emptyRowCount: rowClassification.empty,
+    summaryRowCount: rowClassification.summary,
+    invalidRowCount: rowClassification.invalid,
+    isParseTruncated,
+    parseTruncationWarning,
+  };
+
   return {
     headers,
     rows: resultRows,
@@ -179,6 +211,7 @@ function parseSheetData(
     fieldMetas,
     rowMetas: [],
     availableSheets: allCandidates ? getAvailableSheetNames(allCandidates) : [sheetName],
+    dataVolumeState,
   };
 }
 
@@ -189,6 +222,9 @@ export function parseRawRows(rawRows: unknown[][]): ParsedTableResult {
   if (!rawRows || rawRows.length === 0) {
     throwEmptyFile();
   }
+
+  // 保存物理总行数
+  const physicalRowCount = rawRows.length;
 
   // 限制列数
   const trimmed = rawRows.map(row => {
@@ -203,13 +239,31 @@ export function parseRawRows(rawRows: unknown[][]): ParsedTableResult {
     throwNoHeader();
   }
 
+  // 计算表头占用行数和原始数据行数
+  const headerRowCount = detection.headerRowIndex + 1;
+  const rawRowCount = physicalRowCount - headerRowCount;
+
+  // 限制解析行数（20000）
+  const parsedRowCount = Math.min(rawRowCount, MAX_ROWS);
+  const isParseTruncated = rawRowCount > MAX_ROWS;
+
+  // 如果发生截断，生成警告
+  let parseTruncationWarning: string | undefined;
+  if (isParseTruncated) {
+    const unparsedRows = rawRowCount - parsedRowCount;
+    parseTruncationWarning = `原始数据包含 ${physicalRowCount} 行，当前解析上限为 20,000 行，尚有 ${unparsedRows} 行未解析。`;
+  }
+
+  // 限制数据行用于后续处理
+  const trimmedDataRows = detection.dataRows.slice(0, parsedRowCount);
+
   // 清洗表头
   const warnings: string[] = [];
   const headers = dedupeHeaders(detection.headers, warnings);
 
   // 构建原始行对象
   const rawRowsObj: Record<string, string>[] = [];
-  for (const row of detection.dataRows) {
+  for (const row of trimmedDataRows) {
     if (!row || !Array.isArray(row)) continue;
     const obj: Record<string, string> = {};
     for (let i = 0; i < headers.length; i++) {
@@ -249,6 +303,20 @@ export function parseRawRows(rawRows: unknown[][]): ParsedTableResult {
     ? rowClassification.validRows
     : rawRowsObj;
 
+  // 构建数据量状态
+  const dataVolumeState: import('../../types').DataVolumeState = {
+    physicalRowCount,
+    headerRowCount,
+    rawRowCount,
+    parsedRowCount,
+    validRowCount: rowClassification.validData,
+    emptyRowCount: rowClassification.empty,
+    summaryRowCount: rowClassification.summary,
+    invalidRowCount: rowClassification.invalid,
+    isParseTruncated,
+    parseTruncationWarning,
+  };
+
   return {
     headers,
     rows: resultRows,
@@ -256,6 +324,7 @@ export function parseRawRows(rawRows: unknown[][]): ParsedTableResult {
     summary,
     fieldMetas,
     rowMetas: [],
+    dataVolumeState,
   };
 }
 

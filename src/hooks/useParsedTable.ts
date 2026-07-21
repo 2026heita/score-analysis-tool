@@ -16,7 +16,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { parseTableText } from '../utils/parseTable';
 import { parseTableFile, type ParsedFileResult } from '../utils/fileImport';
 import { buildParseReport } from '../utils/tableParser';
-import type { ParsedTable } from '../types';
+import type { ParsedTable, DataVolumeState } from '../types';
 import type { ParseSummary } from '../utils/tableParser/types';
 
 let _tableIdCounter = 0;
@@ -47,6 +47,8 @@ export interface UseParsedTableReturn {
   handleSheetChange: (sheetName: string) => void;
   /** v1.4：统一表切换标识，每次数据变更时自增，驱动下游 hook 重置 */
   activeTableId: number;
+  /** Stage 0A-1：数据量状态（记录解析阶段的行数口径信息） */
+  dataVolumeState: DataVolumeState | null;
 }
 
 export function useParsedTable(): UseParsedTableReturn {
@@ -60,6 +62,15 @@ export function useParsedTable(): UseParsedTableReturn {
   const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
   const [isParsing, setIsParsing] = useState(false);
   const [activeTableId, setActiveTableId] = useState(() => ++_tableIdCounter);
+  
+  // Stage 0A-1: 数据量状态
+  const [dataVolumeState, setDataVolumeState] = useState<DataVolumeState | null>(null);
+
+  // Stage 0A-1: 内部更新守卫（防止 file upload / sheet switch 触发二次解析）
+  const pendingInternalRawTextRef = useRef<string | null>(null);
+  
+  // Stage 0A-1: 异步解析版本控制（防止旧解析结果覆盖新数据）
+  const parseVersionRef = useRef(0);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null!);
 
@@ -87,14 +98,28 @@ export function useParsedTable(): UseParsedTableReturn {
     );
   }, [parsedData, parseSummary]);
 
-  // ===== 自动解析已粘贴的数据 =====
+  // ===== 自动解析已粘贴的数据（Stage 0A-1: 使用 pendingInternalRawTextRef 防止内部更新触发重复解析） =====
   useEffect(() => {
     if (!rawText.trim()) return;
+    
+    // 检查是否为内部同步更新
+    if (pendingInternalRawTextRef.current === rawText) {
+      // 消费内部更新标记，不重新解析
+      pendingInternalRawTextRef.current = null;
+      return;
+    }
+    
+    // 用户输入处理：执行解析
     try {
       const result = parseTableText(rawText);
       setParsedData(result);
       setParseWarnings(result.warnings || []);
       setParseError(null);
+      
+      // 同步更新 dataVolumeState（文本粘贴路径）
+      if (result.dataVolumeState) {
+        setDataVolumeState(result.dataVolumeState);
+      }
     } catch { /* 忽略 */ }
   }, [rawText]);
 
@@ -110,13 +135,18 @@ export function useParsedTable(): UseParsedTableReturn {
       setParsedData(result);
       setParseWarnings(result.warnings || []);
       setParseError(null);
+      
+      // 同步更新 dataVolumeState
+      if (result.dataVolumeState) {
+        setDataVolumeState(result.dataVolumeState);
+      }
     } catch (e) {
       setParseError(e instanceof Error ? e.message : '解析失败');
       setParsedData(null);
     }
   }, [rawText]);
 
-  // ===== 文件上传 =====
+  // ===== 文件上传（Stage 0A-1: 添加异步版本控制和 dataVolumeState） =====
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -132,19 +162,36 @@ export function useParsedTable(): UseParsedTableReturn {
       }, 100);
     }
 
+    // Stage 0A-1: 异步解析版本控制
+    const currentVersion = ++parseVersionRef.current;
+
     parseTableFile(file)
       .then(result => {
+        // Stage 0A-1: 异步解析版本检查：丢弃旧结果
+        if (parseVersionRef.current !== currentVersion) return;
+        
         setParsedData(result);
-        setParseWarnings(result.warnings || []);
         setParseError(null);
         setIsParsing(false);
 
-        if (result.rows.length > 5000) {
-          setParseWarnings([
-            ...result.warnings,
-            `当前数据量较大（${result.rows.length} 行），为避免卡顿，所有分析结果（包括排名、百分位等）仅基于前 5000 行数据计算。如需全表分析，请谨慎核对结果。`
-          ]);
+        // Stage 0A-1: 保存数据量状态
+        if (result.dataVolumeState) {
+          setDataVolumeState(result.dataVolumeState);
         }
+
+        // 合并警告
+        const warnings = [...(result.warnings || [])];
+        if (result.dataVolumeState?.isParseTruncated && result.dataVolumeState.parseTruncationWarning) {
+          warnings.push(result.dataVolumeState.parseTruncationWarning);
+        }
+        
+        if (result.rows.length > 5000) {
+          warnings.push(
+            `当前数据量较大（${result.rows.length} 行），为避免卡顿，所有分析结果（包括排名、百分位等）仅基于前 5000 行数据计算。如需全表分析，请谨慎核对结果。`
+          );
+        }
+        
+        setParseWarnings(warnings);
 
         if (result.summary) {
           setParseSummary(result.summary);
@@ -152,10 +199,16 @@ export function useParsedTable(): UseParsedTableReturn {
         if (result.availableSheets && result.availableSheets.length > 1) {
           setAvailableSheets(result.availableSheets);
         }
+        
+        // Stage 0A-1: 设置内部更新目标文本，防止 useEffect([rawText]) 二次解析
         const text = [result.headers.join('\t'), ...result.rows.map(r => result.headers.map(h => r[h] ?? '').join('\t'))].join('\n');
+        pendingInternalRawTextRef.current = text;
         setRawText(text);
       })
       .catch(err => {
+        // Stage 0A-1: 异步解析版本检查
+        if (parseVersionRef.current !== currentVersion) return;
+        
         setFileError(err instanceof Error ? err.message : '文件解析失败');
         setParsedData(null);
         setParseWarnings([]);
@@ -165,22 +218,46 @@ export function useParsedTable(): UseParsedTableReturn {
     e.target.value = '';
   }, []);
 
-  // ===== Sheet 切换 =====
+  // ===== Sheet 切换（Stage 0A-1: 添加异步版本控制和 dataVolumeState） =====
   const handleSheetChange = useCallback((sheetName: string) => {
     setSelectedSheet(sheetName);
     if (parsedData && (parsedData as ParsedFileResult).reparseSheet) {
+      // Stage 0A-1: 异步解析版本控制
+      const currentVersion = ++parseVersionRef.current;
+      
       (parsedData as ParsedFileResult).reparseSheet!(sheetName)
         .then(result => {
+          // Stage 0A-1: 异步解析版本检查：丢弃旧结果
+          if (parseVersionRef.current !== currentVersion) return;
+          
           setParsedData(result);
-          setParseWarnings(result.warnings || []);
           setParseError(null);
+
+          // Stage 0A-1: 更新数据量状态
+          if (result.dataVolumeState) {
+            setDataVolumeState(result.dataVolumeState);
+          }
+
+          // 合并警告
+          const warnings = [...(result.warnings || [])];
+          if (result.dataVolumeState?.isParseTruncated && result.dataVolumeState.parseTruncationWarning) {
+            warnings.push(result.dataVolumeState.parseTruncationWarning);
+          }
+          setParseWarnings(warnings);
+
           if (result.summary) {
             setParseSummary(result.summary);
           }
+
+          // Stage 0A-1: 设置内部更新目标文本，防止 useEffect([rawText]) 二次解析
           const text = [result.headers.join('\t'), ...result.rows.map(r => result.headers.map(h => r[h] ?? '').join('\t'))].join('\n');
+          pendingInternalRawTextRef.current = text;
           setRawText(text);
         })
         .catch(err => {
+          // Stage 0A-1: 异步解析版本检查
+          if (parseVersionRef.current !== currentVersion) return;
+          
           setFileError(err instanceof Error ? err.message : '切换工作表失败');
         });
     }
@@ -202,5 +279,6 @@ export function useParsedTable(): UseParsedTableReturn {
     handleFileUpload,
     handleSheetChange,
     activeTableId,
+    dataVolumeState, // Stage 0A-1: 新增
   };
 }

@@ -148,6 +148,8 @@ export interface ParsedTableResult {
   availableSheets?: string[];
   /** 用于重新解析指定 sheet */
   reparseSheet?: (sheetName: string) => Promise<ParsedTableResult>;
+  /** 数据量状态（记录解析阶段的行数口径信息） */
+  dataVolumeState?: import('../../types').DataVolumeState;
 }
 
 /**
