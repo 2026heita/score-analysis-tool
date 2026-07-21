@@ -42,6 +42,7 @@ export function parseTableFile(file: File, targetSheetName?: string): Promise<Pa
           warnings: result.warnings,
           summary: result.summary,
           availableSheets: result.availableSheets,
+          dataVolumeState: result.dataVolumeState,
           reparseSheet: async (sheetName: string) => {
             return parseTableFile(file, sheetName);
           },

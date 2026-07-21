@@ -4,6 +4,8 @@ export interface ParsedTable {
   headers: string[];
   rows: Record<string, string>[];
   warnings: string[];
+  /** Stage 0A-1: 数据量状态（记录解析阶段的行数口径信息） */
+  dataVolumeState?: DataVolumeState;
 }
 
 export interface StatsResult {
@@ -102,4 +104,49 @@ export interface MultiFieldSummary {
 export interface AnalysisExplanation {
   fieldExplanations: FieldExplanation[];
   multiFieldSummary: MultiFieldSummary;
+}
+
+/**
+ * 数据量状态 - 记录解析阶段的数据量信息
+ *
+ * 行数口径定义（七类）：
+ * 1. physicalRowCount  - 工作表物理总行数（原始二维数组长度）
+ * 2. headerRowCount    - 表头占用行数（1 或更多，支持多级表头）
+ * 3. rawRowCount       - 原始数据行数 = physicalRowCount - headerRowCount
+ * 4. parsedRowCount    - 解析器实际处理的数据行数（≤ 20000，受解析上限截断）
+ * 5. validRowCount     - 解析后有效数据行数（排除空行、汇总行、无效行）
+ * 6. emptyRowCount     - 空行数（由行分类器统计）
+ * 7. summaryRowCount   - 汇总行数（由行分类器统计）
+ * 8. invalidRowCount   - 无效行数（由行分类器统计）
+ */
+export interface DataVolumeState {
+  /** 1. 工作表物理总行数（rawData.length，截断前） */
+  physicalRowCount: number;
+
+  /** 2. 表头占用行数（detection.headerRowIndex + 1） */
+  headerRowCount: number;
+
+  /** 3. 原始数据行数 = physicalRowCount - headerRowCount */
+  rawRowCount: number;
+
+  /** 4. 解析器实际处理的数据行数 = min(rawRowCount, 20000) 截断后 */
+  parsedRowCount: number;
+
+  /** 5. 解析后有效数据行数（排除空行、汇总行、无效行） */
+  validRowCount: number;
+
+  /** 空行数（由行分类器统计） */
+  emptyRowCount: number;
+
+  /** 汇总行数（由行分类器统计） */
+  summaryRowCount: number;
+
+  /** 无效行数（由行分类器统计） */
+  invalidRowCount: number;
+
+  /** 是否发生解析阶段截断（rawRowCount > 20000） */
+  isParseTruncated: boolean;
+
+  /** 解析截断警告（如果发生截断） */
+  parseTruncationWarning?: string;
 }
