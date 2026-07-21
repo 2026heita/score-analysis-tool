@@ -20,6 +20,7 @@ import {
 import type { GroupStats } from '../engine/groupByDimension';
 import type { MetricResult } from '../engine/context';
 import type { StatsResult, PositionResult, ParsedTable } from '../types';
+import type { SamplingInfo } from './useAnalysisDataset';
 
 export interface UseExportActionsReturn {
   handleExportFilteredData: () => void;
@@ -34,8 +35,10 @@ export function useExportActions(
   metricResult: MetricResult | null,
   stats: StatsResult | null,
   position: PositionResult | null,
-  selectedField: string
+  selectedField: string,
+  samplingInfo: SamplingInfo | null = null
 ): UseExportActionsReturn {
+  // 导出筛选后数据（原始数据导出，不是分析结果）
   const handleExportFilteredData = useCallback(() => {
     if (!filteredParsedData || !filterResult || filterResult.filterSummary.activeConditions === 0) return;
     const ts = formatTimestamp();
@@ -45,6 +48,7 @@ export function useExportActions(
     );
   }, [filteredParsedData, filterResult]);
 
+  // 导出分组分析（分析结果导出）
   const handleExportGroupAnalysis = useCallback(() => {
     if (!groupStats || groupStats.length === 0) return;
     const ts = formatTimestamp();
@@ -54,14 +58,15 @@ export function useExportActions(
     );
   }, [groupStats]);
 
+  // 导出指标摘要（分析结果导出，Stage 0A-2: 记录抽样信息）
   const handleExportMetricSummary = useCallback(() => {
     if (!stats && !position) return;
     const ts = formatTimestamp();
     triggerDownload(
-      exportSummaryToCsv(metricResult, stats, position, selectedField),
+      exportSummaryToCsv(metricResult, stats, position, selectedField, samplingInfo),
       `metric-summary-${ts}.csv`
     );
-  }, [metricResult, stats, position, selectedField]);
+  }, [metricResult, stats, position, selectedField, samplingInfo]);
 
   return {
     handleExportFilteredData,

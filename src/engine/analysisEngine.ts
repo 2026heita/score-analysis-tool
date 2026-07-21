@@ -23,10 +23,6 @@ interface AnalysisConfig {
   maxRows?: number; // 最大行数（默认 5000）
 }
 
-const DEFAULT_CONFIG: AnalysisConfig = {
-  maxRows: MAX_ROWS,
-};
-
 /**
  * 从原始行数据中提取数值数组
  * 
@@ -35,22 +31,20 @@ const DEFAULT_CONFIG: AnalysisConfig = {
 export function extractFieldValues(
   rows: Record<string, string>[],
   fieldName: string,
-  config: AnalysisConfig = {}
+  _config: AnalysisConfig = {}
 ): {
   values: number[];
   invalidCount: number;
   totalRows: number;
   truncatedRows: number;
 } {
-  const cfg = { ...DEFAULT_CONFIG, ...config };
   const totalRows = rows.length;
-  const truncatedRows = Math.min(totalRows, cfg.maxRows!);
-  const limitedRows = rows.slice(0, truncatedRows);
+  const truncatedRows = totalRows; // Stage 0A-2: 不再截断，数据已在入口统一抽样
 
   let invalidCount = 0;
   const values: number[] = [];
 
-  for (const row of limitedRows) {
+  for (const row of rows) {
     const raw = row[fieldName];
     if (raw === undefined || raw === null || raw.trim() === '') {
       invalidCount++;

@@ -8,7 +8,6 @@ import { useState, useMemo } from 'react';
 import { detectDatasetSchema } from '../engine/schemaDetector';
 import { standardizeDataset } from '../engine/featureStandardizer';
 import { analyzeNumericalFeature, detectOutliers } from '../engine/univariateAnalyzer';
-import { MAX_ROWS } from '../engine/analysisEngine';
 import type { FeatureSchema, FeatureType, FeatureStats } from '../engine/types';
 
 interface GeneralDataOverviewProps {
@@ -32,10 +31,10 @@ interface OverviewSummary {
 
 function computeOverview(headers: string[], rows: Record<string, string>[]): OverviewSummary {
   const totalRows = rows.length;
-  const limitedRows = rows.slice(0, MAX_ROWS);
+  // Stage 0A-2: 不再截断，数据已在入口统一抽样
 
   // 1. Schema 检测
-  const features: FeatureSchema[] = detectDatasetSchema(headers, limitedRows);
+  const features: FeatureSchema[] = detectDatasetSchema(headers, rows);
 
   // 2. 统计各类型数量
   const typeCounts: Record<FeatureType, number> = {
@@ -51,7 +50,7 @@ function computeOverview(headers: string[], rows: Record<string, string>[]): Ove
   }
 
   // 3. 标准化数据
-  const vectors = standardizeDataset(limitedRows, features);
+  const vectors = standardizeDataset(rows, features);
 
   // 4. 数值字段统计 + 异常值
   const numericalStats: OverviewSummary['numericalStats'] = [];
@@ -82,7 +81,7 @@ function computeOverview(headers: string[], rows: Record<string, string>[]): Ove
     } else {
       // 对非数值字段，手动计算缺失
       let empty = 0;
-      for (const row of limitedRows) {
+      for (const row of rows) {
         const v = row[f.fieldName];
         if (v === null || v === undefined || String(v).trim() === '') empty++;
       }
@@ -93,11 +92,8 @@ function computeOverview(headers: string[], rows: Record<string, string>[]): Ove
     }
   }
 
-  // 6. 警告
+  // 6. 警告（Stage 0A-2: 移除旧的 5000 行截断警告，数据已在入口统一抽样）
   const warnings: string[] = [];
-  if (totalRows > MAX_ROWS) {
-    warnings.push(`数据量较大（${totalRows} 行），仅展示前 ${MAX_ROWS} 行的分析结果`);
-  }
 
   return {
     rowCount: totalRows,

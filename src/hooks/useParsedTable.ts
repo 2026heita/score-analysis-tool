@@ -185,11 +185,7 @@ export function useParsedTable(): UseParsedTableReturn {
           warnings.push(result.dataVolumeState.parseTruncationWarning);
         }
         
-        if (result.rows.length > 5000) {
-          warnings.push(
-            `当前数据量较大（${result.rows.length} 行），为避免卡顿，所有分析结果（包括排名、百分位等）仅基于前 5000 行数据计算。如需全表分析，请谨慎核对结果。`
-          );
-        }
+        // Stage 0A-2: 移除旧的 5000 行警告，抽样确认由 useAnalysisDataset 统一处理
         
         setParseWarnings(warnings);
 

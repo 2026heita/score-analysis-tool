@@ -58,6 +58,22 @@ export interface AnalysisSectionProps {
   setFilterCollapsed: (collapsed: boolean) => void;
   numericFieldSet: Set<string>;
 
+  // ─── Stage 0A-2: 统一分析数据集 ───
+  analysisDataset: {
+    rows: Record<string, string>[];
+    headers: string[];
+    status: 'no_data' | 'parse_truncated' | 'awaiting_confirmation' | 'cancelled' | 'ready_full' | 'ready_sampled';
+    datasetKey: string;
+    samplingInfo: {
+      algorithm: 'systematic_even_v1';
+      originalRowCount: number;
+      sampledRowCount: number;
+      indices: number[];
+    } | null;
+  } | null;
+  confirmDataset: (key: string) => void;
+  cancelDataset: (key: string) => void;
+
   // ─── 分组状态 ───
   selectedDimension: string;
   setSelectedDimension: (dimension: string) => void;
@@ -108,6 +124,7 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
     parsedData, parseSummary, parseReport,
     filteredParsedData, filterResult, filterConditions, setFilterConditions,
     filterCollapsed, setFilterCollapsed, numericFieldSet,
+    analysisDataset, confirmDataset, cancelDataset,
     selectedDimension, setSelectedDimension, availableDimensions,
     selectedField, setSelectedField, inputValue, setInputValue,
     showAllFields, setShowAllFields, activeChartTab, setActiveChartTab,
@@ -125,7 +142,7 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
     derived: { derivedData },
     view: { viewContext },
     metricDefs,
-  } = useAnalysisOrchestrator(filteredParsedData, parseSummary, selectedField, inputValue, selectedDimension);
+  } = useAnalysisOrchestrator(analysisDataset, parseSummary, selectedField, inputValue, selectedDimension);
 
   const { stats, position, fieldValues } = useMetricResult(metricResult);
 
@@ -152,12 +169,27 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
     handleExportFilteredData,
     handleExportGroupAnalysis,
     handleExportMetricSummary,
-  } = useExportActions(filteredParsedData, filterResult, viewContext?.groupStats ?? null, metricResult, stats, position, selectedField);
+  } = useExportActions(
+    filteredParsedData,
+    filterResult,
+    viewContext?.groupStats ?? null,
+    metricResult,
+    stats,
+    position,
+    selectedField,
+    analysisDataset?.samplingInfo ?? null
+  );
 
   // ===== 分析解释派生 =====
+  // Stage 0A-2: 使用 analysisDataset.rows 代替 parsedData.rows
   const analysisExplanation = useMemo(() => {
-    const { parsedData: pd, originalFieldState: ofs, parseSummary: ps } = analysisExplanationRef;
-    if (!pd || !ofs?.selections?.length) return null;
+    const { originalFieldState: ofs, parseSummary: ps } = analysisExplanationRef;
+    if (!analysisDataset || !ofs?.selections?.length) return null;
+    
+    // 只有 ready_full 或 ready_sampled 才生成解释
+    if (analysisDataset.status !== 'ready_full' && analysisDataset.status !== 'ready_sampled') {
+      return null;
+    }
 
     const rankFields = new Set<string>();
     if (ps?.fieldTypes) {
@@ -175,7 +207,8 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
       const { field, userValue } = selection;
       if (!field || userValue === undefined || isNaN(userValue)) continue;
       fieldValues[field] = userValue;
-      const values = pd.rows
+      // Stage 0A-2: 使用 analysisDataset.rows
+      const values = analysisDataset.rows
         .map(row => {
           const val = row[field];
           if (val === undefined || val === '' || val === null) return null;
@@ -188,7 +221,7 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
 
     if (Object.keys(fieldValues).length === 0) return null;
     return generateExplanation(fieldValues, fieldData, rankFields);
-  }, [analysisExplanationRef]);
+  }, [analysisExplanationRef, analysisDataset]);
 
   // ===== 计算值 =====
   const inputNum = inputValue ? parseFloat(inputValue) : NaN;
@@ -314,6 +347,79 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
 
       {availableFields.length > 0 && (
         <>
+          {/* Stage 0A-2: 抽样确认对话框 */}
+          {analysisDataset?.status === 'awaiting_confirmation' && (
+            <section style={{ ...styles.section, ...styles.confirmationDialog }}>
+              <h2 style={styles.sectionTitle}>数据量较大，是否启用抽样分析？</h2>
+              <div style={styles.dialogContent}>
+                <p style={styles.dialogText}>
+                  当前筛选后数据包含 <strong>{filteredParsedData?.rows.length ?? 0}</strong> 行，
+                  分析上限为 <strong>5000</strong> 行。
+                </p>
+                <p style={styles.dialogHint}>
+                  <strong>抽样算法：</strong>systematic_even_v1（等距确定性抽样）
+                </p>
+                <p style={styles.dialogHint}>
+                  <strong>确定性：</strong>相同输入数据将得到相同的抽样结果
+                </p>
+                <p style={styles.dialogWarning}>
+                  <strong>注意：</strong>如果数据具有明显的有序性或周期性特征，抽样结果可能存在偏差。
+                </p>
+              </div>
+              <div style={styles.dialogActions}>
+                <button
+                  onClick={() => confirmDataset(analysisDataset.datasetKey)}
+                  style={styles.confirmBtn}
+                >
+                  确认使用抽样分析
+                </button>
+                <button
+                  onClick={() => cancelDataset(analysisDataset.datasetKey)}
+                  style={styles.cancelBtn}
+                >
+                  取消分析
+                </button>
+              </div>
+            </section>
+          )}
+
+          {/* Stage 0A-2: 已取消提示 */}
+          {analysisDataset?.status === 'cancelled' && (
+            <section style={{ ...styles.section, ...styles.cancelledSection }}>
+              <p style={styles.cancelledText}>
+                已取消分析。当前不执行任何统计计算。
+              </p>
+              <div style={styles.dialogActions}>
+                <button
+                  onClick={() => setFilterCollapsed(false)}
+                  style={styles.modifyFilterBtn}
+                >
+                  修改筛选条件
+                </button>
+                <button
+                  onClick={() => confirmDataset(analysisDataset.datasetKey)}
+                  style={styles.reconfirmBtn}
+                >
+                  重新确认抽样分析
+                </button>
+              </div>
+            </section>
+          )}
+
+          {/* Stage 0A-2: 抽样信息展示（持续显示） */}
+          {analysisDataset?.status === 'ready_sampled' && analysisDataset.samplingInfo && (
+            <section style={{ ...styles.section, ...styles.samplingInfoBox }}>
+              <p style={styles.samplingInfoText}>
+                <strong>抽样分析模式</strong>：当前结果基于样本而非全部筛选数据。
+              </p>
+              <ul style={styles.samplingInfoList}>
+                <li>筛选后行数：{analysisDataset.samplingInfo.originalRowCount}</li>
+                <li>实际分析行数：{analysisDataset.samplingInfo.sampledRowCount}</li>
+                <li>抽样算法：{analysisDataset.samplingInfo.algorithm}</li>
+              </ul>
+            </section>
+          )}
+
           {parseSummary && (
             <section style={styles.section}>
               <h2 style={styles.sectionTitle}>识别摘要</h2>
@@ -340,7 +446,10 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
 
           <ErrorBoundary>
           <section style={styles.section}>
-            <GeneralDataOverview headers={parsedData.headers} rows={parsedData.rows} />
+            <GeneralDataOverview 
+              headers={analysisDataset?.headers ?? parsedData.headers} 
+              rows={analysisDataset?.rows ?? parsedData.rows} 
+            />
           </section>
           </ErrorBoundary>
 
@@ -802,4 +911,23 @@ const styles: Record<string, React.CSSProperties> = {
   fallbackHint: { margin: '12px 0', padding: '12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', fontSize: '13px', color: '#92400e' },
   copyButton: { padding: '4px 12px', background: '#f0f7ff', color: '#3b82f6', border: '1px solid #93c5fd', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 500, whiteSpace: 'nowrap', transition: 'all 0.15s' },
   exportButton: { padding: '4px 12px', background: '#f0fdf4', color: '#16a34a', border: '1px solid #86efac', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 500, whiteSpace: 'nowrap', transition: 'all 0.15s', display: 'inline-flex', alignItems: 'center', gap: '4px' },
+  // Stage 0A-2: 抽样确认对话框样式
+  confirmationDialog: { border: '2px solid #f59e0b', background: '#fffbeb' },
+  dialogContent: { margin: '12px 0' },
+  dialogText: { margin: '0 0 8px 0', fontSize: '14px', color: '#92400e', lineHeight: 1.6 },
+  dialogHint: { margin: 0, fontSize: '12px', color: '#a16207', fontStyle: 'italic' },
+  dialogActions: { display: 'flex', gap: '12px', marginTop: '16px' },
+  confirmBtn: { padding: '8px 20px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s' },
+  cancelBtn: { padding: '8px 20px', background: '#fff', color: '#64748b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s' },
+  // Stage 0A-2: 抽样信息展示样式
+  samplingInfoBox: { border: '1px solid #c7d2fe', background: '#eef2ff', padding: '12px 16px' },
+  samplingInfoText: { margin: 0, fontSize: '13px', color: '#4338ca', lineHeight: 1.5 },
+  samplingInfoList: { margin: '8px 0 0 20px', padding: 0, fontSize: '12px', color: '#4338ca', lineHeight: 1.8 },
+  // Stage 0A-2: 已取消状态样式
+  cancelledSection: { border: '1px solid #fde68a', background: '#fffbeb', padding: '16px' },
+  cancelledText: { margin: '0 0 12px 0', fontSize: '14px', color: '#92400e', fontWeight: 500 },
+  modifyFilterBtn: { padding: '8px 16px', background: '#fff', color: '#6366f1', border: '1px solid #6366f1', borderRadius: '6px', fontSize: '13px', fontWeight: 500, cursor: 'pointer' },
+  reconfirmBtn: { padding: '8px 16px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: 500, cursor: 'pointer' },
+  // Stage 0A-2: 确认对话框警告样式
+  dialogWarning: { margin: '8px 0 0 0', fontSize: '12px', color: '#dc2626', fontWeight: 500 },
 };
