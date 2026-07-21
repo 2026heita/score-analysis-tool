@@ -6,7 +6,6 @@
 
 import type { FeatureSchema } from './types';
 import type { FieldMeta, AnalysisRole } from '../utils/tableParser/types';
-import { MAX_ROWS } from './analysisEngine';
 import type { DerivedDataContext } from './context';
 
 // 一对字段的相关性结果
@@ -190,11 +189,10 @@ function extractColumnVectors(
 ): Record<string, (number | null)[]> {
   const columns: Record<string, (number | null)[]> = {};
 
-  // 统一 5000 行截断
-  const limitedRows = rows.slice(0, MAX_ROWS);
+  // Stage 0A-2: 不再截断，数据已在入口统一抽样
 
   for (const field of numericalFields) {
-    columns[field] = limitedRows.map(row => {
+    columns[field] = rows.map(row => {
       const raw = row[field];
       if (raw === undefined || raw === null || raw.trim() === '') return null;
       const num = parseFloat(raw.replace(/,/g, ''));

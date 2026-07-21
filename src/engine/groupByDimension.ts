@@ -39,9 +39,6 @@ export type SortField = 'count' | 'mean' | 'median' | 'min' | 'max' | 'q25' | 'q
 /** 排序方向 */
 export type SortOrder = 'asc' | 'desc';
 
-/** 大表格保护：统一截断阈值，与 analysisEngine 保持一致 */
-const MAX_ROWS = 5000;
-
 /** 默认 Top N 显示数量 */
 export const DEFAULT_TOP_N = 20;
 
@@ -121,12 +118,11 @@ export function getAvailableDimensions(fieldMetas: FieldMeta[]): DimensionCandid
  * 基于维度字段对指标进行分组统计
  * 
  * 流程：
- * 1. 截断行数（MAX_ROWS）
- * 2. 按维度字段分组
- * 3. 提取每组中指标字段的数值
- * 4. 计算每组的统计指标
+ * 1. 按维度字段分组
+ * 2. 提取每组中指标字段的数值
+ * 3. 计算每组的统计指标
  * 
- * @param rows 原始数据行
+ * @param rows 原始数据行（已在入口统一抽样）
  * @param metricField 指标字段名
  * @param dimensionField 维度字段名
  * @returns 每组统计结果数组，按 mean 降序排列
@@ -136,12 +132,12 @@ export function groupByDimension(
   metricField: string,
   dimensionField: string
 ): GroupStats[] {
-  const limitedRows = rows.slice(0, MAX_ROWS);
+  // Stage 0A-2: 不再截断，数据已在入口统一抽样
 
   // 按维度字段值分组
   const groups = new Map<string, number[]>();
 
-  for (const row of limitedRows) {
+  for (const row of rows) {
     const dimRaw = row[dimensionField];
     const dimKey = (dimRaw === undefined || dimRaw === null || dimRaw.trim() === '')
       ? '(空值)'

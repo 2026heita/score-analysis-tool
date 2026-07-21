@@ -40,7 +40,7 @@ import type { GroupStats } from '../engine/groupByDimension';
 import type { DerivedDataContext, ViewContext, MetricResult } from '../engine/context';
 import type { CorrelationResult } from '../engine/correlationAnalyzer';
 import type { MetricDefinition, DimensionDefinition } from '../engine/metricLayer';
-import type { ParsedTable } from '../types';
+import type { AnalysisDataset } from './useAnalysisDataset';
 import type { ParseSummary } from '../utils/tableParser/types';
 import type { AnalyticScore } from '../utils/tableParser/fieldClassifier';
 
@@ -92,14 +92,14 @@ export interface AnalysisOrchestratorOutput {
 // ============================================================
 
 export function useAnalysisOrchestrator(
-  filteredParsedData: ParsedTable | null,
+  analysisDataset: AnalysisDataset | null,
   parseSummary: ParseSummary | null,
   selectedField: string,
   inputValue: string,
   selectedDimension: string
 ): AnalysisOrchestratorOutput {
   // ===== Dependency resolution =====
-  const derivedData = useDerivedData(filteredParsedData, parseSummary);
+  const derivedData = useDerivedData(analysisDataset, parseSummary);
 
   const { metricDefs, dimensionDefs } = useMemo(() => {
     if (!parseSummary?.fieldTypes) {

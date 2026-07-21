@@ -14,6 +14,7 @@ import { isNumericField as checkIsNumericField } from './engine/analysisEngine';
 import type { SampleDataset } from './data/sampleDatasets';
 import { useFilterState } from './hooks/useFilterState';
 import { useGroupAnalysis } from './hooks/useGroupAnalysis';
+import { useAnalysisDataset } from './hooks/useAnalysisDataset';
 import { calculateFieldAnalyticScore } from './utils/tableParser/fieldClassifier';
 
 // v1.8: Lazy load analysis section — 分析引擎 + 图表不在首屏加载
@@ -108,11 +109,33 @@ export default function App() {
     resetFilter,
   } = useFilterState(canAnalyze ? parsedData : null, parseSummary, activeTableId);
 
+  // ===== Stage 0A-2: 统一分析数据集 =====
+  // 生成稳定的 filterRevision（基于筛选条件序列化）
+  const filterRevision = useMemo(() => {
+    if (!filterConditions.length) return 0;
+    const serialized = filterConditions
+      .map(c => `${c.field}:${c.operator}:${c.value}`)
+      .join('|');
+    // 简单哈希转为正整数
+    let hash = 0;
+    for (let i = 0; i < serialized.length; i++) {
+      hash = ((hash << 5) - hash) + serialized.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash);
+  }, [filterConditions]);
+  
+  const {
+    dataset: analysisDataset,
+    confirmDataset,
+    cancelDataset,
+  } = useAnalysisDataset(filteredParsedData, activeTableId, filterRevision);
+
   const {
     selectedDimension, setSelectedDimension,
     availableDimensions,
     resetGroupAnalysis,
-  } = useGroupAnalysis(canAnalyze ? filteredParsedData : null, parseSummary);
+  } = useGroupAnalysis(analysisDataset?.status === 'ready_full' || analysisDataset?.status === 'ready_sampled' ? filteredParsedData : null, parseSummary);
 
   // ===== 自动保存 =====
   useEffect(() => {
@@ -350,12 +373,7 @@ export default function App() {
         setParseError(null);
         setIsParsing(false);
 
-        if (result.rows.length > 5000) {
-          setParseWarnings([
-            ...result.warnings,
-            `当前数据量较大（${result.rows.length} 行），为避免卡顿，所有分析结果（包括排名、百分位等）仅基于前 5000 行数据计算。如需全表分析，请谨慎核对结果。`
-          ]);
-        }
+        // Stage 0A-2: 移除旧的 5000 行警告，抽样确认由 useAnalysisDataset 统一处理
 
         if (result.summary) {
           setParseSummary(result.summary);
@@ -501,6 +519,9 @@ export default function App() {
               filterCollapsed={filterCollapsed}
               setFilterCollapsed={setFilterCollapsed}
               numericFieldSet={numericFieldSet}
+              analysisDataset={analysisDataset}
+              confirmDataset={confirmDataset}
+              cancelDataset={cancelDataset}
               selectedDimension={selectedDimension}
               setSelectedDimension={setSelectedDimension}
               availableDimensions={availableDimensions}

@@ -7,11 +7,13 @@
  * 1. 输出 UTF-8 BOM，保证 Excel 打开中文不乱码
  * 2. 正确处理逗号、双引号、换行符转义
  * 3. 不修改任何现有模块
+ * 4. Stage 0A-2: 记录抽样信息
  */
 
 import type { GroupStats } from './groupByDimension';
 import type { StatsResult, PositionResult } from '../types';
 import type { MetricResult } from './context';
+import type { SamplingInfo } from '../hooks/useAnalysisDataset';
 
 /**
  * CSV 单元格转义
@@ -101,15 +103,25 @@ export function exportFilteredRowsToCsv(rows: Record<string, string>[], headers:
 /**
  * 导出当前指标摘要为 CSV
  * 
- * 包含：统计指标 + 排名定位
+ * 包含：统计指标 + 排名定位 + 抽样信息
  */
 export function exportSummaryToCsv(
   metricResult: MetricResult | null,
   stats: StatsResult | null,
   position: PositionResult | null,
-  fieldName: string
+  fieldName: string,
+  samplingInfo?: SamplingInfo | null
 ): string {
   const lines: string[] = [];
+
+  // 抽样信息部分（Stage 0A-2）
+  if (samplingInfo) {
+    lines.push(buildCsvLine(['数据抽样信息', '']));
+    lines.push(buildCsvLine(['抽样算法', samplingInfo.algorithm]));
+    lines.push(buildCsvLine(['原始行数', samplingInfo.originalRowCount]));
+    lines.push(buildCsvLine(['抽样后行数', samplingInfo.sampledRowCount]));
+    lines.push('');
+  }
 
   // 指标字段名
   lines.push(buildCsvLine(['指标字段', fieldName]));
