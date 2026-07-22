@@ -104,6 +104,17 @@ export function useAnalysisDataset(
       };
     }
 
+    // Stage 0A-1: 解析截断（>20000行）- 阻断分析，不进入抽样
+    if (rowCount > 20000) {
+      return {
+        rows: [],
+        headers,
+        status: 'parse_truncated',
+        datasetKey,
+        samplingInfo: null,
+      };
+    }
+
     // 全量分析（<=5000行）
     if (rowCount <= ANALYSIS_SAMPLE_SIZE) {
       return {

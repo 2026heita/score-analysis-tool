@@ -231,6 +231,27 @@ datasetKey = dataRevision + '_' + filterRevision
 - 通过数量: 72 个
 - 失败数量: 0 个
 
+**测试覆盖说明**:
+
+| 测试类型 | 覆盖内容 | 说明 |
+|---------|---------|------|
+| 单元测试 | DataVolumeState 计算逻辑 | 验证数据量边界、字段完整性、公式正确性 |
+| 代码审计 | 六种输入路径调用链 | 确认所有路径最终调用 parseWorkbook 或 parseRawRows |
+| 集成测试 | 无 | 未模拟真实用户行为（如上传文件、切换Sheet） |
+
+**六种输入路径真实测试覆盖矩阵**:
+
+| 输入路径 | 单元测试 | 集成测试 | 仅代码审计 |
+|---------|:-------:|:-------:|:---------:|
+| Excel上传 | - | - | ✅ |
+| CSV上传 | - | - | ✅ |
+| 文本粘贴 | - | - | ✅ |
+| 文本编辑 | - | - | ✅ |
+| 示例数据 | - | - | ✅ |
+| Sheet切换 | - | - | ✅ |
+
+**说明**: testStage0A1.mjs 测试的是 `calculateDataVolumeState` 函数（简化的计算逻辑），不是真实的输入路径。六种输入路径的调用链通过代码审计确认，未进行集成测试模拟真实用户行为。
+
 ### 3.3 回归验证
 
 - ✅ `tsc --noEmit` 通过
@@ -396,30 +417,38 @@ if (parseVersionRef.current !== currentVersion) return; // 丢弃旧结果
 - ✅ `npx tsc --noEmit` 通过
 - ✅ `npm run build` 通过
 
-### 10. commit hash
+### 10. 报告路径
 
-- Commit 1 (文档): `786436f`
-- Commit 2 (代码): `4580853`
-- Commit 3 (收尾): 待提交
+`g:\Game—Score\STAGE_0A_1_COMPLETION_REPORT.md`
 
-### 11. 工作区状态
+### 11. commit hash（完整 40 位）
+
+- Commit 1 (文档): `786436f6f6673271be384fd2e50a2265890b0bda`
+- Commit 2 (代码): `458085337e1491096f213e42fa0c3194aac10f57`
+- Commit 3 (收尾): `956865efa4cb6cad0e6b6401a5f330ca3e6c121f`
+
+### 12. `git status --short` 完整原始输出（Stage 0A-1 提交后）
 
 ```
-On branch master
-Your branch is ahead of 'origin/master' by 4 commits.
-
-Changes to be committed:
-  modified:   scripts/testStage0A1.mjs
-  modified:   src/App.tsx
-  modified:   src/types.ts
-  modified:   src/utils/tableParser/workbook.ts
-  modified:   STAGE_0A_1_COMPLETION_REPORT.md
-
-Untracked files:
-  DATA_VOLUME_PIPELINE_AUDIT.md
-  PLATFORM_UPGRADE_GAP_ANALYSIS.md
-  PLATFORM_UPGRADE_ROADMAP.md
+ M STAGE_0A_1_COMPLETION_REPORT.md
+?? DATA_VOLUME_PIPELINE_AUDIT.md
+?? PLATFORM_UPGRADE_GAP_ANALYSIS.md
+?? PLATFORM_UPGRADE_ROADMAP.md
 ```
+
+**说明**: Stage 0A-1 代码已全部提交（3个commit），但仍存在未跟踪规划文档。工作区并非完全干净。
+
+### 13. 未跟踪规划文档
+
+| 文件名 | 说明 | 处理 |
+|-------|------|------|
+| `DATA_VOLUME_PIPELINE_AUDIT.md` | 数据管线审计报告 | 保留未跟踪 |
+| `PLATFORM_UPGRADE_GAP_ANALYSIS.md` | 平台升级差距分析 | 保留未跟踪 |
+| `PLATFORM_UPGRADE_ROADMAP.md` | 平台升级路线图 | 保留未跟踪 |
+
+这三个文档属于平台升级规划阶段产出，不属于 Stage 0A-1 代码变更范围，保留未跟踪状态。
+
+**当前工作区状态**: Stage 0A-1 代码已提交，但仍存在未跟踪规划文档。
 
 ### 12. 是否修改 Stage 0A-2 代码
 
