@@ -11,6 +11,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { systematic_even_v1, sampleRows } from '../engine/sampling';
 import type { ParsedTable } from '../types';
+import type { ResolvedFieldSchema } from '../field-schema';
 
 /** 分析数据集状态 */
 export type AnalysisDatasetStatus = 
@@ -36,6 +37,8 @@ export interface AnalysisDataset {
   status: AnalysisDatasetStatus;
   datasetKey: string;
   samplingInfo: SamplingInfo | null;
+  /** Stage 1A-1: 解析后的字段模式 */
+  fields?: ResolvedFieldSchema[];
 }
 
 /** 分析数据集状态 */
