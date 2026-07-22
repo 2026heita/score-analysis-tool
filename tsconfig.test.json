@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "./dist-test",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "allowImportingTsExtensions": false,
+    "esModuleInterop": true,
+    "types": ["node"]
+  },
+  "include": [
+    "src/field-schema",
+    "src/utils/tableParser/types.ts",
+    "scripts/testStage1A1.ts"
+  ]
+}
