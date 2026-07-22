@@ -721,8 +721,8 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
 
               <div style={styles.radarSection}>
                 <RadarAnalysis
-                  headers={parsedData.headers}
-                  rows={parsedData.rows}
+                  headers={analysisDataset?.headers ?? parsedData.headers}
+                  rows={analysisDataset?.rows ?? parsedData.rows}
                   isNumericField={isNumericField}
                   getFieldAnalysisRole={getFieldAnalysisRole}
                   originalFieldState={originalFieldState}
