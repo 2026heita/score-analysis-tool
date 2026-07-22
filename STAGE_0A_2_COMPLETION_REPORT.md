@@ -738,6 +738,83 @@ export function extractFieldValues(rows, fieldName, config = {}) {
 
 ---
 
+---
+
+## 十三、版本收尾与提交信息
+
+### 提交历史
+
+| 提交 Hash | 提交信息 | 说明 |
+|----------|---------|------|
+| `214079f601028708c1eae7cddb412cd8b5ba6db3` | `feat: unify sampled analysis dataset across analysis modules` | Stage 0A-2 核心实现 |
+| `d7417e7` | `docs: add platform upgrade planning documents` | 提交三份规划文档 |
+| `88ef55f` | `fix: correct outliers migration status in Stage 0A-2 report` | 修正 outliers 迁移状态 |
+
+### 未跟踪文件处理结果
+
+| 文件 | 处理方式 | 说明 |
+|------|---------|------|
+| `DATA_VOLUME_PIPELINE_AUDIT.md` | ✅ 已提交（`d7417e7`） | 项目升级设计资料 |
+| `PLATFORM_UPGRADE_GAP_ANALYSIS.md` | ✅ 已提交（`d7417e7`） | 项目升级设计资料 |
+| `PLATFORM_UPGRADE_ROADMAP.md` | ✅ 已提交（`d7417e7`） | 项目升级设计资料 |
+| `c --noEmit 2>&1 \| head -50'` | ✅ 已删除 | 临时误生成文件，无有效内容 |
+| `src/components/Toast.tsx` | ✅ 已删除 | Stage 0A-2 未使用，无明确用途 |
+
+### 最新 git status --short
+
+```
+?? STAGE_1A_FIELD_SCHEMA_DESIGN.md
+?? STAGE_1A_IMPLEMENTATION_PLAN.md
+```
+
+（待提交 Stage 1A 设计文档）
+
+---
+
+## 十四、outliers 真实集成状态
+
+### 审计结论：⚠️ 部分迁移
+
+**详细分析**：
+
+1. **异常值计算函数是否已经使用 AnalysisDataset.rows**：✅ 是
+   - `buildDerivedDataContext(analysisDataset.rows, ...)` 传入统一数据源
+   - `derivedData.outliers` 基于 `analysisDataset.rows` 计算
+
+2. **主分析流程是否实际调用该异常值计算**：⚠️ 部分
+   - `buildDerivedDataContext` 被调用，`outliers` 字段被计算
+   - 但 `DerivedDataContext.outliers` 字段在 UI 中未被消费
+
+3. **OutlierPanel 展示的是新计算结果还是旧数据**：✅ 新数据
+   - `OutlierPanel` 通过 `analysisDataset.rows` 提取字段值
+   - 异常值计算使用统一数据源
+
+4. **异常值是否参与自动解释、优势/弱势结论或导出**：❌ 否
+   - `analysisExplainer` 不使用 outliers
+   - 导出不包含 outliers 信息
+
+5. **抽样数据下的 rowIndex 对应**：⚠️ values 数组下标
+   - `outliers[].rowIndex` 对应 `values` 数组下标，非原始行索引
+   - 在抽样模式下，无法直接映射到原始数据行
+
+### 迁移状态统计
+
+| 模块 | 迁移状态 | 说明 |
+|------|---------|------|
+| 单变量统计（computeMetric） | ✅ 已迁移 | 完全使用 analysisDataset.rows |
+| 百分位计算（computePercentile） | ✅ 已迁移 | 完全使用 analysisDataset.rows |
+| 相关性分析（correlationAnalyzer） | ✅ 已迁移 | 完全使用 analysisDataset.rows |
+| 分组统计（groupByDimension） | ✅ 已迁移 | 完全使用 analysisDataset.rows |
+| 数据概览（GeneralDataOverview） | ✅ 已迁移 | 完全使用 analysisDataset.rows |
+| 雷达图（RadarAnalysis） | ✅ 已迁移 | 完全使用 analysisDataset.rows |
+| 异常值检测（OutlierPanel） | ⚠️ 部分迁移 | 数据源正确，rowIndex 语义不明确，UI 未消费 |
+| 自动解释（analysisExplainer） | ✅ 已迁移 | 完全使用 analysisDataset.rows |
+| 分析结果导出（exportAnalysis） | ✅ 已迁移 | 完全使用 analysisDataset.rows |
+
+**最终统计**：**9 个模块完全迁移，1 个模块部分迁移**
+
+---
+
 **报告完成时间**：2026-07-22  
-**报告版本**：v1.0  
+**报告版本**：v1.1（版本收尾更新）  
 **Stage 0A-2 状态**：✅ 已完成，可进入 Stage 1A
