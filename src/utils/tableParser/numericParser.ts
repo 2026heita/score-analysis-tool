@@ -11,6 +11,13 @@ const INVALID_KEYWORDS = [
   '—', '–', '/', '\\', '|',
 ];
 
+// 日期格式正则（优先于数字解析）
+const DATE_PATTERNS = [
+  /^\d{4}[-/]\d{1,2}[-/]\d{1,2}$/,           // 2024-01-01, 2024/01/01
+  /^\d{4}年\d{1,2}月\d{1,2}日?$/,            // 2024年1月1日
+  /^\d{4}[-/]\d{1,2}[-/]\d{1,2}\s+\d{1,2}:\d{2}/, // 2024-01-01 12:30
+];
+
 /**
  * 解析单个单元格的数值
  * 
@@ -60,7 +67,14 @@ export function parseNumericValue(val: unknown): ParsedNumber {
     return { status: 'empty' };
   }
 
-  // 4.4 处理百分号：成绩场景解析为数值部分
+  // 4.4 日期格式检测（优先于数字解析）
+  for (const pattern of DATE_PATTERNS) {
+    if (pattern.test(str)) {
+      return { status: 'invalid' };
+    }
+  }
+
+  // 4.5 处理百分号：成绩场景解析为数值部分
   if (str.endsWith('%')) {
     const numStr = str.slice(0, -1).trim();
     const num = parseFloat(numStr);
