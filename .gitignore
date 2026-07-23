@@ -1,6 +1,7 @@
 node_modules
 dist
 dist-test
+.tmp-tests
 .env
 .env.local
 .env.*.local
