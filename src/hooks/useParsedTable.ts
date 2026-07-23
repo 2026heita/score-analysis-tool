@@ -49,6 +49,7 @@ export interface UseParsedTableReturn {
   activeTableId: number;
   /** Stage 0A-1：数据量状态（记录解析阶段的行数口径信息） */
   dataVolumeState: DataVolumeState | null;
+  setDataVolumeState: (v: DataVolumeState | null) => void;
 }
 
 export function useParsedTable(): UseParsedTableReturn {
@@ -120,6 +121,11 @@ export function useParsedTable(): UseParsedTableReturn {
       if (result.dataVolumeState) {
         setDataVolumeState(result.dataVolumeState);
       }
+      
+      // 同步更新 parseSummary（包含字段分类信息）
+      if (result.summary) {
+        setParseSummary(result.summary);
+      }
     } catch { /* 忽略 */ }
   }, [rawText]);
 
@@ -128,6 +134,7 @@ export function useParsedTable(): UseParsedTableReturn {
     if (!rawText.trim()) {
       setParseError('请先粘贴表格数据。');
       setParsedData(null);
+      setParseSummary(null);
       return;
     }
     try {
@@ -140,9 +147,15 @@ export function useParsedTable(): UseParsedTableReturn {
       if (result.dataVolumeState) {
         setDataVolumeState(result.dataVolumeState);
       }
+      
+      // 同步更新 parseSummary
+      if (result.summary) {
+        setParseSummary(result.summary);
+      }
     } catch (e) {
       setParseError(e instanceof Error ? e.message : '解析失败');
       setParsedData(null);
+      setParseSummary(null);
     }
   }, [rawText]);
 
@@ -275,6 +288,7 @@ export function useParsedTable(): UseParsedTableReturn {
     handleFileUpload,
     handleSheetChange,
     activeTableId,
-    dataVolumeState, // Stage 0A-1: 新增
+    dataVolumeState,
+    setDataVolumeState,
   };
 }

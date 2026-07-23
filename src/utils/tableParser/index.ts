@@ -100,6 +100,7 @@ export function parseRowsToTable(rawRows: unknown[][]): ParsedTable {
     headers: result.headers,
     rows: result.rows,
     warnings: result.warnings,
+    summary: result.summary,
     dataVolumeState: result.dataVolumeState,
   };
 }

@@ -6,6 +6,8 @@ export interface ParsedTable {
   warnings: string[];
   /** Stage 0A-1: 数据量状态（记录解析阶段的行数口径信息） */
   dataVolumeState?: DataVolumeState;
+  /** 解析摘要（包含字段分类信息） */
+  summary?: import('./utils/tableParser/types').ParseSummary | null;
 }
 
 export interface StatsResult {
