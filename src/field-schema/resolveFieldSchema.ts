@@ -69,54 +69,51 @@ export function resolveFieldSchema(
     return applyUserOverride(schema);
   }
   
-  // 优先级 2：当前启用模板推荐
-  if (mode === 'education' && schema) {
-    const templateResult = applyEducationTemplate(header, schema);
-    if (templateResult) {
-      return extractResolvedSchema(templateResult);
+  // 优先级 2：教育模板推荐（仅 education 模式）
+  if (mode === 'education') {
+    // 2a: 已有 schema 上尝试模板
+    if (schema) {
+      const templateResult = applyEducationTemplate(header, schema);
+      if (templateResult) {
+        return extractResolvedSchema(templateResult);
+      }
     }
-  }
-  
-  // 优先级 3：通用自动推断
-  if (schema && schema.inference.source !== 'legacy') {
-    return extractResolvedSchema(schema);
-  }
-  
-  // 优先级 4：旧系统兼容结果
-  if (legacyFieldMeta) {
-    const legacySchema = mapLegacyFieldMetaToSchema(
-      legacyFieldMeta,
-      columnValues
-    );
-    
-    // 如果是教育模式，尝试应用模板
-    if (mode === 'education') {
+    // 2b: legacy 上尝试模板
+    if (legacyFieldMeta) {
+      const legacySchema = mapLegacyFieldMetaToSchema(legacyFieldMeta, columnValues);
       const templateResult = applyEducationTemplate(header, legacySchema);
       if (templateResult) {
         return extractResolvedSchema(templateResult);
       }
     }
-    
-    return extractResolvedSchema(legacySchema);
-  }
-  
-  // 优先级 5：从内容推断
-  if (columnValues) {
-    const inferredSchema = inferGenericFieldSchema(
-      header,
-      columnValues,
-      contentFeature
-    );
-    
-    // 如果是教育模式，尝试应用模板
-    if (mode === 'education') {
+    // 2c: 内容推断上尝试模板
+    if (columnValues) {
+      const inferredSchema = inferGenericFieldSchema(header, columnValues, contentFeature);
       const templateResult = applyEducationTemplate(header, inferredSchema);
       if (templateResult) {
         return extractResolvedSchema(templateResult);
       }
     }
-    
-    return extractResolvedSchema(inferredSchema);
+  }
+  
+  // 优先级 3：通用自动推断（generic 模式优先使用内容推断）
+  if (columnValues) {
+    const inferredSchema = inferGenericFieldSchema(header, columnValues, contentFeature);
+    // 如果通用推断得到有意义的结果，直接使用
+    if (inferredSchema.dataType !== 'unknown' || inferredSchema.analysisRole !== 'unspecified') {
+      return extractResolvedSchema(inferredSchema);
+    }
+  }
+  
+  // 优先级 4：已有 schema（非 legacy 来源）
+  if (schema && schema.inference.source !== 'legacy') {
+    return extractResolvedSchema(schema);
+  }
+  
+  // 优先级 5：旧系统兼容结果（仅作为兜底）
+  if (legacyFieldMeta) {
+    const legacySchema = mapLegacyFieldMetaToSchema(legacyFieldMeta, columnValues);
+    return extractResolvedSchema(legacySchema);
   }
   
   // 兜底：返回 unspecified

@@ -12,7 +12,9 @@ $tests = @(
     "tests/integration/stage0A2.test.ts",
     "tests/integration/stage1A1.test.ts",
     "tests/integration/sampleData.test.ts",
-    "tests/integration/acceptanceRound3.test.ts"
+    "tests/integration/acceptanceRound3.test.ts",
+    "tests/integration/asyncRace.test.ts",
+    "tests/integration/fieldWiring.test.ts"
 )
 
 $totalPassed = 0
