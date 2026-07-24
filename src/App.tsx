@@ -80,6 +80,7 @@ export default function App() {
     handleFileUpload,
     handleSheetChange,
     loadSampleDataset,
+    clearParsedTable,
   } = useParsedTable();
 
   // ===== 用户交互状态 =====
@@ -291,7 +292,7 @@ export default function App() {
   const handleClear = useCallback(() => {
     clear();
     clearOriginalFieldRadarCache();
-    setRawText('');
+    clearParsedTable();
     setSelectedField(''); setInputValue(''); setShowAllFields(false);
     resetGroupAnalysis();
     resetFilter();
@@ -299,7 +300,7 @@ export default function App() {
     setOriginalFieldState({ selections: [], viewMode: 'bar' });
     setSaveMsg('已清空数据');
     setTimeout(() => setSaveMsg(null), 2000);
-  }, [clear, setRawText, resetFilter, resetGroupAnalysis]);
+  }, [clear, clearParsedTable, resetFilter, resetGroupAnalysis]);
 
   const handleFillSample = useCallback(() => {
     setShowSampleSelector(true);

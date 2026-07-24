@@ -3,7 +3,6 @@
 // ============================================================
 
 import type { RowType } from './types';
-import { parseNumericValue } from './numericParser';
 
 // 统计行关键词
 const SUMMARY_KEYWORDS = [
@@ -21,100 +20,58 @@ const STATUS_KEYWORDS = [
 /**
  * 分类数据行
  * 
+ * 分类规则（按优先级）：
+ * 1. 全空行 → empty
+ * 2. 包含明确汇总关键词 → summary
+ * 3. 所有非空值都是状态关键词 → statusOnly
+ * 4. 其他所有情况 → validData
+ * 
+ * 注意：不再依赖身份字段或数值字段的存在，支持通用业务表
+ * 
  * @param row - 数据行（Record<string, string>）
  * @param headers - 表头数组
  * @returns RowType 分类结果
  */
 export function classifyDataRow(row: Record<string, string>, headers: string[]): RowType {
-  const values = headers.map(h => row[h] ?? '');
+  const values = headers.map(h => {
+    const v = row[h];
+    return v === null || v === undefined ? '' : String(v).trim();
+  });
 
-  // 1. 全空行
-  if (values.every(v => v === '' || v === '-' || v === null || v === undefined)) {
+  // 1. 全空行 → empty
+  if (values.every(v => v === '')) {
     return 'empty';
   }
 
-  // 2. 检查是否包含统计关键词
+  // 2. 包含明确汇总关键词 → summary
   const rowText = values.join(' ');
   if (SUMMARY_KEYWORDS.some(kw => rowText.includes(kw))) {
     return 'summary';
   }
 
-  // 3. 检查是否大量是状态值
+  // 3. 统计非空值和状态值
   let statusCount = 0;
-  let numericCount = 0;
   let nonEmptyCount = 0;
 
   for (const val of values) {
-    if (val === '' || val === '-') continue;
+    if (val === '') continue;
     nonEmptyCount++;
 
     const isStatus = STATUS_KEYWORDS.some(kw => val.includes(kw));
     if (isStatus) {
       statusCount++;
     }
-
-    const parsed = parseNumericValue(val);
-    if (parsed.status === 'valid') {
-      numericCount++;
-    }
   }
 
-  // 如果大量非空值是状态值 → statusOnly
-  if (nonEmptyCount > 0 && statusCount / nonEmptyCount > 0.5 && numericCount === 0) {
+  // 4. 所有非空值都是状态关键词 → statusOnly
+  // 只有当整行都是状态词时才判定为 statusOnly，避免误判混合数据行
+  if (nonEmptyCount > 0 && statusCount === nonEmptyCount) {
     return 'statusOnly';
   }
 
-  // 4. 检查是否为正常的学生数据行
-  const hasIdentity = hasIdentityValue(row, headers);
-  const hasValidScore = numericCount > 0;
-
-  if (hasIdentity && hasValidScore) {
-    return 'validData';
-  }
-
-  // 如果没有身份信息但有数值，且数值不多 → 可能是统计行
-  if (!hasIdentity && numericCount <= 2 && nonEmptyCount <= 3) {
-    // 如果数值看起来像平均值（小数位较多），判定为 summary
-    const numericValues = values
-      .map(v => parseNumericValue(v))
-      .filter(r => r.status === 'valid')
-      .map(r => r.value);
-
-    if (numericValues.some(v => !Number.isInteger(v))) {
-      return 'summary';
-    }
-  }
-
-  // 默认当作有效数据（保守策略）
-  return hasValidScore ? 'validData' : 'invalid';
-}
-
-/**
- * 检查行是否包含身份信息（姓名、考号等）
- */
-function hasIdentityValue(row: Record<string, string>, headers: string[]): boolean {
-  const identityKeywords = ['姓名', '名字', '考号', '座号', '学号', '考生号', '准考证'];
-
-  for (const header of headers) {
-    const headerLower = header.toLowerCase();
-    for (const kw of identityKeywords) {
-      if (headerLower.includes(kw.toLowerCase())) {
-        const val = row[header]?.trim();
-        if (val && val !== '' && val !== '-') {
-          return true;
-        }
-      }
-    }
-  }
-
-  // 如果没有找到明确的身份字段，检查是否有任何文本内容像姓名（2-4个中文字符）
-  for (const val of Object.values(row)) {
-    if (/^[\u4e00-\u9fa5]{2,6}$/.test(val.trim())) {
-      return true;
-    }
-  }
-
-  return false;
+  // 5. 其他所有情况 → validData
+  // 不再依赖身份字段或数值字段的存在，支持通用业务表
+  return 'validData';
 }
 
 /**
