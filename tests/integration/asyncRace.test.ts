@@ -1,13 +1,11 @@
 /**
- * 异步竞争自动化测试
+ * 异步版本控制状态模型测试
  * 
- * 验证 useParsedTable 的异步版本控制机制
+ * 验证 useParsedTable 的异步版本控制机制（状态模型层）
  * 
- * 由于 React hook 无法在纯 Node.js 中运行，本测试模拟核心逻辑：
- * - parseVersionRef 版本控制
- * - isMountedRef 卸载保护
- * - pendingInternalRawTextRef 内部更新守卫
- * - safeSetState 安全检查
+ * 本测试使用生产代码中的纯逻辑 helper：
+ * - parseVersionControl.ts 提供版本控制状态管理
+ * - 测试验证状态转换逻辑，而非 React hook 实现
  * 
  * 测试场景：
  * 1. 文件A解析未完成时上传文件B，最终只保留B

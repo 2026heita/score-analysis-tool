@@ -1,16 +1,18 @@
 /**
  * Metric Layer v0 - 内部语义层
  * 
- * 职责：将 FieldMeta[] 映射为语义化的 MetricDefinition / EntityDefinition / DimensionDefinition
+ * 职责：将 FieldMeta[] 或 ResolvedFieldSchema[] 映射为语义化的 MetricDefinition / EntityDefinition / DimensionDefinition
  * 
  * 核心原则：
  * 1. 只作为内部语义层，不改变现有 UI
  * 2. 不修改 selectedFields / fieldValues
  * 3. 不改变现有字段分类逻辑
  * 4. 提供语义化接口供后续使用
+ * 5. 支持 ResolvedFieldSchema 作为首选数据源
  */
 
 import type { FieldMeta } from '../utils/tableParser/types';
+import type { ResolvedFieldSchema } from '../field-schema';
 
 // ============================================================
 // 类型定义
@@ -268,4 +270,152 @@ export function getEntities(semantic: SemanticDefinitions): EntityDefinition[] {
  */
 export function getPrimaryKeyEntity(semantic: SemanticDefinitions): EntityDefinition | null {
   return semantic.entities.find(e => e.isPrimaryKey) || null;
+}
+
+// ============================================================
+// ResolvedFieldSchema 适配层
+// ============================================================
+
+/**
+ * 从 ResolvedFieldSchema 构建 MetricDefinition
+ * 
+ * 映射规则：
+ * - analysisRole = 'metric' → MetricDefinition
+ * - metricDirection 映射：
+ *   - higher_is_better → higher-is-better
+ *   - lower_is_better → lower-is-better
+ *   - neutral / unspecified → 默认为 higher-is-better（但标记 isRecommended=false）
+ */
+function buildMetricFromResolvedSchema(schema: ResolvedFieldSchema): MetricDefinition | null {
+  if (schema.analysisRole !== 'metric') {
+    return null;
+  }
+
+  // 映射 metricDirection
+  let direction: MetricDirection = 'higher-is-better';
+  let isRecommended = true;
+
+  if (schema.metricDirection === 'higher_is_better') {
+    direction = 'higher-is-better';
+  } else if (schema.metricDirection === 'lower_is_better') {
+    direction = 'lower-is-better';
+  } else {
+    // neutral 或 unspecified：默认 higher-is-better，但不推荐
+    direction = 'higher-is-better';
+    isRecommended = false;
+  }
+
+  // 确定 metric type
+  let type: MetricType = 'numeric';
+  if (schema.metricDirection === 'lower_is_better') {
+    type = 'rank';
+  }
+
+  return {
+    name: schema.fieldId,
+    type,
+    direction,
+    displayName: schema.sourceName,
+    isRecommended,
+    sourceField: schema.fieldId,
+  };
+}
+
+/**
+ * 从 ResolvedFieldSchema 构建 DimensionDefinition
+ * 
+ * 映射规则：
+ * - analysisRole = 'dimension' → DimensionDefinition
+ * - analysisRole = 'time' → DimensionDefinition (type='category')
+ */
+function buildDimensionFromResolvedSchema(schema: ResolvedFieldSchema): DimensionDefinition | null {
+  if (schema.analysisRole !== 'dimension' && schema.analysisRole !== 'time') {
+    return null;
+  }
+
+  // 时间字段作为 category 维度
+  const type = schema.analysisRole === 'time' ? 'category' : 'category';
+
+  return {
+    name: schema.fieldId,
+    type,
+    displayName: schema.sourceName,
+  };
+}
+
+/**
+ * 从 ResolvedFieldSchema 构建 EntityDefinition
+ * 
+ * 映射规则：
+ * - analysisRole = 'identifier' → EntityDefinition
+ */
+function buildEntityFromResolvedSchema(schema: ResolvedFieldSchema): EntityDefinition | null {
+  if (schema.analysisRole !== 'identifier') {
+    return null;
+  }
+
+  // 判断是否为主键（根据推断来源和置信度）
+  const isPrimaryKey = schema.inferenceSource === 'template' && 
+                       schema.inferenceConfidence === 'high';
+
+  return {
+    name: schema.fieldId,
+    type: isPrimaryKey ? 'id' : 'identity',
+    displayName: schema.sourceName,
+    isPrimaryKey,
+  };
+}
+
+/**
+ * 从 ResolvedFieldSchema[] 构建语义层定义
+ * 
+ * 映射规则：
+ * 1. analysisRole = 'metric' → MetricDefinition
+ *    - metricDirection 映射：higher_is_better/lower_is_better/neutral/unspecified
+ * 2. analysisRole = 'dimension' / 'time' → DimensionDefinition
+ * 3. analysisRole = 'identifier' → EntityDefinition
+ * 4. analysisRole = 'description' / 'ignored' → 忽略
+ * 
+ * @param resolvedSchemas 解析后的字段模式数组
+ * @returns 语义层定义
+ */
+export function buildSemanticDefinitionsFromResolved(
+  resolvedSchemas: ResolvedFieldSchema[]
+): SemanticDefinitions {
+  const metrics: MetricDefinition[] = [];
+  const entities: EntityDefinition[] = [];
+  const dimensions: DimensionDefinition[] = [];
+
+  for (const schema of resolvedSchemas) {
+    // 1. metric → MetricDefinition
+    if (schema.analysisRole === 'metric') {
+      const metric = buildMetricFromResolvedSchema(schema);
+      if (metric) {
+        metrics.push(metric);
+      }
+      continue;
+    }
+
+    // 2. dimension / time → DimensionDefinition
+    if (schema.analysisRole === 'dimension' || schema.analysisRole === 'time') {
+      const dimension = buildDimensionFromResolvedSchema(schema);
+      if (dimension) {
+        dimensions.push(dimension);
+      }
+      continue;
+    }
+
+    // 3. identifier → EntityDefinition
+    if (schema.analysisRole === 'identifier') {
+      const entity = buildEntityFromResolvedSchema(schema);
+      if (entity) {
+        entities.push(entity);
+      }
+      continue;
+    }
+
+    // 4. description / ignored / unspecified → 忽略
+  }
+
+  return { metrics, entities, dimensions };
 }

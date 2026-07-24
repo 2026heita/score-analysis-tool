@@ -32,7 +32,7 @@
 import { useMemo } from 'react';
 import { useDerivedData } from './useAnalysisContext';
 import { useViewContext } from './useViewContext';
-import { buildSemanticDefinitions } from '../engine/metricLayer';
+import { buildSemanticDefinitions, buildSemanticDefinitionsFromResolved } from '../engine/metricLayer';
 import { computeMetric } from '../engine/analysisEngine';
 import { analyzeCorrelationsFromContext } from '../engine/correlationAnalyzer';
 import { groupByDimension } from '../engine/groupByDimension';
@@ -102,12 +102,19 @@ export function useAnalysisOrchestrator(
   const derivedData = useDerivedData(analysisDataset, parseSummary);
 
   const { metricDefs, dimensionDefs } = useMemo(() => {
+    // 优先使用 analysisDataset.fields（Stage 1A-1 字段模型接线）
+    if (analysisDataset?.fields && analysisDataset.fields.length > 0) {
+      const semantic = buildSemanticDefinitionsFromResolved(analysisDataset.fields);
+      return { metricDefs: semantic.metrics, dimensionDefs: semantic.dimensions };
+    }
+    
+    // Fallback: 使用 parseSummary.fieldTypes（旧链路兼容）
     if (!parseSummary?.fieldTypes) {
       return { metricDefs: [] as MetricDefinition[], dimensionDefs: [] as DimensionDefinition[] };
     }
     const semantic = buildSemanticDefinitions(parseSummary.fieldTypes);
     return { metricDefs: semantic.metrics, dimensionDefs: semantic.dimensions };
-  }, [parseSummary]);
+  }, [analysisDataset, parseSummary]);
 
   // ===== Slice dispatch =====
 

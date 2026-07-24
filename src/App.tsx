@@ -138,7 +138,11 @@ export default function App() {
     selectedDimension, setSelectedDimension,
     availableDimensions,
     resetGroupAnalysis,
-  } = useGroupAnalysis(analysisDataset?.status === 'ready_full' || analysisDataset?.status === 'ready_sampled' ? filteredParsedData : null, parseSummary);
+  } = useGroupAnalysis(
+    analysisDataset?.status === 'ready_full' || analysisDataset?.status === 'ready_sampled' ? filteredParsedData : null,
+    parseSummary,
+    analysisDataset
+  );
 
   // ===== 自动保存 =====
   useEffect(() => {
@@ -171,28 +175,75 @@ export default function App() {
 
   // ===== 字段判断（使用统一分析引擎） =====
   const isNumericField = useCallback((header: string): boolean => {
+    // Stage 1A-1: 优先使用 analysisDataset.fields
+    if (analysisDataset?.fields && analysisDataset.fields.length > 0) {
+      const schema = analysisDataset.fields.find(f => f.fieldId === header);
+      return schema?.dataType === 'number';
+    }
+    // Fallback: 使用旧逻辑
     if (!parsedData) return false;
     return checkIsNumericField(parsedData.rows, header);
-  }, [parsedData]);
+  }, [parsedData, analysisDataset]);
 
   const shouldExclude = useCallback((header: string): boolean => {
+    // Stage 1A-1: 优先使用 analysisDataset.fields
+    if (analysisDataset?.fields && analysisDataset.fields.length > 0) {
+      const schema = analysisDataset.fields.find(f => f.fieldId === header);
+      if (!schema) return false;
+      // ignored 或未指定的字段应排除
+      return schema.analysisRole === 'ignored' || schema.analysisRole === 'unspecified';
+    }
+    // Fallback: 使用旧逻辑
     if (!parseSummary?.fieldTypes) return false;
     const meta = parseSummary.fieldTypes.find(f => f.header === header);
     if (!meta) return false;
     const score = calculateFieldAnalyticScore(meta);
     return !score.isAnalyzable;
-  }, [parseSummary]);
+  }, [parseSummary, analysisDataset]);
 
   const getFieldAnalysisRole = useCallback((header: string): string => {
+    // Stage 1A-1: 优先使用 analysisDataset.fields
+    if (analysisDataset?.fields && analysisDataset.fields.length > 0) {
+      const schema = analysisDataset.fields.find(f => f.fieldId === header);
+      if (!schema) return 'unknown';
+      // 映射 ResolvedFieldSchema.analysisRole 到旧角色名称（兼容 UI）
+      switch (schema.analysisRole) {
+        case 'metric':
+          // 根据 metricDirection 判断具体类型
+          if (schema.metricDirection === 'lower_is_better') return 'rank';
+          return 'courseScore'; // 默认映射为 courseScore
+        case 'dimension':
+          return 'identity'; // 维度字段映射为 identity
+        case 'identifier':
+          return 'identity';
+        case 'time':
+          return 'textMeta';
+        case 'description':
+          return 'textMeta';
+        case 'ignored':
+          return 'invalid';
+        default:
+          return 'unknown';
+      }
+    }
+    // Fallback: 使用旧逻辑
     if (!parseSummary?.fieldTypes) return 'unknown';
     const meta = parseSummary.fieldTypes.find(f => f.header === header);
     return meta?.analysisRole || 'unknown';
-  }, [parseSummary]);
+  }, [parseSummary, analysisDataset]);
 
   const isRecommendedField = useCallback((header: string): boolean => {
+    // Stage 1A-1: 优先使用 analysisDataset.fields
+    if (analysisDataset?.fields && analysisDataset.fields.length > 0) {
+      const schema = analysisDataset.fields.find(f => f.fieldId === header);
+      if (!schema) return false;
+      // metric 类型的字段推荐
+      return schema.analysisRole === 'metric';
+    }
+    // Fallback: 使用旧逻辑
     const role = getFieldAnalysisRole(header);
     return role === 'primaryTotal' || role === 'rank' || role === 'sectionTotal' || role === 'courseScore';
-  }, [getFieldAnalysisRole]);
+  }, [getFieldAnalysisRole, analysisDataset]);
 
   const availableFields = useMemo(() => {
     if (!parsedData) return [];
