@@ -234,8 +234,13 @@ function classifyFieldByContent(
   if (feature.numericRatio > 0.5) {
     // 大部分是数值
 
-    // 2a. 内容像排名（小整数、高唯一率、范围在1~rowCount*2）
+    // 2a. 内容像排名 - 只有当字段名包含排名关键词时才推断为 rank
+    // 通用模式下，不得仅凭数值范围推断rank
+    const headerLower2 = header.toLowerCase().trim();
+    const hasRankKeyword = RANK_KEYWORDS.some(kw => headerLower2.includes(kw.toLowerCase()));
+    
     if (
+      hasRankKeyword &&
       feature.integerRatio > 0.8 &&
       feature.valuePattern === 'rankLike' &&
       feature.uniqueRatio > 0.5 &&
@@ -243,8 +248,8 @@ function classifyFieldByContent(
     ) {
       return {
         type: 'rank',
-        reason: `字段名无明确关键词，但内容为1~${rowCount}范围内的整数，符合排名特征`,
-        confidence: 0.7,
+        reason: `字段名含排名关键词且内容为1~${rowCount}范围内的整数，符合排名特征`,
+        confidence: 0.85,
       };
     }
 
