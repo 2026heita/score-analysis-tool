@@ -14,6 +14,8 @@ import { parseTableText } from '../../src/utils/parseTable.js';
 import { resolveFieldSchemas } from '../../src/field-schema/index.js';
 import { buildSemanticDefinitionsFromResolved } from '../../src/engine/metricLayer.js';
 import { shouldAnalyzeField } from '../../src/field-schema/index.js';
+import { analyzeCorrelationsFromContext } from '../../src/engine/correlationAnalyzer.js';
+import type { DerivedDataContext } from '../../src/engine/context.js';
 
 let passed = 0;
 let failed = 0;
@@ -123,7 +125,7 @@ assert('dimensionDefs 包含 3 个维度', genericSemantic.dimensions.length ===
 
 // 验证指标方向映射
 const salesMetric = genericSemantic.metrics.find(m => m.name === '销售额');
-assert('销售额 direction=higher-is-better (unspecified 默认)', salesMetric?.direction === 'higher-is-better');
+assert('销售额 direction=unspecified', salesMetric?.direction === 'unspecified');
 assert('销售额 isRecommended=false (unspecified 不推荐)', salesMetric?.isRecommended === false);
 
 // 验证页面可选指标
@@ -269,10 +271,10 @@ const unspecifiedMetrics = genericFields.filter(f =>
 
 assert('generic 模式有 unspecified 方向的指标', unspecifiedMetrics.length > 0);
 
-// 验证语义层转换时，unspecified 不自动变成 higher-is-better 且 isRecommended=false
+// 验证语义层转换时，unspecified 保持原始语义，不自动变成 higher-is-better
 for (const metric of unspecifiedMetrics) {
   const semanticMetric = genericSemantic.metrics.find(m => m.name === metric.fieldId);
-  assert(`${metric.fieldId} direction=higher-is-better (默认)`, semanticMetric?.direction === 'higher-is-better');
+  assert(`${metric.fieldId} direction=unspecified (保持原始语义)`, semanticMetric?.direction === 'unspecified');
   assert(`${metric.fieldId} isRecommended=false (unspecified 不推荐)`, semanticMetric?.isRecommended === false);
 }
 
@@ -288,6 +290,158 @@ assert('dimension 字段可分析', analyzableFields.some(f => f.analysisRole ==
 assert('identifier 字段可分析', analyzableFields.some(f => f.analysisRole === 'identifier'));
 assert('time 字段可分析', analyzableFields.some(f => f.analysisRole === 'time'));
 assert('description 字段不可分析', !analyzableFields.some(f => f.analysisRole === 'description'));
+
+// ============================================================
+// 测试八：Stage 1A-1 最终语义缺口验证（7 个关键断言）
+// ============================================================
+console.log('\n📊 测试八：Stage 1A-1 最终语义缺口验证');
+
+// 准备测试数据：构建 mock DerivedDataContext
+const mockDerivedContext: DerivedDataContext = {
+  filteredRows: genericParsed.rows,
+  fieldScores: {},
+  outliers: {},
+};
+
+// 构建 FieldMeta 数组（从 genericFields 转换）
+const genericFieldMetas = genericFields.map(schema => ({
+  header: schema.fieldId,
+  type: 'unknown' as const,
+  analysisRole: schema.analysisRole as any,
+  validCount: 0,
+  emptyCount: 0,
+  invalidCount: 0,
+  textCount: 0,
+  confidence: 1.0,
+  reason: `From ResolvedFieldSchema`,
+}));
+
+// 构建 metricDefs（从 genericSemantic）
+const genericMetricDefs = genericSemantic.metrics;
+
+// 调用相关性分析
+const correlationResult = analyzeCorrelationsFromContext(
+  mockDerivedContext,
+  genericFieldMetas,
+  genericMetricDefs
+);
+
+// 断言 1: generic销售表4个metric均可进入相关性
+const correlationFields = correlationResult.numericalFields;
+assert('断言1: 销售额进入相关性', correlationFields.includes('销售额'));
+assert('断言1: 成本进入相关性', correlationFields.includes('成本'));
+assert('断言1: 利润进入相关性', correlationFields.includes('利润'));
+assert('断言1: 数量进入相关性', correlationFields.includes('数量'));
+assert('断言1: 至少4个字段进入相关性', correlationFields.length >= 4,
+  `实际: ${correlationFields.length} 个字段 [${correlationFields.join(', ')}]`);
+
+// 断言 2: unspecified指标不产生higher-is-better评价
+const unspecifiedMetricDefs = genericMetricDefs.filter(m => m.direction === 'unspecified');
+assert('断言2: 存在 unspecified 方向的指标', unspecifiedMetricDefs.length > 0);
+for (const metric of unspecifiedMetricDefs) {
+  assert(`断言2: ${metric.name} direction=unspecified (非 higher-is-better)`,
+    metric.direction === 'unspecified');
+  assert(`断言2: ${metric.name} isRecommended=false`,
+    metric.isRecommended === false);
+}
+
+// 断言 3: "成本"不会被解释为越高越好
+const costMetric = genericMetricDefs.find(m => m.name === '成本');
+assert('断言3: 成本字段存在', costMetric !== undefined);
+assert('断言3: 成本 direction=unspecified (非 higher-is-better)',
+  costMetric?.direction === 'unspecified');
+assert('断言3: 成本 isRecommended=false',
+  costMetric?.isRecommended === false);
+
+// 断言 4: resolved fields存在、parseSummary为空时，相关性仍能运行
+const correlationWithResolvedFields = analyzeCorrelationsFromContext(
+  mockDerivedContext,
+  genericFieldMetas,
+  genericMetricDefs
+);
+assert('断言4: resolved fields存在时相关性可运行',
+  correlationWithResolvedFields !== null);
+assert('断言4: 相关性结果包含 numericalFields',
+  Array.isArray(correlationWithResolvedFields.numericalFields));
+assert('断言4: 至少2个字段参与相关性',
+  correlationWithResolvedFields.numericalFields.length >= 2);
+
+// 断言 5: legacy与resolved冲突时，resolved优先
+// 模拟冲突场景：legacy 认为某字段是 courseScore，resolved 认为是 identifier
+const conflictingFieldMetas = [
+  ...genericFieldMetas,
+  {
+    header: '冲突字段',
+    type: 'score' as const,
+    analysisRole: 'courseScore' as const, // legacy 认为是课程成绩
+    validCount: 100,
+    emptyCount: 0,
+    invalidCount: 0,
+    textCount: 0,
+    confidence: 0.8,
+    reason: 'Legacy classification',
+  }
+];
+// resolved 中该字段是 identifier
+const conflictingResolvedFields = [
+  ...genericFields,
+  {
+    fieldId: '冲突字段',
+    sourceName: '冲突字段',
+    analysisRole: 'identifier' as const, // resolved 认为是标识符
+    dataType: 'text' as const,
+    metricDirection: undefined as any,
+    inferenceSource: 'auto' as const,
+    inferenceConfidence: 'high' as const,
+  }
+];
+const conflictingSemantic = buildSemanticDefinitionsFromResolved(conflictingResolvedFields);
+const conflictingMetric = conflictingSemantic.metrics.find(m => m.name === '冲突字段');
+assert('断言5: resolved 优先 - 冲突字段不作为 metric',
+  conflictingMetric === undefined);
+const conflictingEntity = conflictingSemantic.entities.find(e => e.name === '冲突字段');
+assert('断言5: resolved 优先 - 冲突字段作为 identifier',
+  conflictingEntity !== undefined);
+
+// 断言 6: education成绩和排名方向仍分别正确
+const eduMetricDefs = eduSemantic.metrics;
+const eduScoreMetric = eduMetricDefs.find(m => m.name === '成绩');
+const eduRankMetric = eduMetricDefs.find(m => m.name === '排名');
+assert('断言6: 成绩字段存在', eduScoreMetric !== undefined);
+assert('断言6: 排名字段存在', eduRankMetric !== undefined);
+assert('断言6: 成绩 direction=higher-is-better',
+  eduScoreMetric?.direction === 'higher-is-better');
+assert('断言6: 排名 direction=lower-is-better',
+  eduRankMetric?.direction === 'lower-is-better');
+assert('断言6: 成绩 isRecommended=true',
+  eduScoreMetric?.isRecommended === true);
+assert('断言6: 排名 isRecommended=true',
+  eduRankMetric?.isRecommended === true);
+
+// 断言 7: identifier/description/ignored不进入相关性
+const identifierFields = genericFields.filter(f => f.analysisRole === 'identifier');
+const descriptionFields = genericFields.filter(f => f.analysisRole === 'description');
+const ignoredFields = genericFields.filter(f => f.analysisRole === 'ignored');
+
+for (const field of identifierFields) {
+  assert(`断言7: ${field.fieldId} (identifier) 不进入相关性`,
+    !correlationFields.includes(field.fieldId));
+}
+for (const field of descriptionFields) {
+  assert(`断言7: ${field.fieldId} (description) 不进入相关性`,
+    !correlationFields.includes(field.fieldId));
+}
+for (const field of ignoredFields) {
+  assert(`断言7: ${field.fieldId} (ignored) 不进入相关性`,
+    !correlationFields.includes(field.fieldId));
+}
+
+// 验证订单号（identifier）不进入相关性
+assert('断言7: 订单号 (identifier) 不进入相关性',
+  !correlationFields.includes('订单号'));
+// 验证商品描述（description）不进入相关性
+assert('断言7: 商品描述 (description) 不进入相关性',
+  !correlationFields.includes('商品描述'));
 
 // ============================================================
 // 测试结果汇总

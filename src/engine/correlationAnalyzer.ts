@@ -88,6 +88,21 @@ function isHighUniqueLongNumberId(
   values: (number | null)[],
   fieldMeta?: FieldMeta
 ): boolean {
+  // 如果字段已被明确分类为可分析的 metric 角色，则跳过 ID 检测
+  // 这些角色已经被语义层确认为指标，不应该被误判为 ID
+  if (fieldMeta) {
+    const role = fieldMeta.analysisRole;
+    // 旧版角色：primaryTotal/sectionTotal/courseScore/rank/adjustment
+    // 新版角色：metric（Stage 1A-1 ResolvedFieldSchema）
+    const metricRoles: Array<AnalysisRole | string> = [
+      'primaryTotal', 'sectionTotal', 'courseScore', 'rank', 'adjustment',
+      'metric' // 新版 ResolvedFieldSchema 的角色
+    ];
+    if (metricRoles.includes(role)) {
+      return false;
+    }
+  }
+
   // 检查字段名关键词
   const idKeywords = ['学号', '考号', '考生号', '准考证', '身份证号', '编号', 'ID', 'id', '订单', '用户', '商品', '编码'];
   const headerLower = header.toLowerCase();
@@ -399,9 +414,9 @@ export function analyzeCorrelationsFromContext(
   const rows = context.filteredRows;
   
   // 2. 从 metrics 构建 FeatureSchema 数组
-  // 只包含可分析的指标（排除 adjustment）
+  // 所有 metric 都可以参与相关性分析（isRecommended 只控制推荐，不控制分析资格）
+  // 排除 identifier/description/ignored 等已在 metricLayer 中完成
   const features: FeatureSchema[] = metrics
-    .filter(m => m.isRecommended)
     .map(m => ({
       fieldName: m.sourceField,
       displayName: m.displayName,

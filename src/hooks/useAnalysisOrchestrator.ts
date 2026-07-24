@@ -136,11 +136,32 @@ export function useAnalysisOrchestrator(
   }, [derivedData, selectedField, selectedDimension]);
 
   // --- correlationSlice ---
-  // deps: [derivedData, parseSummary, metricDefs]
+  // deps: [derivedData, analysisDataset, metricDefs]
   const correlationResult = useMemo(() => {
-    if (!derivedData || !parseSummary?.fieldTypes) return null;
+    if (!derivedData) return null;
+    
+    // Stage 1A-1: 优先使用 analysisDataset.fields
+    if (analysisDataset?.fields && analysisDataset.fields.length > 0) {
+      // 从 ResolvedFieldSchema 构建 FieldMeta 用于相关性分析
+      const fieldMetas = analysisDataset.fields.map(schema => ({
+        header: schema.fieldId,
+        type: 'unknown' as const,
+        analysisRole: schema.analysisRole as any,
+        validCount: 0,
+        emptyCount: 0,
+        invalidCount: 0,
+        textCount: 0,
+        confidence: 1.0,
+        reason: `From ResolvedFieldSchema (${schema.sourceName})`,
+        contentFeature: undefined, // ResolvedFieldSchema 不包含 contentFeature
+      }));
+      return analyzeCorrelationsFromContext(derivedData, fieldMetas, metricDefs);
+    }
+    
+    // Fallback: 使用 parseSummary.fieldTypes（旧链路兼容）
+    if (!parseSummary?.fieldTypes) return null;
     return analyzeCorrelationsFromContext(derivedData, parseSummary.fieldTypes, metricDefs);
-  }, [derivedData, parseSummary, metricDefs]);
+  }, [derivedData, analysisDataset, parseSummary, metricDefs]);
 
   // ===== View 组装 =====
   const { viewContext } = useViewContext(derivedData, metricResult, correlationResult, groupStats);

@@ -19,7 +19,7 @@ import type { ResolvedFieldSchema } from '../field-schema';
 // ============================================================
 
 /** 指标方向 */
-export type MetricDirection = 'higher-is-better' | 'lower-is-better';
+export type MetricDirection = 'higher-is-better' | 'lower-is-better' | 'neutral' | 'unspecified';
 
 /** 指标类型 */
 export type MetricType = 'score' | 'rank' | 'total' | 'adjustment' | 'numeric';
@@ -284,25 +284,30 @@ export function getPrimaryKeyEntity(semantic: SemanticDefinitions): EntityDefini
  * - metricDirection 映射：
  *   - higher_is_better → higher-is-better
  *   - lower_is_better → lower-is-better
- *   - neutral / unspecified → 默认为 higher-is-better（但标记 isRecommended=false）
+ *   - neutral → neutral（中性，无优劣方向）
+ *   - unspecified → unspecified（未指定，无优劣方向）
+ * - isRecommended 仅控制默认推荐，不控制分析资格
  */
 function buildMetricFromResolvedSchema(schema: ResolvedFieldSchema): MetricDefinition | null {
   if (schema.analysisRole !== 'metric') {
     return null;
   }
 
-  // 映射 metricDirection
-  let direction: MetricDirection = 'higher-is-better';
+  // 映射 metricDirection：保持原始语义，不强制转换
+  let direction: MetricDirection;
   let isRecommended = true;
 
   if (schema.metricDirection === 'higher_is_better') {
     direction = 'higher-is-better';
   } else if (schema.metricDirection === 'lower_is_better') {
     direction = 'lower-is-better';
+  } else if (schema.metricDirection === 'neutral') {
+    direction = 'neutral';
+    isRecommended = false; // 中性指标不默认推荐
   } else {
-    // neutral 或 unspecified：默认 higher-is-better，但不推荐
-    direction = 'higher-is-better';
-    isRecommended = false;
+    // unspecified：未指定方向
+    direction = 'unspecified';
+    isRecommended = false; // 未指定方向的指标不默认推荐
   }
 
   // 确定 metric type
