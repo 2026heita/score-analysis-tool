@@ -18,6 +18,18 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { parseTableText } from '../utils/parseTable';
 import { parseTableFile, type ParsedFileResult } from '../utils/fileImport';
 import { buildParseReport } from '../utils/tableParser';
+import { 
+  createVersionControlState, 
+  incrementVersion, 
+  isVersionMatch, 
+  isMounted, 
+  safeSetState as safeSetStateHelper,
+  handleUserEditText,
+  setPendingInternalText,
+  consumePendingInternalText,
+  resetVersionControl,
+  type VersionControlState 
+} from '../utils/parseVersionControl';
 import type { ParsedTable, DataVolumeState } from '../types';
 import type { ParseSummary } from '../utils/tableParser/types';
 
@@ -72,30 +84,22 @@ export function useParsedTable(): UseParsedTableReturn {
   // Stage 0A-1: 数据量状态
   const [dataVolumeState, setDataVolumeState] = useState<DataVolumeState | null>(null);
 
-  // Stage 0A-1: 内部更新守卫（防止 file upload / sheet switch 触发二次解析）
-  const pendingInternalRawTextRef = useRef<string | null>(null);
-  
   // Stage 0A-1: 异步解析版本控制（防止旧解析结果覆盖新数据）
-  const parseVersionRef = useRef(0);
-
-  // 组件卸载标记（防止卸载后写状态）
-  const isMountedRef = useRef(true);
+  const versionControlRef = useRef<VersionControlState>(createVersionControlState());
 
   const textareaRef = useRef<HTMLTextAreaElement>(null!);
 
   // 组件卸载时设置标记
   useEffect(() => {
-    isMountedRef.current = true;
+    versionControlRef.current.isMountedRef.current = true;
     return () => {
-      isMountedRef.current = false;
+      versionControlRef.current.isMountedRef.current = false;
     };
   }, []);
 
   // 安全的状态设置函数（组件卸载后不写状态）
   const safeSetState = useCallback(<T>(setter: (v: T) => void, value: T) => {
-    if (isMountedRef.current) {
-      setter(value);
-    }
+    safeSetStateHelper(versionControlRef.current, setter, value);
   }, []);
 
   // ===== v1.4：数据源变更时自增 activeTableId，驱动下游 hook 重置 =====
@@ -122,9 +126,9 @@ export function useParsedTable(): UseParsedTableReturn {
     );
   }, [parsedData, parseSummary]);
 
-  // ===== 应用解析结果（原子化，避免重复代码 =====
+  // ===== 应用解析结果（原子化，避免重复代码） =====
   const applyParseResult = useCallback((result: ParsedTable) => {
-    if (!isMountedRef.current) return;
+    if (!isMounted(versionControlRef.current)) return;
     setParsedData(result);
     setParseWarnings(result.warnings || []);
     setParseError(null);
@@ -138,7 +142,7 @@ export function useParsedTable(): UseParsedTableReturn {
 
   // ===== 清空所有解析状态 =====
   const clearParseState = useCallback(() => {
-    if (!isMountedRef.current) return;
+    if (!isMounted(versionControlRef.current)) return;
     setParsedData(null);
     setParseWarnings([]);
     setParseError(null);
@@ -152,18 +156,16 @@ export function useParsedTable(): UseParsedTableReturn {
 
   // ===== 自定义 setRawText：用户编辑时递增版本号 =====
   const setRawText = useCallback((text: string) => {
-    if (!isMountedRef.current) return;
+    if (!isMounted(versionControlRef.current)) return;
     
     // 如果是内部同步更新，不递增版本号
-    if (pendingInternalRawTextRef.current === text) {
-      pendingInternalRawTextRef.current = null;
+    if (consumePendingInternalText(versionControlRef.current, text)) {
       setRawTextState(text);
       return;
     }
     
     // 用户编辑：立即递增版本号，使旧的异步请求失效
-    parseVersionRef.current++;
-    pendingInternalRawTextRef.current = null;
+    handleUserEditText(versionControlRef.current, text);
     setRawTextState(text);
   }, []);
 
@@ -176,9 +178,8 @@ export function useParsedTable(): UseParsedTableReturn {
     }
     
     // 检查是否为内部同步更新
-    if (pendingInternalRawTextRef.current === rawText) {
+    if (consumePendingInternalText(versionControlRef.current, rawText)) {
       // 消费内部更新标记，不重新解析
-      pendingInternalRawTextRef.current = null;
       return;
     }
     
@@ -213,7 +214,7 @@ export function useParsedTable(): UseParsedTableReturn {
     if (!file) return;
     
     // 递增版本号，使旧请求失效
-    const currentVersion = ++parseVersionRef.current;
+    const currentVersion = incrementVersion(versionControlRef.current);
     
     safeSetState(setFileError, null);
     safeSetState(setParseSummary, null);
@@ -223,7 +224,7 @@ export function useParsedTable(): UseParsedTableReturn {
 
     if (file.size > 5 * 1024 * 1024) {
       setTimeout(() => {
-        if (parseVersionRef.current === currentVersion && isMountedRef.current) {
+        if (isVersionMatch(versionControlRef.current, currentVersion) && isMounted(versionControlRef.current)) {
           setParseWarnings(['文件较大，解析可能需要几秒，请耐心等待...']);
         }
       }, 100);
@@ -232,8 +233,8 @@ export function useParsedTable(): UseParsedTableReturn {
     parseTableFile(file)
       .then(result => {
         // 版本检查：丢弃旧结果
-        if (parseVersionRef.current !== currentVersion) return;
-        if (!isMountedRef.current) return;
+        if (!isVersionMatch(versionControlRef.current, currentVersion)) return;
+        if (!isMounted(versionControlRef.current)) return;
         
         applyParseResult(result);
         safeSetState(setIsParsing, false);
@@ -251,13 +252,13 @@ export function useParsedTable(): UseParsedTableReturn {
         
         // 设置内部更新目标文本，防止 useEffect([rawText]) 二次解析
         const text = [result.headers.join('\t'), ...result.rows.map(r => result.headers.map(h => r[h] ?? '').join('\t'))].join('\n');
-        pendingInternalRawTextRef.current = text;
+        setPendingInternalText(versionControlRef.current, text);
         safeSetState(setRawTextState, text);
       })
       .catch(err => {
         // 版本检查
-        if (parseVersionRef.current !== currentVersion) return;
-        if (!isMountedRef.current) return;
+        if (!isVersionMatch(versionControlRef.current, currentVersion)) return;
+        if (!isMounted(versionControlRef.current)) return;
         
         safeSetState(setFileError, err instanceof Error ? err.message : '文件解析失败');
         safeSetState(setParsedData, null);
@@ -273,13 +274,13 @@ export function useParsedTable(): UseParsedTableReturn {
     safeSetState(setSelectedSheet, sheetName);
     if (parsedData && (parsedData as ParsedFileResult).reparseSheet) {
       // 递增版本号，使旧请求失效
-      const currentVersion = ++parseVersionRef.current;
+      const currentVersion = incrementVersion(versionControlRef.current);
       
       (parsedData as ParsedFileResult).reparseSheet!(sheetName)
         .then(result => {
           // 版本检查：丢弃旧结果
-          if (parseVersionRef.current !== currentVersion) return;
-          if (!isMountedRef.current) return;
+          if (!isVersionMatch(versionControlRef.current, currentVersion)) return;
+          if (!isMounted(versionControlRef.current)) return;
           
           applyParseResult(result);
 
@@ -296,13 +297,13 @@ export function useParsedTable(): UseParsedTableReturn {
 
           // 设置内部更新目标文本，防止 useEffect([rawText]) 二次解析
           const text = [result.headers.join('\t'), ...result.rows.map(r => result.headers.map(h => r[h] ?? '').join('\t'))].join('\n');
-          pendingInternalRawTextRef.current = text;
+          setPendingInternalText(versionControlRef.current, text);
           safeSetState(setRawTextState, text);
         })
         .catch(err => {
           // 版本检查
-          if (parseVersionRef.current !== currentVersion) return;
-          if (!isMountedRef.current) return;
+          if (!isVersionMatch(versionControlRef.current, currentVersion)) return;
+          if (!isMounted(versionControlRef.current)) return;
           
           safeSetState(setFileError, err instanceof Error ? err.message : '切换工作表失败');
         });
@@ -312,7 +313,7 @@ export function useParsedTable(): UseParsedTableReturn {
   // ===== 加载示例数据集 =====
   const loadSampleDataset = useCallback((headers: string[], rows: Record<string, string | number | null>[]) => {
     // 递增版本号
-    parseVersionRef.current++;
+    incrementVersion(versionControlRef.current);
     
     // 构建文本数据
     const text = [
@@ -321,7 +322,7 @@ export function useParsedTable(): UseParsedTableReturn {
     ].join('\n');
 
     // 设置内部更新标记，防止二次解析
-    pendingInternalRawTextRef.current = text;
+    setPendingInternalText(versionControlRef.current, text);
     safeSetState(setRawTextState, text);
 
     // 执行解析
@@ -338,8 +339,7 @@ export function useParsedTable(): UseParsedTableReturn {
   // ===== 清空表格（保留 rawText 为空，清除所有解析结果）
   const clearParsedTable = useCallback(() => {
     // 递增版本号，使所有旧异步请求失效
-    parseVersionRef.current++;
-    pendingInternalRawTextRef.current = null;
+    resetVersionControl(versionControlRef.current);
     safeSetState(setRawTextState, '');
     clearParseState();
   }, [clearParseState, safeSetState]);
@@ -347,8 +347,7 @@ export function useParsedTable(): UseParsedTableReturn {
   // ===== 重置表格（完全重置到初始状态）
   const resetParsedTable = useCallback(() => {
     // 递增版本号
-    parseVersionRef.current++;
-    pendingInternalRawTextRef.current = null;
+    resetVersionControl(versionControlRef.current);
     safeSetState(setRawTextState, '');
     clearParseState();
   }, [clearParseState, safeSetState]);

@@ -11,7 +11,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { systematic_even_v1, sampleRows } from '../engine/sampling';
 import type { ParsedTable } from '../types';
-import type { ResolvedFieldSchema } from '../field-schema';
+import type { ResolvedFieldSchema, SchemaMode } from '../field-schema';
 import { resolveFieldSchemas } from '../field-schema';
 
 /** 分析数据集状态 */
@@ -58,9 +58,10 @@ const ANALYSIS_SAMPLE_SIZE = 5000;
  */
 function generateDatasetKey(
   dataRevision: number,
-  filterRevision: number
+  filterRevision: number,
+  schemaMode: SchemaMode
 ): string {
-  return `${dataRevision}-${filterRevision}`;
+  return `${dataRevision}-${filterRevision}-${schemaMode}`;
 }
 
 /**
@@ -69,14 +70,15 @@ function generateDatasetKey(
 export function useAnalysisDataset(
   filteredParsedData: ParsedTable | null,
   dataRevision: number,
-  filterRevision: number
+  filterRevision: number,
+  schemaMode: SchemaMode = 'generic'
 ): AnalysisDatasetState {
   const [confirmedDatasetKey, setConfirmedDatasetKey] = useState<string | null>(null);
   const [cancelledDatasetKey, setCancelledDatasetKey] = useState<string | null>(null);
 
   const datasetKey = useMemo(
-    () => generateDatasetKey(dataRevision, filterRevision),
-    [dataRevision, filterRevision]
+    () => generateDatasetKey(dataRevision, filterRevision, schemaMode),
+    [dataRevision, filterRevision, schemaMode]
   );
 
   // 数据变化时清除旧的确认/取消状态
@@ -124,7 +126,7 @@ export function useAnalysisDataset(
       headers,
       null,
       {
-        mode: 'generic',
+        mode: schemaMode,
         legacyFieldMetas: filteredParsedData.summary?.fieldTypes,
         rows: filteredParsedData.rows
       }

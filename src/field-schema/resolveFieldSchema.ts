@@ -221,6 +221,9 @@ export function shouldAnalyzeField(resolved: ResolvedFieldSchema): boolean {
   // ignored 角色不参与分析
   if (resolved.analysisRole === 'ignored') return false;
   
+  // description 角色不参与分析（描述性字段）
+  if (resolved.analysisRole === 'description') return false;
+  
   // unspecified 角色不参与分析（需要用户确认）
   if (resolved.analysisRole === 'unspecified') return false;
   
