@@ -107,7 +107,7 @@ export function computeStats(
 export function computePosition(
   values: number[],
   inputValue: number,
-  direction: 'higher-is-better' | 'lower-is-better' = 'higher-is-better'
+  direction: import('./metricLayer').MetricDirection = 'higher-is-better'
 ): PositionResult {
   const cleanValues = values.filter(v => Number.isFinite(v));
   const total = cleanValues.length;
@@ -121,7 +121,12 @@ export function computePosition(
   let estimatedRank: number;
   let percentile: number;
 
-  if (direction === 'lower-is-better') {
+  // 处理 neutral/unspecified：默认按 higher-is-better 计算（但不生成优劣评价）
+  const effectiveDirection = (direction === 'higher-is-better' || direction === 'lower-is-better')
+    ? direction
+    : 'higher-is-better';
+
+  if (effectiveDirection === 'lower-is-better') {
     // rank 字段：数值越小越好
     // 排名 = 低于该值人数 + 1
     bestRank = lowerCount + 1;

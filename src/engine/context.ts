@@ -111,7 +111,7 @@ export interface MetricResult {
   displayName: string;
   
   /** 指标方向 */
-  direction: 'higher-is-better' | 'lower-is-better';
+  direction: import('./metricLayer').MetricDirection;
   
   /** 有效数值数组 */
   values: number[];

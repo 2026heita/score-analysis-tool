@@ -66,6 +66,16 @@ test('useParsedTable 应该包含 parseVersionRef', () => {
   assert(useParsedTableContent.includes('parseVersionRef'), '应该包含异步版本控制');
 });
 
+test('parseVersionControl 生产 helper 应该存在', () => {
+  const helperPath = path.join(__dirname, '../src/utils/parseVersionControl.ts');
+  assert(fs.existsSync(helperPath), 'parseVersionControl.ts 应该存在');
+  const helperContent = fs.readFileSync(helperPath, 'utf-8');
+  assert(helperContent.includes('incrementVersion'), '应该包含 incrementVersion');
+  assert(helperContent.includes('isVersionMatch'), '应该包含 isVersionMatch');
+  assert(helperContent.includes('isMounted'), '应该包含 isMounted');
+  assert(helperContent.includes('safeSetState'), '应该包含 safeSetState');
+});
+
 test('useParsedTable 的 handleFileUpload 应该保存 dataVolumeState', () => {
   const handleFileUploadMatch = useParsedTableContent.match(/const handleFileUpload[\s\S]*?^  \}, \[\]\);/m);
   assert(handleFileUploadMatch, '应该找到 handleFileUpload 函数');
