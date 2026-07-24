@@ -12,6 +12,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { systematic_even_v1, sampleRows } from '../engine/sampling';
 import type { ParsedTable } from '../types';
 import type { ResolvedFieldSchema } from '../field-schema';
+import { resolveFieldSchemas } from '../field-schema';
 
 /** 分析数据集状态 */
 export type AnalysisDatasetStatus = 
@@ -96,7 +97,7 @@ export function useAnalysisDataset(
     const rowCount = filteredParsedData.rows.length;
     const headers = filteredParsedData.headers;
 
-    // 无数据
+    // 无数据 — 阻断，不生成 fields
     if (rowCount === 0) {
       return {
         rows: [],
@@ -107,7 +108,7 @@ export function useAnalysisDataset(
       };
     }
 
-    // Stage 0A-1: 解析截断（>20000行）- 阻断分析，不进入抽样
+    // Stage 0A-1: 解析截断（>20000行）- 阻断分析，不生成 fields
     if (rowCount > 20000) {
       return {
         rows: [],
@@ -118,6 +119,17 @@ export function useAnalysisDataset(
       };
     }
 
+    // Stage 1A-1: 仅当存在可分析数据时解析字段模式
+    const fields = resolveFieldSchemas(
+      headers,
+      null,
+      {
+        mode: 'generic',
+        legacyFieldMetas: filteredParsedData.summary?.fieldTypes,
+        rows: filteredParsedData.rows
+      }
+    );
+
     // 全量分析（<=5000行）
     if (rowCount <= ANALYSIS_SAMPLE_SIZE) {
       return {
@@ -126,6 +138,7 @@ export function useAnalysisDataset(
         status: 'ready_full',
         datasetKey,
         samplingInfo: null,
+        fields,
       };
     }
 
@@ -142,7 +155,7 @@ export function useAnalysisDataset(
           samplingInfo: null,
         };
       }
-      // 等待确认
+      // 等待确认 — 阻断，不生成可分析 fields
       return {
         rows: [],
         headers,
@@ -167,6 +180,7 @@ export function useAnalysisDataset(
         sampledRowCount: ANALYSIS_SAMPLE_SIZE,
         indices,
       },
+      fields,
     };
   }, [filteredParsedData, datasetKey, confirmedDatasetKey, cancelledDatasetKey]);
 
