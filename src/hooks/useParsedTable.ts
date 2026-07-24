@@ -45,6 +45,7 @@ export interface UseParsedTableReturn {
   handleParse: () => void;
   handleFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   handleSheetChange: (sheetName: string) => void;
+  loadSampleDataset: (headers: string[], rows: Record<string, string | number | null>[]) => void;
   /** v1.4：统一表切换标识，每次数据变更时自增，驱动下游 hook 重置 */
   activeTableId: number;
   /** Stage 0A-1：数据量状态（记录解析阶段的行数口径信息） */
@@ -272,6 +273,41 @@ export function useParsedTable(): UseParsedTableReturn {
     }
   }, [parsedData]);
 
+  // ===== 加载示例数据集（Stage 0A-1: 统一解析入口） =====
+  const loadSampleDataset = useCallback((headers: string[], rows: Record<string, string | number | null>[]) => {
+    // 构建文本数据
+    const text = [
+      headers.join('\t'),
+      ...rows.map(row => headers.map(h => row[h] ?? '').join('\t'))
+    ].join('\n');
+
+    // 设置内部更新标记，防止二次解析
+    pendingInternalRawTextRef.current = text;
+    setRawText(text);
+
+    // 执行解析
+    try {
+      const result = parseTableText(text);
+      setParsedData(result);
+      setParseWarnings(result.warnings || []);
+      setParseError(null);
+      
+      // 同步更新 dataVolumeState
+      if (result.dataVolumeState) {
+        setDataVolumeState(result.dataVolumeState);
+      }
+      
+      // 同步更新 parseSummary
+      if (result.summary) {
+        setParseSummary(result.summary);
+      }
+    } catch (e) {
+      setParseError(e instanceof Error ? e.message : '解析失败');
+      setParsedData(null);
+      setParseSummary(null);
+    }
+  }, []);
+
   return {
     rawText, setRawText,
     parsedData, setParsedData,
@@ -287,6 +323,7 @@ export function useParsedTable(): UseParsedTableReturn {
     handleParse,
     handleFileUpload,
     handleSheetChange,
+    loadSampleDataset,
     activeTableId,
     dataVolumeState,
     setDataVolumeState,
