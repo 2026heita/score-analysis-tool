@@ -1,6 +1,4 @@
 import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
-import { parseTableText } from './utils/parseTable';
-import { parseTableFile, type ParsedFileResult } from './utils/fileImport';
 import { usePersistedState } from './hooks/usePersistedState';
 import { useParsedTable } from './hooks/useParsedTable';
 import { APP_VERSION } from './config/version';
@@ -66,18 +64,22 @@ export default function App() {
   // ===== Hooks：解析 / 上下文 / 指标计算 =====
   const {
     rawText, setRawText,
-    parsedData, setParsedData,
-    parseError, setParseError,
-    parseWarnings, setParseWarnings,
-    fileError, setFileError,
-    parseSummary, setParseSummary,
-    availableSheets, setAvailableSheets,
-    selectedSheet, setSelectedSheet,
-    isParsing, setIsParsing,
+    parsedData,
+    parseError,
+    parseWarnings,
+    fileError,
+    parseSummary,
+    availableSheets,
+    selectedSheet,
+    isParsing,
     parseReport,
     textareaRef,
     activeTableId,
     dataVolumeState, // Stage 0A-1: 数据量状态
+    handleParse,
+    handleFileUpload,
+    handleSheetChange,
+    loadSampleDataset,
   } = useParsedTable();
 
   // ===== 用户交互状态 =====
@@ -249,23 +251,10 @@ export default function App() {
   }, [parsedData, showAllFields, getFieldAnalysisRole]);
 
   // ===== 事件处理 =====
-  const handleParse = useCallback(() => {
-    if (!rawText.trim()) {
-      setParseError('请先粘贴表格数据。');
-      setParsedData(null);
-      return;
-    }
-    try {
-      const result = parseTableText(rawText);
-      setParsedData(result);
-      setParseWarnings(result.warnings || []);
-      setParseError(null);
-      setActiveChartTab('histogram');
-    } catch (e) {
-      setParseError(e instanceof Error ? e.message : '解析失败');
-      setParsedData(null);
-    }
-  }, [rawText, setParsedData, setParseWarnings, setParseError]);
+  const handleParseWithReset = useCallback(() => {
+    handleParse();
+    setActiveChartTab('histogram');
+  }, [handleParse]);
 
   const handleSave = useCallback(() => {
     save({
@@ -293,22 +282,16 @@ export default function App() {
     resetGroupAnalysis();
     resetFilter();
     setOriginalFieldState(def.originalFieldRadar);
-    try {
-      const result = parseTableText(def.rawText);
-      setParsedData(result);
-      setParseWarnings(result.warnings || []);
-      setParseError(null);
-    } catch { setParsedData(null); }
     save(def);
     setSaveMsg('已恢复默认设置');
     setTimeout(() => setSaveMsg(null), 2000);
     setTimeout(() => { textareaRef.current?.scrollTo({ top: 0 }); }, 0);
-  }, [getDefault, save, setRawText, setParsedData, setParseWarnings, setParseError, textareaRef, resetFilter, resetGroupAnalysis]);
+  }, [getDefault, save, setRawText, textareaRef, resetFilter, resetGroupAnalysis]);
 
   const handleClear = useCallback(() => {
     clear();
     clearOriginalFieldRadarCache();
-    setRawText(''); setParsedData(null); setParseError(null); setParseWarnings([]);
+    setRawText('');
     setSelectedField(''); setInputValue(''); setShowAllFields(false);
     resetGroupAnalysis();
     resetFilter();
@@ -316,7 +299,7 @@ export default function App() {
     setOriginalFieldState({ selections: [], viewMode: 'bar' });
     setSaveMsg('已清空数据');
     setTimeout(() => setSaveMsg(null), 2000);
-  }, [clear, setRawText, setParsedData, setParseError, setParseWarnings, resetFilter, resetGroupAnalysis]);
+  }, [clear, setRawText, resetFilter, resetGroupAnalysis]);
 
   const handleFillSample = useCallback(() => {
     setShowSampleSelector(true);
@@ -332,96 +315,25 @@ export default function App() {
     resetGroupAnalysis();
     resetFilter();
     setActiveChartTab('histogram');
-    setParseSummary(null);
 
-    const text = [
-      dataset.headers.join('\t'),
-      ...dataset.rows.map(row => dataset.headers.map(h => row[h] ?? '').join('\t'))
-    ].join('\n');
+    loadSampleDataset(dataset.headers, dataset.rows);
+    setTimeout(() => { textareaRef.current?.scrollTo({ top: 0 }); }, 0);
+  }, [rawText, textareaRef, resetFilter, resetGroupAnalysis, loadSampleDataset]);
 
-    setRawText(text);
-    try {
-      const result = parseTableText(text);
-      setParsedData(result);
-      setParseWarnings(result.warnings || []);
-      setParseError(null);
-      setTimeout(() => { textareaRef.current?.scrollTo({ top: 0 }); }, 0);
-    } catch { /* 静默 */ }
-  }, [rawText, setRawText, setParsedData, setParseWarnings, setParseError, setParseSummary, textareaRef, resetFilter, resetGroupAnalysis]);
-
-  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setFileError(null);
-    setParseSummary(null);
-    setAvailableSheets(null);
-    setSelectedSheet(null);
+  const handleFileUploadWithReset = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     clearOriginalFieldRadarCache();
     setOriginalFieldState({ selections: [], viewMode: 'bar' });
-    setIsParsing(true);
+    setSelectedField('');
+    handleFileUpload(e);
+    setActiveChartTab('histogram');
+  }, [handleFileUpload]);
 
-    if (file.size > 5 * 1024 * 1024) {
-      setTimeout(() => {
-        setParseWarnings(['文件较大，解析可能需要几秒，请耐心等待...']);
-      }, 100);
-    }
-
-    parseTableFile(file)
-      .then(result => {
-        setParsedData(result);
-        setParseWarnings(result.warnings || []);
-        setParseError(null);
-        setIsParsing(false);
-
-        // Stage 0A-2: 移除旧的 5000 行警告，抽样确认由 useAnalysisDataset 统一处理
-
-        if (result.summary) {
-          setParseSummary(result.summary);
-          if (result.summary.recommendedField) {
-            setSelectedField(result.summary.recommendedField);
-          }
-        }
-        if (result.availableSheets && result.availableSheets.length > 1) {
-          setAvailableSheets(result.availableSheets);
-        }
-        const text = [result.headers.join('\t'), ...result.rows.map(r => result.headers.map(h => r[h] ?? '').join('\t'))].join('\n');
-        setRawText(text);
-        setActiveChartTab('histogram');
-      })
-      .catch(err => {
-        setFileError(err instanceof Error ? err.message : '文件解析失败');
-        setParsedData(null);
-        setParseWarnings([]);
-        setParseSummary(null);
-        setIsParsing(false);
-      });
-    e.target.value = '';
-  }, [setRawText, setParsedData, setParseWarnings, setParseError, setFileError, setParseSummary, setAvailableSheets, setSelectedSheet, setIsParsing]);
-
-  const handleSheetChange = useCallback((sheetName: string) => {
-    setSelectedSheet(sheetName);
+  const handleSheetChangeWithReset = useCallback((sheetName: string) => {
     clearOriginalFieldRadarCache();
     setOriginalFieldState({ selections: [], viewMode: 'bar' });
-    if (parsedData && (parsedData as ParsedFileResult).reparseSheet) {
-      (parsedData as ParsedFileResult).reparseSheet!(sheetName)
-        .then(result => {
-          setParsedData(result);
-          setParseWarnings(result.warnings || []);
-          setParseError(null);
-          if (result.summary) {
-            setParseSummary(result.summary);
-            if (result.summary.recommendedField) {
-              setSelectedField(result.summary.recommendedField);
-            }
-          }
-          const text = [result.headers.join('\t'), ...result.rows.map(r => result.headers.map(h => r[h] ?? '').join('\t'))].join('\n');
-          setRawText(text);
-        })
-        .catch(err => {
-          setFileError(err instanceof Error ? err.message : '切换工作表失败');
-        });
-    }
-  }, [parsedData, setRawText, setParsedData, setParseWarnings, setParseError, setFileError, setParseSummary, setSelectedSheet]);
+    setSelectedField('');
+    handleSheetChange(sheetName);
+  }, [handleSheetChange]);
 
   // ===== 渲染 =====
   return (
@@ -451,7 +363,7 @@ export default function App() {
                 type="file"
                 accept=".csv,.xlsx,.xls"
                 style={styles.fileInput}
-                onChange={handleFileUpload}
+                onChange={handleFileUploadWithReset}
               />
               <span style={styles.fileUploadButton}>上传 CSV / Excel 文件</span>
             </label>
@@ -471,7 +383,7 @@ export default function App() {
             rows={8}
           />
           <div style={styles.parseRow}>
-            <button className="parse-btn" style={styles.parseButton} onClick={handleParse}>解析数据</button>
+            <button className="parse-btn" style={styles.parseButton} onClick={handleParseWithReset}>解析数据</button>
             <button className="sample-btn" style={styles.sampleButton} onClick={handleFillSample}>填入示例数据</button>
           </div>
           {parseError && <p style={styles.error}>{parseError}</p>}
@@ -537,7 +449,7 @@ export default function App() {
               setOriginalFieldState={setOriginalFieldState}
               availableSheets={availableSheets}
               selectedSheet={selectedSheet}
-              handleSheetChange={handleSheetChange}
+              handleSheetChange={handleSheetChangeWithReset}
               isNumericField={isNumericField}
               getFieldAnalysisRole={getFieldAnalysisRole}
               availableFields={availableFields}
