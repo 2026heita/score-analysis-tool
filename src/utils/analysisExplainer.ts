@@ -21,12 +21,14 @@ function getPerformanceTier(percentile: number): { tier: PerformanceTier; tierLa
 /**
  * 为单个字段生成解释信息
  * @param isRankField 是否为排名字段（排名数值越小越好，需要反转百分位计算）
+ * @param direction 指标方向（neutral/unspecified 不生成优劣评价）
  */
 export function explainField(
   field: string,
   userValue: number,
   values: number[],
   isRankField: boolean = false,
+  direction?: 'higher-is-better' | 'lower-is-better' | 'neutral' | 'unspecified',
 ): FieldExplanation | null {
   // 校验 userValue 有效性
   if (!Number.isFinite(userValue)) {
@@ -44,6 +46,24 @@ export function explainField(
   const stats = computeStats(cleanValues, cleanValues.length);
   if (!stats) {
     return null;
+  }
+
+  // neutral/unspecified 指标不生成优劣评价（不计算百分位、不生成排名层级）
+  if (direction === 'neutral' || direction === 'unspecified') {
+    return {
+      field,
+      userValue,
+      mean: stats.mean,
+      lowerCount: 0,
+      percentile: 0,
+      tier: 'middle',
+      tierLabel: '中性指标',
+      diffFromMean: userValue - stats.mean,
+      diffFromP75: userValue - stats.q75,
+      diffFromP90: userValue - stats.q90,
+      diffFromP95: userValue - stats.q95,
+      validCount: cleanValues.length,
+    };
   }
 
   // 计算位置信息（使用统一分析引擎的百分位计算）
@@ -126,11 +146,13 @@ export function summarizeFields(
 /**
  * 生成完整的分析解释
  * @param rankFields 排名字段集合（这些字段的百分位计算方向反转）
+ * @param fieldDirections 字段方向映射（neutral/unspecified 不生成优劣评价）
  */
 export function generateExplanation(
   fieldValues: Record<string, number>,
   fieldData: Record<string, number[]>,
   rankFields?: Set<string>,
+  fieldDirections?: Record<string, 'higher-is-better' | 'lower-is-better' | 'neutral' | 'unspecified'>,
 ): AnalysisExplanation {
   const fieldExplanations: FieldExplanation[] = [];
 
@@ -147,7 +169,8 @@ export function generateExplanation(
     }
 
     const isRank = rankFields?.has(field) ?? false;
-    const explanation = explainField(field, userValue, values, isRank);
+    const direction = fieldDirections?.[field];
+    const explanation = explainField(field, userValue, values, isRank, direction);
     if (explanation) {
       fieldExplanations.push(explanation);
     }
