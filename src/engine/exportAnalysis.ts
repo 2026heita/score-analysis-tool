@@ -166,7 +166,21 @@ export function exportSummaryToCsv(
     lines.push(buildCsvLine(['指标解读', '内容']));
     lines.push(buildCsvLine(['指标名', metricResult.metricName]));
     lines.push(buildCsvLine(['显示名', metricResult.displayName]));
-    lines.push(buildCsvLine(['方向', metricResult.direction === 'higher-is-better' ? '越高越好' : '越低越好']));
+    
+    // 修复：neutral/unspecified 不得显示为"越低越好"
+    let directionText: string;
+    if (metricResult.direction === 'higher-is-better') {
+      directionText = '越高越好';
+    } else if (metricResult.direction === 'lower-is-better') {
+      directionText = '越低越好';
+    } else if (metricResult.direction === 'neutral') {
+      directionText = '中性（无优劣方向）';
+    } else {
+      // unspecified
+      directionText = '未指定方向';
+    }
+    lines.push(buildCsvLine(['方向', directionText]));
+    
     lines.push(buildCsvLine(['总行数', metricResult.totalRows]));
     lines.push(buildCsvLine(['有效值数量', metricResult.values.length]));
     lines.push(buildCsvLine(['无效值数量', metricResult.invalidCount]));

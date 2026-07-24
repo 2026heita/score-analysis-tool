@@ -68,7 +68,7 @@ export function DebugPanel({ context, metricResult, selectedField, metricDef }: 
         </div>
       </div>
 
-      {metricResult.position && (
+      {metricResult.position && metricResult.direction !== 'neutral' && metricResult.direction !== 'unspecified' && (
         <div style={styles.debugSection}>
           <div style={styles.debugLabel}>排名定位</div>
           <div style={styles.debugRow}>

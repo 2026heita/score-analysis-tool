@@ -371,9 +371,11 @@ export function computeMetric(
   // 2. 计算统计指标
   const stats = computeStats(values, truncatedRows);
 
-  // 3. 计算位置（如果有用户输入值）
+  // 3. 计算位置（如果有用户输入值，且 direction 不是 neutral/unspecified）
+  // neutral/unspecified 指标不生成排名、优势/弱势评价
   let position: PositionResult | undefined;
-  if (userValue !== undefined && Number.isFinite(userValue) && values.length > 0) {
+  const shouldComputePosition = metricDef.direction !== 'neutral' && metricDef.direction !== 'unspecified';
+  if (userValue !== undefined && Number.isFinite(userValue) && values.length > 0 && shouldComputePosition) {
     position = computePosition(values, userValue, metricDef.direction);
   }
 

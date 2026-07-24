@@ -146,6 +146,11 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
 
   const { stats, position, fieldValues } = useMetricResult(metricResult);
 
+  // neutral/unspecified 指标不显示排名定位（不生成优劣评价）
+  const showPositionSection = metricResult && 
+    metricResult.direction !== 'neutral' && 
+    metricResult.direction !== 'unspecified';
+
   // v1.9.1: 当 dataset ready 时预加载 echarts 模块（requestIdleCallback，不阻塞渲染）
   useEffect(() => {
     if (metricResult) {
@@ -200,6 +205,14 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
       }
     }
 
+    // 构建字段方向映射（neutral/unspecified 不生成优劣评价）
+    const fieldDirections: Record<string, 'higher-is-better' | 'lower-is-better' | 'neutral' | 'unspecified'> = {};
+    if (metricDefs) {
+      for (const metric of metricDefs) {
+        fieldDirections[metric.sourceField] = metric.direction;
+      }
+    }
+
     const fieldValues: Record<string, number> = {};
     const fieldData: Record<string, number[]> = {};
 
@@ -220,21 +233,22 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
     }
 
     if (Object.keys(fieldValues).length === 0) return null;
-    return generateExplanation(fieldValues, fieldData, rankFields);
-  }, [analysisExplanationRef, analysisDataset]);
+    return generateExplanation(fieldValues, fieldData, rankFields, fieldDirections);
+  }, [analysisExplanationRef, analysisDataset, metricDefs]);
 
   // ===== 计算值 =====
   const inputNum = inputValue ? parseFloat(inputValue) : NaN;
   const hasInputError = inputValue.trim() !== '' && isNaN(inputNum);
 
   const summaryText = useMemo(() => {
-    if (!position || !stats || isNaN(inputNum)) return '';
+    // neutral/unspecified 指标不生成排名摘要
+    if (!showPositionSection || !position || !stats || isNaN(inputNum)) return '';
     const numStr = formatNumber(inputNum);
     if (position.existsInData) {
       return `你的【${selectedField}】为 ${numStr}。全表 ${position.total} 人中，高于你的人有 ${position.higherCount} 人，与你同分的有 ${position.equalCount} 人。你的名次区间为第 ${position.bestRank} 名 ~ 第 ${position.worstRank} 名，约高于 ${safeFormatPercent(position.percentile)} 的有效数据。`;
     }
     return `该值在表中不存在。如果按该值插入全表，估算名次为第 ${position.estimatedRank} 名，约高于 ${safeFormatPercent(position.percentile)} 的有效数据。`;
-  }, [position, stats, selectedField, inputNum]);
+  }, [showPositionSection, position, stats, selectedField, inputNum]);
 
   // ===== 复制摘要 =====
   const fallbackCopy = useCallback((text: string, cb: (msg: string) => void) => {
@@ -653,7 +667,7 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
             </ErrorBoundary>
           )}
 
-          {position && stats && !isNaN(inputNum) && (
+          {showPositionSection && position && stats && !isNaN(inputNum) && (
             <ErrorBoundary>
             <section style={styles.section}>
               <div style={styles.positionHeader}>
