@@ -1,9 +1,9 @@
 # Stage 1A-1 最终交付报告
 
-**提交哈希**: `e1c66500bd1ae1b15b04902457e9e75003d43991`  
-**分支**: `recovery/stability-merge`  
-**交付日期**: 2026-07-24  
-**交付包**: `score-analyzer-stage1a1-final-verified.zip` (4.5 MB)
+**提交哈希**: `5699675` (git-filter-repo 重写后)  
+**分支**: `master` (默认分支)  
+**交付日期**: 2026-07-25  
+**交付包**: `score-analyzer-public-source.zip` (git archive 生成)
 
 ---
 
@@ -16,7 +16,7 @@
 **修复**:
 - 扩展 `MetricDirection` 类型：`'higher-is-better' | 'lower-is-better' | 'neutral' | 'unspecified'`
 - `buildMetricFromResolvedSchema` 保持原始语义，不强制转换
-- `computePosition` 接受新类型，neutral/unspecified 默认按 higher-is-better 计算但不生成优劣评价
+- `computePosition` 接受新类型，neutral/unspecified 不生成排名定位
 - `isRecommended` 仅控制默认推荐，不控制分析资格
 
 **影响文件**:
@@ -24,7 +24,23 @@
 - `src/engine/analysisEngine.ts`
 - `src/engine/context.ts`
 
-### 2. 相关性分析参与资格修复
+### 2. neutral/unspecified 用户提示和导出修复
+
+**问题**: neutral/unspecified 指标仍显示"请输入你的数值后再查看排名定位"，且导出包含排名部分
+
+**修复**:
+- neutral/unspecified 不显示排名定位 UI
+- 显示提示："当前字段方向未指定，仅展示统计分布，不进行优劣排名。"
+- "复制分析摘要"和"导出指标摘要 CSV"从排名区域拆出到统计指标区域
+- neutral/unspecified 也能复制和导出描述性统计
+- 导出内容不包含排名部分
+- higher/lower 仍可额外包含排名部分
+
+**影响文件**:
+- `src/components/AnalysisSection.tsx`
+- `src/engine/exportAnalysis.ts`
+
+### 3. 相关性分析参与资格修复
 
 **问题**: `analyzeCorrelationsFromContext` 使用 `metrics.filter(m => m.isRecommended)` 导致 generic 模式所有 unspecified 指标被排除
 
@@ -36,7 +52,7 @@
 **影响文件**:
 - `src/engine/correlationAnalyzer.ts`
 
-### 3. 数据源优先级修复
+### 4. 数据源优先级修复
 
 **问题**: 相关性分析依赖 `parseSummary.fieldTypes`，即使 `analysisDataset.fields` 存在
 
@@ -49,29 +65,16 @@
 **影响文件**:
 - `src/hooks/useAnalysisOrchestrator.ts`
 
-### 4. 高唯一性 ID 误判修复
+### 5. 高唯一性 ID 误判修复
 
 **问题**: `isHighUniqueLongNumberId` 误判已分类为 metric 的字段（如销售额）
 
 **修复**:
-- 添加检查：如果字段已被明确分类为可分析的 metric 角色（包括新版 `'metric'` 和旧版 `primaryTotal/sectionTotal/courseScore/rank/adjustment`），则跳过 ID 检测
+- 添加检查：如果字段已被明确分类为可分析的 metric 角色，则跳过 ID 检测
 - 防止语义层已确认为指标的字段被误判为 ID
 
 **影响文件**:
 - `src/engine/correlationAnalyzer.ts`
-
-### 5. TypeScript 类型安全修复
-
-**问题**: `computePosition` 和 `MetricResult.direction` 类型签名不接受新的 MetricDirection 值
-
-**修复**:
-- `computePosition` 参数类型改为 `MetricDirection`
-- `MetricResult.direction` 类型改为 `MetricDirection`
-- 添加默认处理逻辑：neutral/unspecified 按 higher-is-better 计算
-
-**影响文件**:
-- `src/engine/analysisEngine.ts`
-- `src/engine/context.ts`
 
 ---
 
@@ -94,9 +97,9 @@
 
 **总计**: 10 个测试套件，0 失败
 
-### 新增关键断言（7 个）
+### 关键断言（7 个）
 
-在 `fieldConsumer.test.ts` 中新增测试八，验证 Stage 1A-1 语义缺口修复：
+在 `fieldConsumer.test.ts` 中验证 Stage 1A-1 语义缺口修复：
 
 1. **断言 1**: generic 销售表 4 个 metric（销售额、成本、利润、数量）均可进入相关性
 2. **断言 2**: unspecified 指标不产生 higher-is-better 评价
@@ -106,25 +109,61 @@
 6. **断言 6**: education 成绩和排名方向仍分别正确（higher-is-better / lower-is-better）
 7. **断言 7**: identifier/description/ignored 不进入相关性
 
-### 测试基础设施更新
+### 测试基础设施
 
-- `tests/run-integration-tests.ps1`: 添加 `fieldConsumer.test.ts`
-- `scripts/testUseParsedTable.mjs`: 添加 `parseVersionControl` 生产 helper 检查
+- `tests/run-integration-tests.ps1`: 包含 `fieldConsumer.test.ts`
+- `scripts/testUseParsedTable.mjs`: 检查 `parseVersionControl.ts` 真实生产 helper
 
 ---
 
-## 三、交付包内容
+## 三、Git 历史清理
 
-### ZIP 包信息
+### 清理范围
 
-- **文件名**: `score-analyzer-stage1a1-final-verified.zip`
-- **大小**: 4.5 MB
-- **文件数**: 903
+使用 `git-filter-repo` 从所有历史和引用中删除：
+- `*.xlsx`
+- `*.xls`
+- `*.zip`
+
+### 清理后验证
+
+```bash
+git rev-list --objects --all | grep -Ei "\.(xlsx|xls|zip)$"
+# 无输出 ✅
+
+git for-each-ref refs/original
+# 无输出 ✅
+
+git fsck --full
+# 无错误 ✅
+```
+
+### 保留的项目资产
+
+- 完整开发历史（80 个提交）
+- 所有源代码、测试代码
+- 架构文档、设计文档
+- 合成测试数据（test-data/ 目录）
+- scripts/ 测试脚本
+
+---
+
+## 四、交付包内容
+
+### 源码包信息
+
+- **文件名**: `score-analyzer-public-source.zip`
+- **生成方式**: `git archive --format=zip HEAD`
 - **排除项**: 
+  - `.git/`
   - `node_modules/`
+  - `dist/`
   - `dist-test/`
   - `.tmp-tests/`
-  - 旧 ZIP 文件（`score-analyzer.zip`, `score-analyzer-field-wiring-final.zip`）
+  - `*.xlsx`, `*.xls`
+  - `*.zip`
+  - 真实数据
+  - 调试临时文件
 
 ### 核心文件清单
 
@@ -134,7 +173,11 @@ src/
 │   ├── metricLayer.ts          # 语义层定义，支持 ResolvedFieldSchema
 │   ├── analysisEngine.ts       # 统一分析引擎，扩展 MetricDirection
 │   ├── correlationAnalyzer.ts  # 相关性分析器，修复参与资格
+│   ├── exportAnalysis.ts       # 导出分析结果，neutral/unspecified 不输出排名
 │   └── context.ts              # 上下文类型定义
+├── components/
+│   ├── AnalysisSection.tsx     # 分析界面，neutral/unspecified 提示和导出
+│   └── DebugPanel.tsx          # 调试面板
 ├── hooks/
 │   ├── useAnalysisOrchestrator.ts  # 分析调度器，数据源优先级
 │   └── useParsedTable.ts       # 解析状态管理
@@ -153,11 +196,16 @@ tests/
 
 scripts/
 └── testUseParsedTable.mjs      # Hook 集成测试
+
+test-data/
+├── synthetic_sales.xlsx        # 合成销售数据
+├── synthetic_student_scores.xlsx # 合成学生成绩
+└── synthetic_long_table.xlsx   # 合成宽表数据
 ```
 
 ---
 
-## 四、验证结果
+## 五、验证结果
 
 ### TypeScript 编译
 
@@ -177,15 +225,18 @@ npx tsc --noEmit
 
 1. ✅ generic 销售表：销售额、成本、利润、数量 4 个 metric 均进入相关性分析
 2. ✅ unspecified 指标保持原始语义，不自动映射为 higher-is-better
-3. ✅ "成本"字段 direction=unspecified，isRecommended=false
-4. ✅ resolved fields 存在时，相关性分析不依赖 parseSummary
-5. ✅ legacy 与 resolved 冲突时，resolved 优先
-6. ✅ education 成绩 direction=higher-is-better，排名 direction=lower-is-better
-7. ✅ identifier/description/ignored 字段不进入相关性分析
+3. ✅ neutral/unspecified 不显示排名定位，显示统计分布提示
+4. ✅ neutral/unspecified 可复制和导出描述性统计
+5. ✅ 导出内容不包含排名部分（neutral/unspecified）
+6. ✅ "成本"字段 direction=unspecified，isRecommended=false
+7. ✅ resolved fields 存在时，相关性分析不依赖 parseSummary
+8. ✅ legacy 与 resolved 冲突时，resolved 优先
+9. ✅ education 成绩 direction=higher-is-better，排名 direction=lower-is-better
+10. ✅ identifier/description/ignored 字段不进入相关性分析
 
 ---
 
-## 五、Stage 1A-1 完成状态
+## 六、Stage 1A-1 完成状态
 
 ### 已完成
 
@@ -194,6 +245,7 @@ npx tsc --noEmit
 - ✅ 分析链路接线（useAnalysisOrchestrator 优先使用 fields）
 - ✅ 相关性分析修复（移除 isRecommended 过滤）
 - ✅ 方向语义修复（unspecified/neutral 保持原始语义）
+- ✅ neutral/unspecified 用户提示和导出修复
 - ✅ 类型安全修复（MetricDirection 扩展）
 - ✅ 测试覆盖（101 断言验证核心逻辑）
 
@@ -203,14 +255,15 @@ npx tsc --noEmit
 - ⏸️ 字段方向 UI（用户手动调整指标方向）
 - ⏸️ 分析模式切换 UI（generic/education 模式选择）
 
-**说明**: Stage 1A-1 核心字段模型已实现并接入真实分析链路，但尚未开发字段确认 UI。Stage 1A-2 开发已暂停，优先完成稳定性修复。
+**说明**: Stage 1A-1 核心字段模型已实现并接入真实分析链路，但尚未开发字段确认 UI。Stage 1A-2 开发已暂停，优先完成公开发布收尾。
 
 ---
 
-## 六、提交历史
+## 七、提交历史
 
 ```
-e1c6650 fix: resolve Stage 1A-1 semantic gap - unspecified/neutral direction handling and correlation analysis
+5699675 fix: neutral/unspecified metrics display and export improvements
+0c84002 fix: resolve Stage 1A-1 semantic gap - unspecified/neutral direction handling and correlation analysis
 f11f1c1 feat: complete Stage 1A-1 field consumption wiring - extract version control logic, fix TypeScript errors, add fieldConsumer tests
 770b1d7 feat: wire field schema resolution into analysis pipeline and add comprehensive tests
 5270898 fix: harden row classification and parsing state races
@@ -219,18 +272,17 @@ ed0926b fix: restore consistent parsing and sample analysis
 
 ---
 
-## 七、交付确认
+## 八、交付确认
 
 - ✅ 所有测试通过（10 个测试套件，0 失败）
 - ✅ TypeScript 编译通过（0 错误）
-- ✅ 交付包已生成（score-analyzer-stage1a1-final-verified.zip）
-- ✅ 旧交付包已删除（score-analyzer.zip, score-analyzer-field-wiring-final.zip）
-- ✅ 代码已提交（commit: e1c6650）
-- ✅ 核心修复已完成（5 项）
+- ✅ Git 历史清理完成（无敏感文件残留）
+- ✅ 默认分支为 master
+- ✅ 核心修复已完成（6 项）
 - ✅ 测试覆盖已补充（7 个关键断言）
 
 **交付状态**: ✅ 完成
 
 ---
 
-**备注**: 本次交付完成了 Stage 1A-1 的最后语义缺口修复，确保 ResolvedFieldSchema 作为唯一语义源被正确消费。Stage 1A-2（字段确认 UI）开发已暂停，待稳定性修复完成后继续。
+**备注**: 本次交付完成了 Stage 1A-1 的语义缺口修复和 neutral/unspecified 用户提示优化，确保 ResolvedFieldSchema 作为唯一语义源被正确消费。Git 历史已清理敏感文件，项目已准备好公开发布。
