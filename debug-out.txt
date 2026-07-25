@@ -1,3 +1,0 @@
-console.log('DEBUG resultD.headers:', JSON.stringify(resultD.headers));
-console.log('DEBUG resultD.headerRowRange:', resultD.headerRowRange);
-assert('识别多级表头', resultD.isMultiRow === true, true);
