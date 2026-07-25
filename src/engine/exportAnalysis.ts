@@ -145,8 +145,9 @@ export function exportSummaryToCsv(
 
   lines.push('');
 
-  // 排名定位部分
-  if (position) {
+  // 排名定位部分（neutral/unspecified 不输出）
+  const isNeutralOrUnspecified = metricResult?.direction === 'neutral' || metricResult?.direction === 'unspecified';
+  if (position && !isNeutralOrUnspecified) {
     lines.push(buildCsvLine(['排名定位', '数值']));
     lines.push(buildCsvLine(['总人数', position.total]));
     lines.push(buildCsvLine(['高于你的数量', position.higherCount]));
@@ -184,6 +185,12 @@ export function exportSummaryToCsv(
     lines.push(buildCsvLine(['总行数', metricResult.totalRows]));
     lines.push(buildCsvLine(['有效值数量', metricResult.values.length]));
     lines.push(buildCsvLine(['无效值数量', metricResult.invalidCount]));
+    
+    // neutral/unspecified 添加说明
+    if (isNeutralOrUnspecified) {
+      lines.push('');
+      lines.push(buildCsvLine(['说明', '当前字段方向未指定，仅展示统计分布，不进行优劣排名。']));
+    }
   }
 
   return buildCsvContent(lines);
