@@ -66,7 +66,7 @@ const _updateLogsData: UpdateLogItem[] = [
   {
     date: '2026-07-25',
     version: 'v2.0.0',
-    title: '7月25日 更新公告',
+    title: '智能分析升级，体验更友好',
     type: 'improvement',
     items: [
       '优化数据分析体验：提升了表格数据识别能力，对不同类型的数据提供更准确的分析方式',
