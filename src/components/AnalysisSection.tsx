@@ -268,12 +268,18 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
   }, []);
 
   const handleCopySummary = useCallback(() => {
-    if (!stats || !position || !selectedField) return;
+    if (!stats || !selectedField) return;
+    
+    // neutral/unspecified 指标不生成排名部分
+    const isNeutralOrUnspecified = metricResult?.direction === 'neutral' || metricResult?.direction === 'unspecified';
+    
     const lines: string[] = [];
     lines.push('【数据分析摘要】');
     lines.push('');
     lines.push(`分析字段：${selectedField}`);
-    lines.push(`你的数值：${inputValue}`);
+    if (inputValue) {
+      lines.push(`你的数值：${inputValue}`);
+    }
     lines.push('');
     lines.push('一、统计指标');
     lines.push(`有效数值：${stats.validCount}`);
@@ -286,22 +292,30 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
     lines.push(`75% 分位：${formatNumber(stats.q75)}`);
     lines.push(`90% 分位：${formatNumber(stats.q90)}`);
     lines.push(`95% 分位：${formatNumber(stats.q95)}`);
-    lines.push('');
-    lines.push('二、排名定位');
-    lines.push(`高于该值人数：${position.higherCount}`);
-    lines.push(`等于该值人数：${position.equalCount}`);
-    lines.push(`低于该值人数：${position.lowerCount}`);
-    if (position.existsInData) {
-      lines.push(`名次区间：第 ${position.bestRank} 名 ~ 第 ${position.worstRank} 名`);
-    } else {
-      lines.push(`估算名次：第 ${position.estimatedRank} 名`);
-      lines.push('该值在表中不存在，名次为插入估算结果。');
+    
+    // neutral/unspecified 不生成排名定位部分
+    if (!isNeutralOrUnspecified && position) {
+      lines.push('');
+      lines.push('二、排名定位');
+      lines.push(`高于该值人数：${position.higherCount}`);
+      lines.push(`等于该值人数：${position.equalCount}`);
+      lines.push(`低于该值人数：${position.lowerCount}`);
+      if (position.existsInData) {
+        lines.push(`名次区间：第 ${position.bestRank} 名 ~ 第 ${position.worstRank} 名`);
+      } else {
+        lines.push(`估算名次：第 ${position.estimatedRank} 名`);
+        lines.push('该值在表中不存在，名次为插入估算结果。');
+      }
+      lines.push(`百分位：约高于 ${safeFormatPercent(position.percentile)} 的有效数据`);
+      lines.push('');
+      lines.push('三、口径说明');
+      lines.push('百分位口径：低于该值人数 / 有效数值数量 × 100%。');
+      lines.push('同分情况下使用名次区间，不强行给出单一名次。');
+    } else if (isNeutralOrUnspecified) {
+      lines.push('');
+      lines.push('二、说明');
+      lines.push('当前字段方向未指定，仅展示统计分布，不进行优劣排名。');
     }
-    lines.push(`百分位：约高于 ${safeFormatPercent(position.percentile)} 的有效数据`);
-    lines.push('');
-    lines.push('三、口径说明');
-    lines.push('百分位口径：低于该值人数 / 有效数值数量 × 100%。');
-    lines.push('同分情况下使用名次区间，不强行给出单一名次。');
 
     const text = lines.join('\n');
     const setMsg = (msg: string) => {
@@ -663,6 +677,26 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
                 <StatCard label="90% 分位" value={formatNumber(stats.q90)} />
                 <StatCard label="95% 分位" value={formatNumber(stats.q95)} />
               </div>
+              
+              {/* 导出操作区域 - 所有有 stats 的情况都可用 */}
+              <div style={{ display: 'flex', gap: '8px', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+                <button className="copy-btn" style={styles.copyButton} onClick={handleCopySummary}>复制分析摘要</button>
+                <button
+                  className="copy-btn"
+                  style={styles.exportButton}
+                  disabled={!stats}
+                  onClick={handleExportMetricSummary}
+                >
+                  导出指标摘要 CSV
+                </button>
+              </div>
+              
+              {/* neutral/unspecified 提示 */}
+              {(metricResult?.direction === 'neutral' || metricResult?.direction === 'unspecified') && (
+                <p style={{ ...styles.hint, marginTop: '12px' }}>
+                  当前字段方向未指定，仅展示统计分布，不进行优劣排名。
+                </p>
+              )}
             </section>
             </ErrorBoundary>
           )}
@@ -672,17 +706,6 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
             <section style={styles.section}>
               <div style={styles.positionHeader}>
                 <h2 style={styles.sectionTitle}>排名定位</h2>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button className="copy-btn" style={styles.copyButton} onClick={handleCopySummary}>复制分析摘要</button>
-                  <button
-                    className="copy-btn"
-                    style={styles.exportButton}
-                    disabled={!stats && !position}
-                    onClick={handleExportMetricSummary}
-                  >
-                    导出指标摘要 CSV
-                  </button>
-                </div>
               </div>
 
               {summaryText && <div style={styles.summaryBox}>{summaryText}</div>}

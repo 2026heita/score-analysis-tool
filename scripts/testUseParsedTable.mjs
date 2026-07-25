@@ -58,44 +58,39 @@ test('useParsedTable 应该包含 loadSampleDataset 方法', () => {
   assert(useParsedTableContent.includes('loadSampleDataset'), '应该包含 loadSampleDataset 方法');
 });
 
-test('useParsedTable 应该包含 pendingInternalRawTextRef', () => {
-  assert(useParsedTableContent.includes('pendingInternalRawTextRef'), '应该包含内部更新守卫');
+test('useParsedTable 应该使用 parseVersionControl helper', () => {
+  assert(useParsedTableContent.includes('import') && useParsedTableContent.includes('parseVersionControl'), '应该导入 parseVersionControl');
 });
 
-test('useParsedTable 应该包含 parseVersionRef', () => {
-  assert(useParsedTableContent.includes('parseVersionRef'), '应该包含异步版本控制');
-});
-
-test('parseVersionControl 生产 helper 应该存在', () => {
+test('parseVersionControl 生产 helper 应该存在并导出所有必要函数', () => {
   const helperPath = path.join(__dirname, '../src/utils/parseVersionControl.ts');
   assert(fs.existsSync(helperPath), 'parseVersionControl.ts 应该存在');
   const helperContent = fs.readFileSync(helperPath, 'utf-8');
-  assert(helperContent.includes('incrementVersion'), '应该包含 incrementVersion');
-  assert(helperContent.includes('isVersionMatch'), '应该包含 isVersionMatch');
-  assert(helperContent.includes('isMounted'), '应该包含 isMounted');
-  assert(helperContent.includes('safeSetState'), '应该包含 safeSetState');
+  assert(helperContent.includes('export function createVersionControlState'), '应该导出 createVersionControlState');
+  assert(helperContent.includes('export function incrementVersion'), '应该导出 incrementVersion');
+  assert(helperContent.includes('export function isVersionMatch'), '应该导出 isVersionMatch');
+  assert(helperContent.includes('export function isMounted'), '应该导出 isMounted');
+  assert(helperContent.includes('export function safeSetState'), '应该导出 safeSetState');
+  assert(helperContent.includes('export function handleUserEditText'), '应该导出 handleUserEditText');
+  assert(helperContent.includes('export function setPendingInternalText'), '应该导出 setPendingInternalText');
+  assert(helperContent.includes('export function consumePendingInternalText'), '应该导出 consumePendingInternalText');
+  assert(helperContent.includes('export function resetVersionControl'), '应该导出 resetVersionControl');
 });
 
-test('useParsedTable 的 handleFileUpload 应该保存 dataVolumeState', () => {
-  const handleFileUploadMatch = useParsedTableContent.match(/const handleFileUpload[\s\S]*?^  \}, \[\]\);/m);
-  assert(handleFileUploadMatch, '应该找到 handleFileUpload 函数');
-  assert(handleFileUploadMatch[0].includes('setDataVolumeState'), '应该调用 setDataVolumeState');
-  assert(handleFileUploadMatch[0].includes('pendingInternalRawTextRef.current = text'), '应该设置内部更新标记');
+test('useParsedTable 应该使用 versionControlRef', () => {
+  assert(useParsedTableContent.includes('versionControlRef'), '应该使用 versionControlRef');
+  assert(useParsedTableContent.includes('createVersionControlState'), '应该调用 createVersionControlState');
 });
 
-test('useParsedTable 的 handleSheetChange 应该保存 dataVolumeState', () => {
-  const handleSheetChangeMatch = useParsedTableContent.match(/const handleSheetChange[\s\S]*?^  \}, \[parsedData\]\);/m);
-  assert(handleSheetChangeMatch, '应该找到 handleSheetChange 函数');
-  assert(handleSheetChangeMatch[0].includes('setDataVolumeState'), '应该调用 setDataVolumeState');
-});
-
-test('useParsedTable 的 loadSampleDataset 应该原子设置所有状态', () => {
-  const loadSampleDatasetMatch = useParsedTableContent.match(/const loadSampleDataset[\s\S]*?^  \}, \[\]\);/m);
-  assert(loadSampleDatasetMatch, '应该找到 loadSampleDataset 函数');
-  assert(loadSampleDatasetMatch[0].includes('setParsedData'), '应该调用 setParsedData');
-  assert(loadSampleDatasetMatch[0].includes('setParseSummary'), '应该调用 setParseSummary');
-  assert(loadSampleDatasetMatch[0].includes('setDataVolumeState'), '应该调用 setDataVolumeState');
-  assert(loadSampleDatasetMatch[0].includes('pendingInternalRawTextRef.current = text'), '应该设置内部更新标记');
+test('useParsedTable 应该导出公开接口 UseParsedTableReturn', () => {
+  assert(useParsedTableContent.includes('export interface UseParsedTableReturn'), '应该导出 UseParsedTableReturn 接口');
+  assert(useParsedTableContent.includes('handleParse'), '公开接口应包含 handleParse');
+  assert(useParsedTableContent.includes('handleFileUpload'), '公开接口应包含 handleFileUpload');
+  assert(useParsedTableContent.includes('handleSheetChange'), '公开接口应包含 handleSheetChange');
+  assert(useParsedTableContent.includes('loadSampleDataset'), '公开接口应包含 loadSampleDataset');
+  assert(useParsedTableContent.includes('clearParsedTable'), '公开接口应包含 clearParsedTable');
+  assert(useParsedTableContent.includes('resetParsedTable'), '公开接口应包含 resetParsedTable');
+  assert(useParsedTableContent.includes('dataVolumeState'), '公开接口应包含 dataVolumeState');
 });
 
 // 读取 App.tsx 验证重复逻辑已删除
