@@ -1,6 +1,6 @@
 # Stage 1A-1 最终交付报告
 
-**提交哈希**: `5699675` (git-filter-repo 重写后)  
+**提交哈希**: 见 `git rev-parse HEAD` (git-filter-repo 重写后)  
 **分支**: `master` (默认分支)  
 **交付日期**: 2026-07-25  
 **交付包**: `score-analyzer-public-source.zip` (git archive 生成)
