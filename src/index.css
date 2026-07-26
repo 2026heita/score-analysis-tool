@@ -194,24 +194,77 @@ body::before {
   }
 }
 
-/* 滚动条美化 */
+/* 滚动条美化 - 柔和动态渐变效果 */
+
+/* Firefox 静态降级效果 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(140, 150, 230, 0.72) rgba(228, 232, 250, 0.45);
+}
+
+/* Chromium / Edge / Safari */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
-  border-radius: 3px;
+  background: rgba(232, 235, 250, 0.45);
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #a5b4fc 0%, #8b5cf6 100%);
-  border-radius: 3px;
+  min-height: 40px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: 
+    linear-gradient(
+      135deg,
+      rgba(125, 168, 255, 0.82),
+      rgba(178, 148, 239, 0.78),
+      rgba(113, 208, 202, 0.74),
+      rgba(125, 168, 255, 0.82)
+    );
+  background-size: 300% 300%;
+  background-clip: padding-box;
+  animation: scrollbar-gradient-flow 8s ease-in-out infinite;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #818cf8 0%, #7c3aed 100%);
+  background: 
+    linear-gradient(
+      135deg,
+      rgba(105, 151, 247, 0.94),
+      rgba(164, 128, 230, 0.9),
+      rgba(91, 193, 190, 0.88),
+      rgba(105, 151, 247, 0.94)
+    );
+  background-size: 300% 300%;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+@keyframes scrollbar-gradient-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* 尊重用户减少动画的系统设置 */
+@media (prefers-reduced-motion: reduce) {
+  ::-webkit-scrollbar-thumb {
+    animation: none;
+    background-position: 50% 50%;
+  }
 }
 
 /* 示例数据弹窗内卡片网格布局 */
