@@ -194,76 +194,51 @@ body::before {
   }
 }
 
-/* 滚动条美化 - 柔和动态渐变效果 */
-
-/* Firefox 静态降级效果 */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(140, 150, 230, 0.72) rgba(228, 232, 250, 0.45);
-}
-
-/* Chromium / Edge / Safari */
+/* 滚动条美化 */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(232, 235, 250, 0.45);
-  border-radius: 999px;
+  background: #f1f5f9;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb {
-  min-height: 40px;
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background: 
-    linear-gradient(
-      135deg,
-      rgba(125, 168, 255, 0.82),
-      rgba(178, 148, 239, 0.78),
-      rgba(113, 208, 202, 0.74),
-      rgba(125, 168, 255, 0.82)
-    );
+  background: linear-gradient(
+    180deg,
+    #6ea8ff,
+    #9b7cff,
+    #61d8c7,
+    #6ea8ff
+  );
   background-size: 300% 300%;
-  background-clip: padding-box;
-  animation: scrollbar-gradient-flow 8s ease-in-out infinite;
+  animation: scrollbarColorMove 4s ease infinite;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: 
-    linear-gradient(
-      135deg,
-      rgba(105, 151, 247, 0.94),
-      rgba(164, 128, 230, 0.9),
-      rgba(91, 193, 190, 0.88),
-      rgba(105, 151, 247, 0.94)
-    );
+  background: linear-gradient(
+    180deg,
+    #5a94e8,
+    #8568e8,
+    #4fc4b3,
+    #5a94e8
+  );
   background-size: 300% 300%;
-  background-clip: padding-box;
+  animation: scrollbarColorMove 4s ease infinite;
 }
 
-::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-@keyframes scrollbar-gradient-flow {
+@keyframes scrollbarColorMove {
   0% {
-    background-position: 0% 50%;
+    background-position: 0% 0%;
   }
   50% {
-    background-position: 100% 50%;
+    background-position: 100% 100%;
   }
   100% {
-    background-position: 0% 50%;
-  }
-}
-
-/* 尊重用户减少动画的系统设置 */
-@media (prefers-reduced-motion: reduce) {
-  ::-webkit-scrollbar-thumb {
-    animation: none;
-    background-position: 50% 50%;
+    background-position: 0% 0%;
   }
 }
 
