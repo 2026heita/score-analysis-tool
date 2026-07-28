@@ -14,6 +14,7 @@ import { useFilterState } from './hooks/useFilterState';
 import { useGroupAnalysis } from './hooks/useGroupAnalysis';
 import { useAnalysisDataset } from './hooks/useAnalysisDataset';
 import { calculateFieldAnalyticScore } from './utils/tableParser/fieldClassifier';
+import { createHeroDataFlowSelection } from './data/heroDataFlowPool';
 
 // v1.8: Lazy load analysis section — 分析引擎 + 图表不在首屏加载
 const AnalysisSection = lazy(() => import('./components/AnalysisSection'));
@@ -94,6 +95,9 @@ export default function App() {
     savedState?.originalFieldRadar ?? { selections: [], viewMode: 'bar' }
   );
   const [showDebugPanel, setShowDebugPanel] = useState(false);
+
+  // ===== Hero 数据流候选池选择（惰性初始化，确保文本稳定） =====
+  const [heroDataFlowTexts] = useState(() => createHeroDataFlowSelection());
 
   // ===== Stage 0A-1: 分析能力判断 =====
   const canAnalyze = useMemo(() => {
@@ -417,19 +421,15 @@ export default function App() {
         </header>
 
         {/* 数据流动画层：放在 header 外，避免 overflow:hidden 裁切 */}
-        <div className="hero-data-flow">
-          <div className="hero-data-element hero-data-element-1">42₁₀ = 101010₂</div>
-          <div className="hero-data-element hero-data-element-2">95% CI=[0.84, 0.90]</div>
-          <div className="hero-data-element hero-data-element-3">x̄=Σxᵢ/n · z=(x−μ)/σ</div>
-          <div className="hero-data-element hero-data-element-4">μ̂=85.3 · σ̂=7.4 · n=1024</div>
-          <div className="hero-data-element hero-data-element-5">ETL: extract→transform→load</div>
-          <div className="hero-data-element hero-data-element-6">∫₀¹ x²dx = 1/3</div>
-          <div className="hero-data-element hero-data-element-7">P(A|B)=P(B|A)P(A)/P(B)</div>
-          <div className="hero-data-element hero-data-element-8">O(n log n) · hash(k)→bucket</div>
-          <div className="hero-data-element hero-data-element-9">det(A−λI)=0 · Av=λv</div>
-          <div className="hero-data-element hero-data-element-10">ŷ=β₀+βᵀx · R²=1−SSE/SST</div>
-          <div className="hero-data-element hero-data-element-11">H(X)=−Σpᵢlog₂pᵢ</div>
-          <div className="hero-data-element hero-data-element-12">θ←θ−η∇L(θ) · ε=10⁻⁶</div>
+        <div className="hero-data-flow" aria-hidden="true">
+          {heroDataFlowTexts.map((text, index) => (
+            <div 
+              key={`hero-data-element-${index + 1}`} 
+              className={`hero-data-element hero-data-element-${index + 1}`}
+            >
+              {text}
+            </div>
+          ))}
         </div>
       </div>
 
