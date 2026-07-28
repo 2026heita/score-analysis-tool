@@ -64,6 +64,17 @@ export interface UpdateLogItem {
 
 const _updateLogsData: UpdateLogItem[] = [
   {
+    date: '2026-07-28',
+    version: 'v2.0.1',
+    title: '首页视觉体验优化',
+    type: 'improvement',
+    items: [
+      '首页背景数据流展示更丰富的专业内容，涵盖数学、统计、算法、机器学习等多个领域的经典公式和概念',
+      '每次打开页面时，背景公式会随机变化，带来不同的视觉体验',
+      '操作过程中背景内容保持稳定，不会因数据输入或按钮点击而改变'
+    ]
+  },
+  {
     date: '2026-07-25',
     version: 'v2.0.0',
     title: '智能分析升级，体验更友好',
