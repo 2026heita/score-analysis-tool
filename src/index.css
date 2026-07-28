@@ -192,6 +192,72 @@ body::before {
     background-size: 30px 30px;
     opacity: 0.3;
   }
+
+  /* Hero 数据流响应式适配 - 768px 及以下 */
+  /* 隐藏 4 条数据流，保留 8 条 */
+  .hero-data-element-4,
+  .hero-data-element-9,
+  .hero-data-element-10,
+  .hero-data-element-11 {
+    display: none;
+  }
+
+  /* 重新分配剩余 8 条的垂直位置 */
+  .hero-data-element-1 {
+    top: 6%;
+  }
+
+  .hero-data-element-2 {
+    top: 18%;
+  }
+
+  .hero-data-element-3 {
+    top: 30%;
+  }
+
+  .hero-data-element-5 {
+    top: 42%;
+  }
+
+  .hero-data-element-6 {
+    top: 54%;
+  }
+
+  .hero-data-element-7 {
+    top: 66%;
+  }
+
+  .hero-data-element-8 {
+    top: 78%;
+  }
+
+  .hero-data-element-12 {
+    top: 90%;
+  }
+
+  /* 调整遮罩区域，从 7%/93% 扩大到 9%/91% */
+  .hero-data-flow {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent 0%,
+      #000 9%,
+      #000 91%,
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent 0%,
+      #000 9%,
+      #000 91%,
+      transparent 100%
+    );
+  }
+
+  /* 统一移动端运动方向为正向 */
+  .hero-data-element-2,
+  .hero-data-element-7 {
+    animation-direction: normal;
+  }
 }
 
 /* 滚动条美化 */
@@ -206,40 +272,12 @@ body::before {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(
-    180deg,
-    #6ea8ff,
-    #9b7cff,
-    #61d8c7,
-    #6ea8ff
-  );
-  background-size: 300% 300%;
-  animation: scrollbarColorMove 4s ease infinite;
+  background: linear-gradient(180deg, #a5b4fc 0%, #8b5cf6 100%);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(
-    180deg,
-    #5a94e8,
-    #8568e8,
-    #4fc4b3,
-    #5a94e8
-  );
-  background-size: 300% 300%;
-  animation: scrollbarColorMove 4s ease infinite;
-}
-
-@keyframes scrollbarColorMove {
-  0% {
-    background-position: 0% 0%;
-  }
-  50% {
-    background-position: 100% 100%;
-  }
-  100% {
-    background-position: 0% 0%;
-  }
+  background: linear-gradient(180deg, #818cf8 0%, #7c3aed 100%);
 }
 
 /* 示例数据弹窗内卡片网格布局 */
@@ -259,4 +297,371 @@ body::before {
 .log-entry-latest {
   border-left: 3px solid #6366f1;
   padding-left: 12px;
+}
+
+/* Hero 面板动态光晕背景 */
+@keyframes heroGlow {
+  0%, 100% {
+    opacity: 0.4;
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: translate(20px, -10px) scale(1.1);
+  }
+}
+
+@keyframes heroGlow2 {
+  0%, 100% {
+    opacity: 0.3;
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: translate(-15px, 15px) scale(1.05);
+  }
+}
+
+.hero-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  pointer-events: none;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+.hero-glow-1 {
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.3) 0%, transparent 70%);
+  top: -100px;
+  left: 10%;
+  animation: heroGlow 10s infinite;
+}
+
+.hero-glow-2 {
+  width: 350px;
+  height: 350px;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.25) 0%, transparent 70%);
+  bottom: -80px;
+  right: 15%;
+  animation: heroGlow2 12s infinite;
+}
+
+/* 标题文字渐变效果 */
+@keyframes titleShimmer {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.hero-title-shimmer {
+  background: linear-gradient(90deg, #ffffff 0%, #c7d2fe 25%, #ffffff 50%, #c7d2fe 75%, #ffffff 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: titleShimmer 8s ease-in-out infinite;
+}
+
+/* Hero 信息标签玻璃拟态 */
+.hero-info-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  backdrop-filter: blur(8px);
+  transition: all 0.2s ease;
+}
+
+.hero-info-tag:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: translateY(-1px);
+}
+
+/* Hero 科技装饰网格 */
+.hero-grid-decoration {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  opacity: 0.4;
+}
+
+/* 按钮视觉优化 */
+.hero-btn-primary {
+  padding: 4px 12px;
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.hero-btn-primary:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.45);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
+}
+
+.hero-btn-secondary {
+  padding: 4px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  backdrop-filter: blur(4px);
+}
+
+.hero-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.9);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+/* Hero 前景内容层 - 位于数据流上方 */
+.hero-foreground {
+  position: relative;
+  z-index: 3;
+}
+
+/* Hero 数据流动画背景 */
+.hero-data-flow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 2;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    #000 7%,
+    #000 93%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    #000 7%,
+    #000 93%,
+    transparent 100%
+  );
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+}
+
+.hero-data-flow::before,
+.hero-data-flow::after {
+  content: '';
+  position: absolute;
+  width: 200%;
+  height: 100%;
+  background-repeat: repeat-x;
+  opacity: 0.08;
+}
+
+.hero-data-flow::before {
+  background-image: 
+    linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.3) 10%, transparent 20%),
+    linear-gradient(90deg, transparent 30%, rgba(199, 210, 254, 0.2) 40%, transparent 50%),
+    linear-gradient(90deg, transparent 60%, rgba(167, 139, 250, 0.25) 70%, transparent 80%);
+  animation: dataFlow 15s linear infinite;
+  filter: blur(1px);
+}
+
+.hero-data-flow::after {
+  background-image: 
+    linear-gradient(90deg, transparent 15%, rgba(255, 255, 255, 0.2) 25%, transparent 35%),
+    linear-gradient(90deg, transparent 45%, rgba(199, 210, 254, 0.15) 55%, transparent 65%),
+    linear-gradient(90deg, transparent 75%, rgba(167, 139, 250, 0.2) 85%, transparent 95%);
+  animation: dataFlow 20s linear infinite;
+  animation-delay: -5s;
+  filter: blur(2px);
+  opacity: 0.06;
+}
+
+@keyframes dataFlow {
+  0% {
+    transform: translateX(-50%);
+  }
+  100% {
+    transform: translateX(0%);
+  }
+}
+
+/* 数据流文字元素 */
+.hero-data-element {
+  position: absolute;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.18);
+  text-shadow: 0 0 6px rgba(199, 210, 254, 0.5);
+  pointer-events: none;
+  white-space: nowrap;
+  line-height: 1;
+  letter-spacing: 2px;
+  z-index: 0;
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.hero-data-element-1 {
+  top: 3%;
+  animation: dataElementFlow1 15s linear infinite;
+  animation-delay: -2.3s;
+  color: rgba(255, 255, 255, 0.23);
+}
+
+.hero-data-element-2 {
+  top: 11%;
+  animation: dataElementFlow2 20s linear infinite;
+  animation-delay: -15s;
+  animation-direction: reverse;
+  font-size: 11px;
+}
+
+.hero-data-element-3 {
+  top: 20%;
+  animation: dataElementFlow3 13s linear infinite;
+  animation-delay: -4.4s;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.13);
+}
+
+.hero-data-element-4 {
+  top: 27%;
+  animation: dataElementFlow4 22s linear infinite;
+  animation-delay: -17.4s;
+  font-size: 12px;
+}
+
+.hero-data-element-5 {
+  top: 36%;
+  animation: dataElementFlow5 18s linear infinite;
+  animation-delay: -8.5s;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.13);
+}
+
+.hero-data-element-6 {
+  top: 44%;
+  animation: dataElementFlow1 17s linear infinite;
+  animation-delay: -3.6s;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.23);
+}
+
+.hero-data-element-7 {
+  top: 52%;
+  animation: dataElementFlow3 19s linear infinite;
+  animation-delay: -8.4s;
+  animation-direction: reverse;
+  font-size: 11px;
+}
+
+.hero-data-element-8 {
+  top: 61%;
+  animation: dataElementFlow5 21s linear infinite;
+  animation-delay: -8.4s;
+  font-size: 13px;
+}
+
+.hero-data-element-9 {
+  top: 68%;
+  animation: dataElementFlow2 23s linear infinite;
+  animation-delay: -19.6s;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.23);
+}
+
+.hero-data-element-10 {
+  top: 76%;
+  animation: dataElementFlow4 26s linear infinite;
+  animation-delay: -13.8s;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.13);
+}
+
+.hero-data-element-11 {
+  top: 83%;
+  animation: dataElementFlow1 17s linear infinite;
+  animation-delay: -3.1s;
+  animation-direction: reverse;
+  font-size: 12px;
+}
+
+.hero-data-element-12 {
+  top: 90%;
+  animation: dataElementFlow3 28s linear infinite;
+  animation-delay: -20.2s;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.13);
+}
+
+@keyframes dataElementFlow1 {
+  0%   { transform: translateX(-200px); }
+  100% { transform: translateX(calc(100vw + 200px)); }
+}
+
+@keyframes dataElementFlow2 {
+  0%   { transform: translateX(-250px); }
+  100% { transform: translateX(calc(100vw + 250px)); }
+}
+
+@keyframes dataElementFlow3 {
+  0%   { transform: translateX(-150px); }
+  100% { transform: translateX(calc(100vw + 150px)); }
+}
+
+@keyframes dataElementFlow4 {
+  0%   { transform: translateX(-180px); }
+  100% { transform: translateX(calc(100vw + 180px)); }
+}
+
+@keyframes dataElementFlow5 {
+  0%   { transform: translateX(-160px); }
+  100% { transform: translateX(calc(100vw + 160px)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-data-element {
+    animation-play-state: paused !important;
+  }
+
+  .hero-data-flow::before,
+  .hero-data-flow::after {
+    animation-play-state: paused !important;
+  }
 }
