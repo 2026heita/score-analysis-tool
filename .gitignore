@@ -32,3 +32,9 @@ Thumbs.db
 *.zip
 *.tar.gz
 *.rar
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+!.env.example
