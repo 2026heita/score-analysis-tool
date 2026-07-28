@@ -390,16 +390,48 @@ export default function App() {
   // ===== 渲染 =====
   return (
     <div style={styles.container}>
-      <header style={styles.header}>
-        <h1 style={styles.title}>{APP_NAME}</h1>
-        <p style={styles.subtitle}>粘贴表格数据，快速分析数据分布、排名与相对位置</p>
-        <div style={styles.headerActions}>
-          <button className="header-btn" style={styles.headerButton} onClick={handleSave}>保存当前输入</button>
-          <button className="header-btn" style={styles.headerButton} onClick={() => { if (window.confirm('确定恢复默认设置？当前输入会被覆盖。')) handleReset(); }}>恢复默认</button>
-          <button className="header-btn" style={{ ...styles.headerButton, color: '#fca5a5' }} onClick={() => { if (window.confirm('确定清空所有数据？')) handleClear(); }}>清空数据</button>
+      <div style={styles.heroWrapper}>
+        <header style={styles.header}>
+          {/* 动态光晕背景 */}
+          <div className="hero-glow hero-glow-1" />
+          <div className="hero-glow hero-glow-2" />
+          {/* 科技装饰网格 */}
+          <div className="hero-grid-decoration" />
+
+          <div className="hero-foreground">
+            <h1 className="hero-title-shimmer" style={styles.title}>{APP_NAME}</h1>
+            <p style={styles.subtitle}>粘贴表格数据，快速分析数据分布、排名与相对位置</p>
+            <div style={styles.headerActions}>
+              <button className="hero-btn-primary" onClick={handleSave}>保存当前输入</button>
+              <button className="hero-btn-secondary" onClick={() => { if (window.confirm('确定恢复默认设置？当前输入会被覆盖。')) handleReset(); }}>恢复默认</button>
+              <button className="hero-btn-secondary" style={{ color: '#fca5a5', borderColor: 'rgba(252, 165, 165, 0.3)' }} onClick={() => { if (window.confirm('确定清空所有数据？')) handleClear(); }}>清空数据</button>
+            </div>
+            {/* 信息标签 */}
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '16px', flexWrap: 'wrap' }}>
+              <span className="hero-info-tag">🔒 浏览器本地处理</span>
+              <span className="hero-info-tag"> 支持 Excel / CSV</span>
+              <span className="hero-info-tag">⚡ 快速分析</span>
+            </div>
+            {saveMsg && <p style={styles.saveMsg}>{saveMsg}</p>}
+          </div>
+        </header>
+
+        {/* 数据流动画层：放在 header 外，避免 overflow:hidden 裁切 */}
+        <div className="hero-data-flow">
+          <div className="hero-data-element hero-data-element-1">42₁₀ = 101010₂</div>
+          <div className="hero-data-element hero-data-element-2">95% CI=[0.84, 0.90]</div>
+          <div className="hero-data-element hero-data-element-3">x̄=Σxᵢ/n · z=(x−μ)/σ</div>
+          <div className="hero-data-element hero-data-element-4">μ̂=85.3 · σ̂=7.4 · n=1024</div>
+          <div className="hero-data-element hero-data-element-5">ETL: extract→transform→load</div>
+          <div className="hero-data-element hero-data-element-6">∫₀¹ x²dx = 1/3</div>
+          <div className="hero-data-element hero-data-element-7">P(A|B)=P(B|A)P(A)/P(B)</div>
+          <div className="hero-data-element hero-data-element-8">O(n log n) · hash(k)→bucket</div>
+          <div className="hero-data-element hero-data-element-9">det(A−λI)=0 · Av=λv</div>
+          <div className="hero-data-element hero-data-element-10">ŷ=β₀+βᵀx · R²=1−SSE/SST</div>
+          <div className="hero-data-element hero-data-element-11">H(X)=−Σpᵢlog₂pᵢ</div>
+          <div className="hero-data-element hero-data-element-12">θ←θ−η∇L(θ) · ε=10⁻⁶</div>
         </div>
-        {saveMsg && <p style={styles.saveMsg}>{saveMsg}</p>}
-      </header>
+      </div>
 
       <main style={styles.main}>
         {/* 数据输入区 */}
@@ -532,6 +564,7 @@ export default function App() {
 
 const styles: Record<string, React.CSSProperties> = {
   container: { minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', color: '#1e293b', position: 'relative', zIndex: 1 },
+  heroWrapper: { position: 'relative' },
   header: { background: 'linear-gradient(135deg, #4338ca 0%, #6366f1 40%, #7c3aed 100%)', color: '#fff', padding: '32px 24px', textAlign: 'center', position: 'relative', overflow: 'hidden' },
   title: { margin: '0 0 4px', fontSize: '28px', fontWeight: 700, letterSpacing: '-0.02em', textShadow: '0 2px 4px rgba(0,0,0,0.1)' },
   subtitle: { margin: '0 0 14px', fontSize: '14px', opacity: 0.9, fontWeight: 400 },
