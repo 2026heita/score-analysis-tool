@@ -6,4 +6,4 @@
  * 页面显示版本 = APP_VERSION（带 v 前缀）
  */
 
-export const APP_VERSION = 'v2.0.0';
+export const APP_VERSION = 'v2.0.1';
