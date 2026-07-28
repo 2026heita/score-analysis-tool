@@ -62,6 +62,8 @@ export interface UseParsedTableReturn {
   loadSampleDataset: (headers: string[], rows: Record<string, string | number | null>[]) => void;
   clearParsedTable: () => void;
   resetParsedTable: () => void;
+  /** 外部结构化数据注入（零售 BI 等），安全清理旧状态并注入新 ParsedTable */
+  applyExternalParsedTable: (table: ParsedTable) => void;
   /** v1.4：统一表切换标识，每次数据变更时自增，驱动下游 hook 重置 */
   activeTableId: number;
   /** Stage 0A-1：数据量状态（记录解析阶段的行数口径信息） */
@@ -86,6 +88,9 @@ export function useParsedTable(): UseParsedTableReturn {
 
   // Stage 0A-1: 异步解析版本控制（防止旧解析结果覆盖新数据）
   const versionControlRef = useRef<VersionControlState>(createVersionControlState());
+
+  // 外部数据注入时跳过下一次 rawText effect 的标志
+  const skipNextRawTextEffectRef = useRef(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null!);
 
@@ -171,18 +176,24 @@ export function useParsedTable(): UseParsedTableReturn {
 
   // ===== 自动解析已粘贴的数据 =====
   useEffect(() => {
+    // 检查是否为外部数据注入后的跳过标志
+    if (skipNextRawTextEffectRef.current) {
+      skipNextRawTextEffectRef.current = false;
+      return;
+    }
+
     if (!rawText.trim()) {
       // 空文本时清空解析结果
       clearParseState();
       return;
     }
-    
+
     // 检查是否为内部同步更新
     if (consumePendingInternalText(versionControlRef.current, rawText)) {
       // 消费内部更新标记，不重新解析
       return;
     }
-    
+
     // 用户输入处理：执行解析
     try {
       const result = parseTableText(rawText);
@@ -352,6 +363,33 @@ export function useParsedTable(): UseParsedTableReturn {
     clearParseState();
   }, [clearParseState, safeSetState]);
 
+  // ===== 外部结构化数据注入（零售 BI 等） =====
+  const applyExternalParsedTable = useCallback((table: ParsedTable) => {
+    // 1. 重置版本控制，使旧的文件解析任务失效
+    resetVersionControl(versionControlRef.current);
+
+    // 2. 设置跳过标志（仅当 rawText 当前非空时）
+    // 如果 rawText 已经是空字符串，setRawTextState('') 不会触发 re-render/effect
+    // 此时设置标志会导致标志永久残留，影响下一次真实输入
+    if (rawText.trim()) {
+      skipNextRawTextEffectRef.current = true;
+    }
+
+    // 3. 清空 rawText
+    safeSetState(setRawTextState, '');
+
+    // 4. 注入外部数据
+    setParsedData(table);
+    setParseWarnings(table.warnings || []);
+    setParseError(null);
+    setFileError(null);
+    setParseSummary(table.summary ?? null);
+    setAvailableSheets(null);
+    setSelectedSheet(null);
+    setDataVolumeState(table.dataVolumeState ?? null);
+    setIsParsing(false);
+  }, [rawText, safeSetState]);
+
   return {
     rawText, setRawText,
     parsedData, setParsedData,
@@ -370,6 +408,7 @@ export function useParsedTable(): UseParsedTableReturn {
     loadSampleDataset,
     clearParsedTable,
     resetParsedTable,
+    applyExternalParsedTable,
     activeTableId,
     dataVolumeState,
     setDataVolumeState,

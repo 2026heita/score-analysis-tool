@@ -3,7 +3,7 @@ import { usePersistedState } from './hooks/usePersistedState';
 import { useParsedTable } from './hooks/useParsedTable';
 import { APP_VERSION } from './config/version';
 import { APP_NAME } from './config/app';
-import type { ChartTab, OriginalFieldRadarState } from './types';
+import type { ChartTab, OriginalFieldRadarState, ParsedTable } from './types';
 import UsageGuide from './components/UsageGuide';
 import UpdateNotice from './components/UpdateNotice';
 import { clearOriginalFieldRadarCache } from './components/charts/OriginalFieldRadar';
@@ -15,6 +15,7 @@ import { useGroupAnalysis } from './hooks/useGroupAnalysis';
 import { useAnalysisDataset } from './hooks/useAnalysisDataset';
 import { calculateFieldAnalyticScore } from './utils/tableParser/fieldClassifier';
 import { createHeroDataFlowSelection } from './data/heroDataFlowPool';
+import { RetailBiConnectionForm } from './components/RetailBiConnectionForm';
 
 // v1.8: Lazy load analysis section — 分析引擎 + 图表不在首屏加载
 const AnalysisSection = lazy(() => import('./components/AnalysisSection'));
@@ -82,6 +83,7 @@ export default function App() {
     handleSheetChange,
     loadSampleDataset,
     clearParsedTable,
+    applyExternalParsedTable, // 零售 BI 数据注入
   } = useParsedTable();
 
   // ===== 用户交互状态 =====
@@ -357,6 +359,30 @@ export default function App() {
     setTimeout(() => setSaveMsg(null), 2000);
   }, [clear, clearParsedTable, resetFilter, resetGroupAnalysis]);
 
+  // ===== 零售 BI 数据加载回调 =====
+  const handleRetailBiDataLoaded = useCallback(
+    (table: ParsedTable) => {
+      // 使用 applyExternalParsedTable 安全注入数据
+      // 该方法内部处理：版本控制、rawText 清空、skipNextRawTextEffect 标志、所有状态注入
+      applyExternalParsedTable(table);
+
+      // 重置用户交互状态
+      setSelectedField('');
+      setInputValue('');
+      setShowAllFields(false);
+      setActiveChartTab('histogram');
+      setOriginalFieldState({ selections: [], viewMode: 'bar' });
+      clearOriginalFieldRadarCache();
+      resetGroupAnalysis();
+      resetFilter();
+    },
+    [
+      applyExternalParsedTable,
+      resetFilter,
+      resetGroupAnalysis,
+    ],
+  );
+
   const handleFillSample = useCallback(() => {
     setShowSampleSelector(true);
   }, []);
@@ -470,6 +496,16 @@ export default function App() {
             <button className="parse-btn" style={styles.parseButton} onClick={handleParseWithReset}>解析数据</button>
             <button className="sample-btn" style={styles.sampleButton} onClick={handleFillSample}>填入示例数据</button>
           </div>
+
+          {/* 零售 BI 连接区域 */}
+          <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+            <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 600, color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ display: 'inline-block', width: '4px', height: '18px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', borderRadius: '2px' }} />
+              连接零售 BI 项目
+            </h3>
+            <RetailBiConnectionForm onDataLoaded={handleRetailBiDataLoaded} />
+          </div>
+
           {parseError && <p style={styles.error}>{parseError}</p>}
           {fileError && <p style={styles.error}>{fileError}</p>}
           {isParsing && <p style={styles.loading}>正在解析文件...</p>}
