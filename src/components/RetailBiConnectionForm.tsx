@@ -44,13 +44,33 @@ interface StoredConnectionConfig {
 const STORAGE_KEY = 'game-score.retail-bi.connection';
 
 /**
+ * 旧版 localhost 地址列表（需要清除的默认值）。
+ */
+const LEGACY_LOCALHOST_URLS = new Set([
+  'http://localhost:8080',
+  'http://localhost:8080/',
+  'http://127.0.0.1:8080',
+  'http://127.0.0.1:8080/',
+]);
+
+/**
  * 从 localStorage 读取连接配置。
+ *
+ * 如果保存的地址是旧版 localhost 默认值，则清除该存储键。
  */
 function loadStoredConfig(): StoredConnectionConfig | null {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (!stored) return null;
-    return JSON.parse(stored) as StoredConnectionConfig;
+    const config = JSON.parse(stored) as StoredConnectionConfig;
+
+    // 兼容旧配置：清除 localhost 默认值
+    if (config.baseUrl && LEGACY_LOCALHOST_URLS.has(config.baseUrl)) {
+      localStorage.removeItem(STORAGE_KEY);
+      return null;
+    }
+
+    return config;
   } catch {
     return null;
   }
@@ -89,10 +109,11 @@ export function RetailBiConnectionForm({
   useEffect(() => {
     const stored = loadStoredConfig();
     if (stored) {
-      setBaseUrl(stored.baseUrl || getDefaultRetailBiBaseUrl());
+      setBaseUrl(stored.baseUrl || '');
       setStartDate(stored.startDate || '');
       setEndDate(stored.endDate || '');
     } else {
+      // 仅使用显式环境变量，不自动填入 localhost
       setBaseUrl(getDefaultRetailBiBaseUrl());
     }
   }, []);
@@ -227,19 +248,21 @@ export function RetailBiConnectionForm({
             <label style={styles.label}>API 基础地址</label>
             <input
               type="text"
+              className="retail-bi-input"
               style={styles.input}
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="http://localhost:8080"
+              placeholder="https://api.example.com"
               disabled={isLoading}
             />
           </div>
 
-          <div style={styles.dateRow}>
-            <div style={styles.dateGroup}>
+          <div className="retail-bi-date-row" style={styles.dateRow}>
+            <div className="retail-bi-date-group" style={styles.dateGroup}>
               <label style={styles.label}>开始日期</label>
               <input
                 type="date"
+                className="retail-bi-input"
                 style={styles.input}
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
@@ -247,10 +270,11 @@ export function RetailBiConnectionForm({
               />
             </div>
 
-            <div style={styles.dateGroup}>
+            <div className="retail-bi-date-group" style={styles.dateGroup}>
               <label style={styles.label}>结束日期</label>
               <input
                 type="date"
+                className="retail-bi-input"
                 style={styles.input}
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
@@ -360,11 +384,14 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '6px',
   },
   dateRow: {
-    display: 'flex',
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
     gap: '16px',
+    width: '100%',
   },
   dateGroup: {
-    flex: 1,
+    minWidth: 0,
+    width: '100%',
     display: 'flex',
     flexDirection: 'column',
     gap: '6px',
@@ -382,6 +409,10 @@ const styles: Record<string, React.CSSProperties> = {
     boxSizing: 'border-box',
     outline: 'none',
     transition: 'border-color 0.15s',
+    width: '100%',
+    minWidth: 0,
+    maxWidth: '100%',
+    display: 'block',
   },
   button: {
     padding: '10px 24px',

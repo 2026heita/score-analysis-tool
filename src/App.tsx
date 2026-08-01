@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
 import { usePersistedState } from './hooks/usePersistedState';
 import { useParsedTable } from './hooks/useParsedTable';
-import { APP_VERSION } from './config/version';
+import { latestAppVersion } from './data/updateLogs';
 import { APP_NAME } from './config/app';
 import type { ChartTab, OriginalFieldRadarState, ParsedTable } from './types';
 import UsageGuide from './components/UsageGuide';
@@ -581,7 +581,7 @@ export default function App() {
       </main>
 
       <footer style={styles.footer}>
-        <div style={styles.footerVersion}>版本：{APP_VERSION}</div>
+        <div style={styles.footerVersion}>版本：{latestAppVersion}</div>
         <div style={styles.footerSection}>
           <div style={styles.footerLabel}>说明：</div>
           <p style={styles.footerText}>本工具仅基于当前加载的数据进行统计分析，不代表官方评价或业务结论。若当前数据不是完整全量数据，百分位、相对位置和图表结果可能存在偏差。</p>

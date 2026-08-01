@@ -31,20 +31,30 @@ export class RetailBiApiError extends Error {
 /**
  * 获取默认零售 BI API 地址。
  *
- * 优先使用 Vite 环境变量，未配置时使用本地 Spring Boot 地址。
+ * 仅读取显式环境变量，不返回任何默认地址。
  */
 export function getDefaultRetailBiBaseUrl(): string {
-  const configuredUrl =
-    import.meta.env.VITE_RETAIL_BI_API_BASE_URL?.trim();
-
-  return configuredUrl || 'http://localhost:8080';
+  return import.meta.env.VITE_RETAIL_BI_API_BASE_URL?.trim() || '';
 }
 
 /**
  * 处理用户填写的基础地址。
+ *
+ * 优先使用用户输入地址；其次使用显式环境变量；
+ * 两者均为空时抛出异常，不得发起网络请求。
  */
 function resolveBaseUrl(baseUrl: string): string {
-  return baseUrl.trim() || getDefaultRetailBiBaseUrl();
+  const userUrl = baseUrl.trim();
+  if (userUrl) {
+    return userUrl;
+  }
+
+  const envUrl = getDefaultRetailBiBaseUrl();
+  if (envUrl) {
+    return envUrl;
+  }
+
+  throw new RetailBiApiError('请输入 API 基础地址');
 }
 
 /**

@@ -1,12 +1,13 @@
 {
   "name": "score-analyzer",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "npm run check:version && tsc -b && vite build",
     "preview": "vite preview",
+    "check:version": "node scripts/checkVersionConsistency.mjs",
     "verify:stats": "node scripts/verifyStats.mjs",
     "test:parser": "node scripts/testParser.mjs",
     "test:parseReport": "node scripts/testParseReport.mjs",

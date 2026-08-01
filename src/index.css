@@ -299,6 +299,21 @@ body::before {
   padding-left: 12px;
 }
 
+/* 零售 BI 连接表单 - 手机端日期布局 */
+@media (max-width: 520px) {
+  .retail-bi-date-row {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 12px !important;
+  }
+
+  .retail-bi-date-group,
+  .retail-bi-input {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+}
+
 /* Hero 面板动态光晕背景 */
 @keyframes heroGlow {
   0%, 100% {

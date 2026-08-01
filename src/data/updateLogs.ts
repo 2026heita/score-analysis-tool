@@ -237,6 +237,17 @@ for (const entry of _updateLogsData) {
  */
 export const updateLogs: readonly UpdateLogItem[] = Object.freeze(_updateLogsData);
 
+// ─── 最新公告导出 ───────────────────────────────────────────────
+
+const latestEntry = updateLogs[0];
+
+if (!latestEntry) {
+  throw new Error('updateLogs 至少需要包含一条发布公告');
+}
+
+export const latestUpdateLog = latestEntry;
+export const latestAppVersion = latestEntry.version;
+
 // ─── DEV 环境防误用检测 + 内容边界校验 ─────────────────────────
 
 if (import.meta.env.DEV) {
