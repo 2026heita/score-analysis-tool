@@ -241,7 +241,10 @@ export function RetailBiConnectionForm({
 
         <div style={styles.expandedContent}>
           <div style={styles.connectorLabel}>
-            当前连接器：零售经营指标 API
+            当前支持：零售经营指标接口
+            <div style={styles.connectorHint}>
+              用于连接项目配套的零售 BI 服务，暂不支持任意 API 数据格式。
+            </div>
           </div>
 
           <div style={styles.formGroup}>
@@ -377,6 +380,11 @@ const styles: Record<string, React.CSSProperties> = {
     background: '#f8fafc',
     borderRadius: '6px',
     border: '1px solid #e2e8f0',
+  },
+  connectorHint: {
+    fontSize: '11px',
+    color: '#94a3b8',
+    marginTop: '4px',
   },
   formGroup: {
     display: 'flex',
