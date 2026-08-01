@@ -11,7 +11,7 @@ import type { ParsedTable } from '../types';
 export function parseTableText(text: string): ParsedTable {
   const trimmed = text.trim();
   if (!trimmed) {
-    throw new Error('请先粘贴表格数据。');
+    throw new Error('请先粘贴或输入表格数据。');
   }
 
   const lines = trimmed.split(/\r?\n/);

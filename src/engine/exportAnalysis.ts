@@ -103,7 +103,7 @@ export function exportFilteredRowsToCsv(rows: Record<string, string>[], headers:
 /**
  * 导出当前指标摘要为 CSV
  * 
- * 包含：统计指标 + 排名定位 + 抽样信息
+ * 包含：统计指标 + 相对位置 + 抽样信息
  */
 export function exportSummaryToCsv(
   metricResult: MetricResult | null,
@@ -145,19 +145,19 @@ export function exportSummaryToCsv(
 
   lines.push('');
 
-  // 排名定位部分（neutral/unspecified 不输出）
+  // 相对位置部分（neutral/unspecified 不输出）
   const isNeutralOrUnspecified = metricResult?.direction === 'neutral' || metricResult?.direction === 'unspecified';
   if (position && !isNeutralOrUnspecified) {
-    lines.push(buildCsvLine(['排名定位', '数值']));
-    lines.push(buildCsvLine(['总人数', position.total]));
-    lines.push(buildCsvLine(['高于你的数量', position.higherCount]));
-    lines.push(buildCsvLine(['与你相等的数量', position.equalCount]));
-    lines.push(buildCsvLine(['低于你的数量', position.lowerCount]));
-    lines.push(buildCsvLine(['最佳排名', position.bestRank]));
-    lines.push(buildCsvLine(['最差排名', position.worstRank]));
-    lines.push(buildCsvLine(['预估排名', position.estimatedRank]));
+    lines.push(buildCsvLine(['相对位置', '数值']));
+    lines.push(buildCsvLine(['总记录数', position.total]));
+    lines.push(buildCsvLine(['高于该值记录数', position.higherCount]));
+    lines.push(buildCsvLine(['等于该值记录数', position.equalCount]));
+    lines.push(buildCsvLine(['低于该值记录数', position.lowerCount]));
+    lines.push(buildCsvLine(['相对位置区间起点', position.bestRank]));
+    lines.push(buildCsvLine(['相对位置区间终点', position.worstRank]));
+    lines.push(buildCsvLine(['估算相对位置', position.estimatedRank]));
     lines.push(buildCsvLine(['百分位', position.percentile]));
-    lines.push(buildCsvLine(['数值在数据中', position.existsInData ? '是' : '否']));
+    lines.push(buildCsvLine(['该值是否存在于数据中', position.existsInData ? '是' : '否']));
   }
 
   lines.push('');
@@ -189,7 +189,7 @@ export function exportSummaryToCsv(
     // neutral/unspecified 添加说明
     if (isNeutralOrUnspecified) {
       lines.push('');
-      lines.push(buildCsvLine(['说明', '当前字段方向未指定，仅展示统计分布，不进行优劣排名。']));
+      lines.push(buildCsvLine(['说明', '当前字段方向未指定，仅展示统计分布，不进行优劣评价。']));
     }
   }
 

@@ -25,6 +25,44 @@ interface GroupBarChartProps {
   dimensionField: string;
 }
 
+// 分类标签格式化：根据长度自动换行
+function formatCategoryLabel(value: string): string {
+  // 短文本直接显示
+  if (value.length <= 15) return value;
+
+  // 检查是否包含空格（英文等）
+  const hasSpace = value.includes(' ');
+
+  if (hasSpace) {
+    // 按单词换行
+    const words = value.split(' ');
+    const lines: string[] = [];
+    let currentLine = '';
+
+    for (const word of words) {
+      if (currentLine.length === 0) {
+        currentLine = word;
+      } else if (currentLine.length + word.length + 1 <= 15) {
+        currentLine += ' ' + word;
+      } else {
+        lines.push(currentLine);
+        currentLine = word;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+
+    return lines.join('\n');
+  } else {
+    // 中文等连续文本按字符换行
+    const maxLen = 15;
+    const lines: string[] = [];
+    for (let i = 0; i < value.length; i += maxLen) {
+      lines.push(value.slice(i, i + maxLen));
+    }
+    return lines.join('\n');
+  }
+}
+
 export default function GroupBarChart({ groupStats, metricField, dimensionField }: GroupBarChartProps) {
   const displayed = useMemo(() => topN(groupStats, DEFAULT_TOP_N), [groupStats]);
 
@@ -53,6 +91,7 @@ export default function GroupBarChart({ groupStats, metricField, dimensionField 
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
+        confine: true,
         formatter: (params: any) => {
           const p = Array.isArray(params) ? params[0] : params;
           const idx = reversed.length - 1 - p.dataIndex;
@@ -84,9 +123,7 @@ export default function GroupBarChart({ groupStats, metricField, dimensionField 
         data: names,
         axisLabel: {
           fontSize: 11,
-          width: 120,
-          overflow: 'truncate',
-          ellipsis: '...',
+          formatter: formatCategoryLabel,
         },
         inverse: false,
       },

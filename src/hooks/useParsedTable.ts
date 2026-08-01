@@ -204,7 +204,7 @@ export function useParsedTable(): UseParsedTableReturn {
   // ===== 手动解析 =====
   const handleParse = useCallback(() => {
     if (!rawText.trim()) {
-      setParseError('请先粘贴表格数据。');
+      setParseError('请先粘贴或输入表格数据。');
       setParsedData(null);
       setParseSummary(null);
       return;

@@ -2,7 +2,7 @@
  * 零售 BI 连接表单组件。
  *
  * 职责：
- * 1. 提供 API 连接配置输入界面；
+ * 1. 提供外部数据源接入入口（折叠式）；
  * 2. 调用零售 BI API 获取数据；
  * 3. 将数据转换为 ParsedTable 格式；
  * 4. 通过回调通知父组件数据已就绪。
@@ -13,7 +13,7 @@
  * - 分析流程控制。
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { ParsedTable } from '../types';
 import {
   getDefaultRetailBiBaseUrl,
@@ -81,6 +81,10 @@ export function RetailBiConnectionForm({
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  // 折叠状态：默认收起
+  const [isExpanded, setIsExpanded] = useState(false);
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+
   // 组件挂载时读取 localStorage
   useEffect(() => {
     const stored = loadStoredConfig();
@@ -92,6 +96,22 @@ export function RetailBiConnectionForm({
       setBaseUrl(getDefaultRetailBiBaseUrl());
     }
   }, []);
+
+  // 同步 details 元素的 open 属性与 React 状态
+  useEffect(() => {
+    if (detailsRef.current) {
+      detailsRef.current.open = isExpanded;
+    }
+  }, [isExpanded]);
+
+  /**
+   * 处理 details 元素的 toggle 事件。
+   */
+  function handleToggle() {
+    if (detailsRef.current) {
+      setIsExpanded(detailsRef.current.open);
+    }
+  }
 
   /**
    * 前端表单校验。
@@ -172,68 +192,167 @@ export function RetailBiConnectionForm({
   }
 
   return (
-    <div style={styles.container}>
-      <div style={styles.formGroup}>
-        <label style={styles.label}>API 基础地址</label>
-        <input
-          type="text"
-          style={styles.input}
-          value={baseUrl}
-          onChange={(e) => setBaseUrl(e.target.value)}
-          placeholder="http://localhost:8080"
-          disabled={isLoading}
-        />
-      </div>
-
-      <div style={styles.dateRow}>
-        <div style={styles.dateGroup}>
-          <label style={styles.label}>开始日期</label>
-          <input
-            type="date"
-            style={styles.input}
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            disabled={isLoading}
-          />
-        </div>
-
-        <div style={styles.dateGroup}>
-          <label style={styles.label}>结束日期</label>
-          <input
-            type="date"
-            style={styles.input}
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            disabled={isLoading}
-          />
-        </div>
-      </div>
-
-      <button
-        style={{
-          ...styles.button,
-          ...(isLoading ? styles.buttonDisabled : {}),
-        }}
-        onClick={handleLoadData}
-        disabled={isLoading}
+    <div style={styles.wrapper}>
+      <details
+        ref={detailsRef}
+        style={styles.details}
+        onToggle={handleToggle}
       >
-        {isLoading ? '加载中……' : '加载数据'}
-      </button>
+        <summary style={styles.summary}>
+          <div style={styles.summaryContent}>
+            <div style={styles.summaryLeft}>
+              <span
+                style={{
+                  ...styles.arrow,
+                  transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                }}
+              >
+                &#9654;
+              </span>
+              <span style={styles.title}>外部数据源</span>
+              <span style={styles.optionalBadge}>可选</span>
+            </div>
+            <span style={styles.subtitle}>
+              连接已配置的业务分析服务并加载结构化数据
+            </span>
+          </div>
+        </summary>
 
-      {error && <p style={styles.error}>{error}</p>}
-      {successMessage && <p style={styles.success}>{successMessage}</p>}
+        <div style={styles.expandedContent}>
+          <div style={styles.connectorLabel}>
+            当前连接器：零售经营指标 API
+          </div>
+
+          <div style={styles.formGroup}>
+            <label style={styles.label}>API 基础地址</label>
+            <input
+              type="text"
+              style={styles.input}
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="http://localhost:8080"
+              disabled={isLoading}
+            />
+          </div>
+
+          <div style={styles.dateRow}>
+            <div style={styles.dateGroup}>
+              <label style={styles.label}>开始日期</label>
+              <input
+                type="date"
+                style={styles.input}
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                disabled={isLoading}
+              />
+            </div>
+
+            <div style={styles.dateGroup}>
+              <label style={styles.label}>结束日期</label>
+              <input
+                type="date"
+                style={styles.input}
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                disabled={isLoading}
+              />
+            </div>
+          </div>
+
+          <button
+            style={{
+              ...styles.button,
+              ...(isLoading ? styles.buttonDisabled : {}),
+            }}
+            onClick={handleLoadData}
+            disabled={isLoading}
+          >
+            {isLoading ? '加载中……' : '加载数据'}
+          </button>
+
+          {error && <p style={styles.error}>{error}</p>}
+          {successMessage && <p style={styles.success}>{successMessage}</p>}
+        </div>
+      </details>
     </div>
   );
 }
 
 /**
- * 组件样式（与现有 UI 风格保持一致）。
+ * 组件样式。
  */
 const styles: Record<string, React.CSSProperties> = {
-  container: {
+  wrapper: {
+    marginTop: '16px',
+  },
+  details: {
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
+    overflow: 'hidden',
+  },
+  summary: {
+    display: 'flex',
+    alignItems: 'center',
+    padding: '12px 16px',
+    cursor: 'pointer',
+    userSelect: 'none',
+    background: '#f8fafc',
+    borderBottom: '1px solid transparent',
+    listStyle: 'none',
+    outline: 'none',
+  },
+  summaryContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    width: '100%',
+  },
+  summaryLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  arrow: {
+    fontSize: '10px',
+    color: '#94a3b8',
+    transition: 'transform 0.15s ease',
+    display: 'inline-block',
+    width: '14px',
+    textAlign: 'center',
+  },
+  title: {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#334155',
+  },
+  optionalBadge: {
+    fontSize: '11px',
+    fontWeight: 500,
+    color: '#94a3b8',
+    background: '#f1f5f9',
+    padding: '1px 6px',
+    borderRadius: '4px',
+    border: '1px solid #e2e8f0',
+  },
+  subtitle: {
+    fontSize: '12px',
+    color: '#64748b',
+    paddingLeft: '22px',
+  },
+  expandedContent: {
+    padding: '16px',
     display: 'flex',
     flexDirection: 'column',
     gap: '16px',
+    borderTop: '1px solid #e2e8f0',
+  },
+  connectorLabel: {
+    fontSize: '12px',
+    color: '#64748b',
+    padding: '6px 10px',
+    background: '#f8fafc',
+    borderRadius: '6px',
+    border: '1px solid #e2e8f0',
   },
   formGroup: {
     display: 'flex',

@@ -9,7 +9,7 @@ interface QuartilePieChartProps {
   userValue?: number;
 }
 
-// 颜色语义：低分橙红 → 黄 → 蓝 → 高分绿
+// 颜色语义：低值橙红 → 黄 → 蓝 → 高值绿
 const COLORS = ['#f97316', '#fbbf24', '#60a5fa', '#34d399'];
 
 export default function QuartilePieChart({ values, fieldName, userValue }: QuartilePieChartProps) {
@@ -35,12 +35,13 @@ export default function QuartilePieChart({ values, fieldName, userValue }: Quart
       },
       tooltip: {
         trigger: 'item',
+        confine: true,
         formatter: (params: any) => {
           const d = params.data;
           if (pieData.isAllSame) {
-            return `${d.name}<br/>人数：${d.value}<br/>占比：100%<br/>数值：${d.rangeText}`;
+            return `${d.name}<br/>记录数：${d.value}<br/>占比：100%<br/>数值：${d.rangeText}`;
           }
-          return `${d.name}<br/>人数：${d.value}<br/>占比：${safeFormatPercent(d.percentage)}<br/>范围：${d.rangeText}`;
+          return `${d.name}<br/>记录数：${d.value}<br/>占比：${safeFormatPercent(d.percentage)}<br/>范围：${d.rangeText}`;
         },
       },
       series: [
@@ -92,7 +93,7 @@ export default function QuartilePieChart({ values, fieldName, userValue }: Quart
             <p style={styles.userHint}>{userHintText}</p>
           )}
           <p style={styles.note}>
-            四分位占比图按 Q1、中位数、Q3 将数据划分为四个区间，用于观察当前字段的数据集中情况。由于同分和边界归类，各区间人数不一定刚好等于 25%。该图不代表排名名次。
+            四分位占比图按 Q1、中位数、Q3 将数据划分为四个区间，用于观察当前字段的数据集中情况。由于同值和边界归类，各区间记录数不一定刚好等于 25%。该图仅展示四分位区间分布，不表示相对位置结果。
           </p>
         </>
       ) : (

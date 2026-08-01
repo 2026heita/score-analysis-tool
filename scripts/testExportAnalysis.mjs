@@ -89,16 +89,16 @@ function exportSummaryToCsv(metricResult, stats, position, fieldName) {
   lines.push('');
 
   if (position) {
-    lines.push(buildCsvLine(['排名定位', '数值']));
-    lines.push(buildCsvLine(['总人数', position.total]));
-    lines.push(buildCsvLine(['高于你的数量', position.higherCount]));
-    lines.push(buildCsvLine(['与你相等的数量', position.equalCount]));
-    lines.push(buildCsvLine(['低于你的数量', position.lowerCount]));
-    lines.push(buildCsvLine(['最佳排名', position.bestRank]));
-    lines.push(buildCsvLine(['最差排名', position.worstRank]));
-    lines.push(buildCsvLine(['预估排名', position.estimatedRank]));
+    lines.push(buildCsvLine(['相对位置', '数值']));
+    lines.push(buildCsvLine(['总记录数', position.total]));
+    lines.push(buildCsvLine(['高于该值记录数', position.higherCount]));
+    lines.push(buildCsvLine(['等于该值记录数', position.equalCount]));
+    lines.push(buildCsvLine(['低于该值记录数', position.lowerCount]));
+    lines.push(buildCsvLine(['相对位置区间起点', position.bestRank]));
+    lines.push(buildCsvLine(['相对位置区间终点', position.worstRank]));
+    lines.push(buildCsvLine(['估算相对位置', position.estimatedRank]));
     lines.push(buildCsvLine(['百分位', position.percentile]));
-    lines.push(buildCsvLine(['数值在数据中', position.existsInData ? '是' : '否']));
+    lines.push(buildCsvLine(['该值是否存在于数据中', position.existsInData ? '是' : '否']));
   }
 
   lines.push('');
@@ -361,28 +361,36 @@ const summaryCsvResult = exportSummaryToCsv(metricResult, stats, position, '总�
 assertContains(summaryCsvResult, '指标字段', '包含指标字段');
 assertContains(summaryCsvResult, '总分', '包含字段名');
 assertContains(summaryCsvResult, '统计指标', '包含统计指标 section');
-assertContains(summaryCsvResult, '排名定位', '包含排名定位 section');
+assertContains(summaryCsvResult, '相对位置', '包含相对位置 section');
 assertContains(summaryCsvResult, '指标解读', '包含指标解读 section');
 assertContains(summaryCsvResult, '82.5', '包含均值');
 assertContains(summaryCsvResult, '越高越好', '包含方向');
 assertContains(summaryCsvResult, '是', 'existsInData 为是');
 
+// 回归检查：确保不包含旧版排名术语
+assert(!summaryCsvResult.includes('总人数'), '不包含旧术语：总人数');
+assert(!summaryCsvResult.includes('排名定位'), '不包含旧术语：排名定位');
+assert(!summaryCsvResult.includes('高于你的数量'), '不包含旧术语：高于你的数量');
+assert(!summaryCsvResult.includes('与你相等的数量'), '不包含旧术语：与你相等的数量');
+assert(!summaryCsvResult.includes('低于你的数量'), '不包含旧术语：低于你的数量');
+assert(!summaryCsvResult.includes('优劣排名'), '不包含旧术语：优劣排名');
+
 // ============================================================
-// 测试 12: 指标摘要导出 - 仅 stats（无排名）
+// 测试 12: 指标摘要导出 - 仅 stats（无相对位置）
 // ============================================================
-console.log('\n12. 指标摘要导出 - 仅 stats（无排名）');
+console.log('\n12. 指标摘要导出 - 仅 stats（无相对位置）');
 
 const summaryOnlyStats = exportSummaryToCsv(null, stats, null, '总分');
 assertContains(summaryOnlyStats, '统计指标', '包含统计指标');
-assert(!summaryOnlyStats.includes('排名定位'), '不包含排名定位');
+assert(!summaryOnlyStats.includes('相对位置'), '不包含相对位置');
 
 // ============================================================
-// 测试 13: 指标摘要导出 - 仅排名（无 stats）
+// 测试 13: 指标摘要导出 - 仅相对位置（无 stats）
 // ============================================================
-console.log('\n13. 指标摘要导出 - 仅排名（无 stats）');
+console.log('\n13. 指标摘要导出 - 仅相对位置（无 stats）');
 
 const summaryOnlyPos = exportSummaryToCsv(null, null, position, '总分');
-assertContains(summaryOnlyPos, '排名定位', '包含排名定位');
+assertContains(summaryOnlyPos, '相对位置', '包含相对位置');
 assert(!summaryOnlyPos.includes('统计指标'), '不包含统计指标');
 
 // ============================================================

@@ -5,14 +5,14 @@
  * 通过 React.lazy 延迟加载，首屏不加载分析引擎和图表库
  */
 
-import { useMemo, useCallback, useEffect } from 'react';
+import { useMemo, useCallback, useEffect, useState } from 'react';
 import { useAnalysisOrchestrator } from '../hooks/useAnalysisOrchestrator';
 import { useMetricResult } from '../hooks/useMetricResult';
 import { useExportActions } from '../hooks/useExportActions';
 import { formatNumber } from '../utils/stats';
 import { generateExplanation } from '../utils/analysisExplainer';
 import { safeFormatPercent } from '../utils/safeFormat';
-import { toHistogramProps, toBoxPlotProps, toCdfProps, toQuartilePieProps } from '../engine/chartAdapter';
+import { toHistogramProps, toBoxPlotProps, toCdfProps, toQuartilePieProps, toTimeSeriesProps } from '../engine/chartAdapter';
 import { preloadECharts } from '../utils/echartsSetup';
 import { ErrorBoundary } from './ErrorBoundary';
 import ChartTabs from './charts/ChartTabs';
@@ -20,6 +20,7 @@ import HistogramChart from './charts/HistogramChart';
 import BoxPlotChart from './charts/BoxPlotChart';
 import CdfChart from './charts/CdfChart';
 import QuartilePieChart from './charts/QuartilePieChart';
+import TimeSeriesLineChart from './charts/TimeSeriesLineChart';
 import RadarAnalysis from './charts/RadarAnalysis';
 import ParseReportPanel from './ParseReportPanel';
 import AnalysisExplainer from './AnalysisExplainer';
@@ -34,6 +35,9 @@ import { DebugPanel } from './DebugPanel';
 import type { ChartTab, OriginalFieldRadarState, ParsedTable } from '../types';
 import type { ParseSummary } from '../utils/tableParser/types';
 import type { FilterCondition } from '../engine/filterRows';
+
+// 相对位置方向覆盖类型（仅本组件使用）
+type PositionDirectionOverride = 'higher_is_better' | 'lower_is_better';
 
 export interface AnalysisSectionProps {
   // ─── 数据 ───
@@ -70,6 +74,7 @@ export interface AnalysisSectionProps {
       sampledRowCount: number;
       indices: number[];
     } | null;
+    fields?: import('../field-schema').ResolvedFieldSchema[];
   } | null;
   confirmDataset: (key: string) => void;
   cancelDataset: (key: string) => void;
@@ -136,17 +141,79 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
     showDebugPanel, setShowDebugPanel,
   } = props;
 
+  // ===== 相对位置方向覆盖状态 =====
+  const [directionOverrides, setDirectionOverrides] = useState<Record<string, PositionDirectionOverride>>({});
+  const selectedDirectionOverride = selectedField ? directionOverrides[selectedField] : undefined;
+
+  // 读取当前字段的默认方向定义
+  const selectedFieldDefinition = useMemo(() => {
+    if (!selectedField || !analysisDataset?.fields) {
+      return undefined;
+    }
+
+    return analysisDataset.fields.find(
+      field =>
+        field.fieldId === selectedField &&
+        field.analysisRole === 'metric'
+    );
+  }, [analysisDataset?.fields, selectedField]);
+
+  // 数据集变化时清空方向覆盖
+  useEffect(() => {
+    setDirectionOverrides({});
+  }, [analysisDataset?.datasetKey]);
+
+  // 构建有效分析数据集（应用方向覆盖）
+  const effectiveAnalysisDataset = useMemo(() => {
+    if (
+      !analysisDataset ||
+      !selectedField ||
+      !selectedDirectionOverride ||
+      !analysisDataset.fields
+    ) {
+      return analysisDataset;
+    }
+
+    let hasChanged = false;
+
+    const fields = analysisDataset.fields.map((field) => {
+      if (
+        field.fieldId !== selectedField ||
+        field.analysisRole !== 'metric' ||
+        field.metricDirection === selectedDirectionOverride
+      ) {
+        return field;
+      }
+
+      hasChanged = true;
+
+      return {
+        ...field,
+        metricDirection: selectedDirectionOverride,
+      };
+    });
+
+    if (!hasChanged) {
+      return analysisDataset;
+    }
+
+    return {
+      ...analysisDataset,
+      fields,
+    };
+  }, [analysisDataset, selectedField, selectedDirectionOverride]);
+
   // ===== v1.5 Orchestration：统一调度层 =====
   const {
     core: { metricResult, correlationResult },
     derived: { derivedData },
     view: { viewContext },
     metricDefs,
-  } = useAnalysisOrchestrator(analysisDataset, parseSummary, selectedField, inputValue, selectedDimension);
+  } = useAnalysisOrchestrator(effectiveAnalysisDataset, parseSummary, selectedField, inputValue, selectedDimension);
 
   const { stats, position, fieldValues } = useMetricResult(metricResult);
 
-  // neutral/unspecified 指标不显示排名定位（不生成优劣评价）
+  // neutral/unspecified 指标不显示相对位置（不生成优劣评价）
   const showPositionSection = metricResult && 
     metricResult.direction !== 'neutral' && 
     metricResult.direction !== 'unspecified';
@@ -169,6 +236,33 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
       quartile: toQuartilePieProps(metricResult),
     };
   }, [metricResult]);
+
+  // ===== 时间序列折线图数据 =====
+  // 查找第一个时间字段（直接从 analysisDataset.fields 查找，避免旧角色映射）
+  const timeField = useMemo(() => {
+    return analysisDataset?.fields?.find(
+      (field) => field.analysisRole === 'time' || field.dataType === 'datetime'
+    )?.fieldId ?? null;
+  }, [analysisDataset?.fields]);
+
+  // 计算时间序列数据
+  const timeSeriesData = useMemo(() => {
+    if (!timeField || !selectedField || !isNumericField(selectedField)) return null;
+    if (!analysisDataset?.rows || analysisDataset.rows.length === 0) return null;
+
+    return toTimeSeriesProps(
+      analysisDataset.rows,
+      timeField,
+      selectedField
+    );
+  }, [analysisDataset?.rows, timeField, selectedField, isNumericField]);
+
+  // 防止隐藏标签状态残留：当时间字段不存在时，自动切回 histogram
+  useEffect(() => {
+    if (activeChartTab === 'timeseries' && !timeField) {
+      setActiveChartTab('histogram');
+    }
+  }, [activeChartTab, timeField, setActiveChartTab]);
 
   const {
     handleExportFilteredData,
@@ -241,13 +335,13 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
   const hasInputError = inputValue.trim() !== '' && isNaN(inputNum);
 
   const summaryText = useMemo(() => {
-    // neutral/unspecified 指标不生成排名摘要
+    // neutral/unspecified 指标不生成相对位置摘要
     if (!showPositionSection || !position || !stats || isNaN(inputNum)) return '';
     const numStr = formatNumber(inputNum);
     if (position.existsInData) {
-      return `你的【${selectedField}】为 ${numStr}。全表 ${position.total} 人中，高于你的人有 ${position.higherCount} 人，与你同分的有 ${position.equalCount} 人。你的名次区间为第 ${position.bestRank} 名 ~ 第 ${position.worstRank} 名，约高于 ${safeFormatPercent(position.percentile)} 的有效数据。`;
+      return `你的【${selectedField}】为 ${numStr}。当前数据共有 ${position.total} 条有效记录，其中高于该值的有 ${position.higherCount} 条，与该值相同的有 ${position.equalCount} 条。该值的相对位置区间为第 ${position.bestRank} 位至第 ${position.worstRank} 位，约高于 ${safeFormatPercent(position.percentile)} 的有效记录。`;
     }
-    return `该值在表中不存在。如果按该值插入全表，估算名次为第 ${position.estimatedRank} 名，约高于 ${safeFormatPercent(position.percentile)} 的有效数据。`;
+    return `当前数据中不存在该值。如果将该值加入当前数据，估算相对位置为第 ${position.estimatedRank} 位，约高于 ${safeFormatPercent(position.percentile)} 的有效记录。`;
   }, [showPositionSection, position, stats, selectedField, inputNum]);
 
   // ===== 复制摘要 =====
@@ -293,28 +387,28 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
     lines.push(`90% 分位：${formatNumber(stats.q90)}`);
     lines.push(`95% 分位：${formatNumber(stats.q95)}`);
     
-    // neutral/unspecified 不生成排名定位部分
+    // neutral/unspecified 不生成相对位置部分
     if (!isNeutralOrUnspecified && position) {
       lines.push('');
-      lines.push('二、排名定位');
-      lines.push(`高于该值人数：${position.higherCount}`);
-      lines.push(`等于该值人数：${position.equalCount}`);
-      lines.push(`低于该值人数：${position.lowerCount}`);
+      lines.push('二、相对位置');
+      lines.push(`高于该值记录数：${position.higherCount}`);
+      lines.push(`等于该值记录数：${position.equalCount}`);
+      lines.push(`低于该值记录数：${position.lowerCount}`);
       if (position.existsInData) {
-        lines.push(`名次区间：第 ${position.bestRank} 名 ~ 第 ${position.worstRank} 名`);
+        lines.push(`相对位置区间：第 ${position.bestRank} 位至第 ${position.worstRank} 位`);
       } else {
-        lines.push(`估算名次：第 ${position.estimatedRank} 名`);
-        lines.push('该值在表中不存在，名次为插入估算结果。');
+        lines.push(`估算相对位置：第 ${position.estimatedRank} 位`);
+        lines.push('当前数据中不存在该值，相对位置为基于当前数据的估算。');
       }
-      lines.push(`百分位：约高于 ${safeFormatPercent(position.percentile)} 的有效数据`);
+      lines.push(`百分位：约高于 ${safeFormatPercent(position.percentile)} 的有效记录`);
       lines.push('');
       lines.push('三、口径说明');
-      lines.push('百分位口径：低于该值人数 / 有效数值数量 × 100%。');
-      lines.push('同分情况下使用名次区间，不强行给出单一名次。');
+      lines.push('百分位口径：低于该值的记录数 / 该字段有效记录数 × 100%。');
+      lines.push('存在相同数值时使用相对位置区间，不强行给出单一位置。');
     } else if (isNeutralOrUnspecified) {
       lines.push('');
       lines.push('二、说明');
-      lines.push('当前字段方向未指定，仅展示统计分布，不进行优劣排名。');
+      lines.push('当前字段方向未指定，仅展示统计分布，不进行优劣评价。');
     }
 
     const text = lines.join('\n');
@@ -339,7 +433,7 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
     const diff = input - ref;
     if (Math.abs(diff) < 0.005) return '持平';
     const absDiff = Number.isInteger(Math.abs(diff)) ? Math.abs(diff).toString() : Math.abs(diff).toFixed(2);
-    return diff > 0 ? `高 ${absDiff} 分` : `低 ${absDiff} 分`;
+    return diff > 0 ? `高 ${absDiff}` : `低 ${absDiff}`;
   }
   // 注意：第280行的 Math.abs(diff).toFixed(2) 是安全的，因为前面已经用 Number.isFinite 验证了 input 和 ref
 
@@ -616,6 +710,41 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
                 <label style={styles.settingLabel}>你的数值</label>
                 <input type="number" style={styles.input} placeholder="输入数值" value={inputValue} onChange={e => setInputValue(e.target.value)} />
               </div>
+              <div style={styles.settingItem}>
+                <label style={styles.settingLabel}>相对位置方向（可选）</label>
+                <select
+                  style={styles.select}
+                  value={selectedDirectionOverride ?? ''}
+                  onChange={e => {
+                    const value = e.target.value as PositionDirectionOverride | '';
+                    setDirectionOverrides(previous => {
+                      const next = { ...previous };
+                      if (!value) {
+                        delete next[selectedField];
+                      } else {
+                        next[selectedField] = value;
+                      }
+                      return next;
+                    });
+                  }}
+                  disabled={!selectedField}
+                >
+                  <option value="">使用字段默认方向</option>
+                  <option value="higher_is_better">数值越高，位置越靠前</option>
+                  <option value="lower_is_better">数值越低，位置越靠前</option>
+                </select>
+                <p style={styles.hint}>
+                  {selectedDirectionOverride === 'higher_is_better'
+                    ? '当前按"数值越高，位置越靠前"计算相对位置。'
+                    : selectedDirectionOverride === 'lower_is_better'
+                    ? '当前按"数值越低，位置越靠前"计算相对位置。'
+                    : selectedFieldDefinition?.metricDirection === 'higher_is_better'
+                    ? '当前使用字段默认方向："数值越高，位置越靠前"。'
+                    : selectedFieldDefinition?.metricDirection === 'lower_is_better'
+                    ? '当前使用字段默认方向："数值越低，位置越靠前"。'
+                    : '当前字段未指定相对位置方向，仅展示统计分布；选择方向后可查看相对位置。'}
+                </p>
+              </div>
               <div style={styles.settingActions}>
                 <label style={styles.toggleLabel}>
                   <input type="checkbox" checked={showAllFields} onChange={e => setShowAllFields(e.target.checked)} style={styles.checkbox} />
@@ -651,7 +780,7 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
             )}
             {hasInputError && <p style={styles.error}>请输入有效数字。</p>}
             {inputValue === '' && position === null && selectedField && (
-              <p style={styles.hint}>请输入你的数值后再查看排名定位。</p>
+              <p style={styles.hint}>请输入你的数值后再查看相对位置。</p>
             )}
           </section>
 
@@ -694,7 +823,7 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
               {/* neutral/unspecified 提示 */}
               {(metricResult?.direction === 'neutral' || metricResult?.direction === 'unspecified') && (
                 <p style={{ ...styles.hint, marginTop: '12px' }}>
-                  当前字段方向未指定，仅展示统计分布，不进行优劣排名。
+                  当前字段方向未指定，仅展示统计分布，不进行优劣评价。
                 </p>
               )}
             </section>
@@ -705,7 +834,7 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
             <ErrorBoundary>
             <section style={styles.section}>
               <div style={styles.positionHeader}>
-                <h2 style={styles.sectionTitle}>排名定位</h2>
+                <h2 style={styles.sectionTitle}>相对位置</h2>
               </div>
 
               {summaryText && <div style={styles.summaryBox}>{summaryText}</div>}
@@ -713,13 +842,13 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
               <div style={styles.positionGrid}>
                 <PositionItem label="与平均值对比" value={formatComparisonText(inputNum, stats.mean)} />
                 <PositionItem label="与中位数对比" value={formatComparisonText(inputNum, stats.median)} />
-                <PositionItem label="低于该值人数" value={`${position.lowerCount} 人`} />
-                <PositionItem label="等于该值人数" value={`${position.equalCount} 人`} />
-                <PositionItem label="高于该值人数" value={`${position.higherCount} 人`} />
+                <PositionItem label="低于该值记录数" value={`${position.lowerCount} 条记录`} />
+                <PositionItem label="等于该值记录数" value={`${position.equalCount} 条记录`} />
+                <PositionItem label="高于该值记录数" value={`${position.higherCount} 条记录`} />
                 {position.existsInData ? (
-                  <PositionItem label="名次区间" value={`第 ${position.bestRank} 名 ~ 第 ${position.worstRank} 名`} />
+                  <PositionItem label="相对位置区间" value={`第 ${position.bestRank} 位至第 ${position.worstRank} 位`} />
                 ) : (
-                  <PositionItem label="估算名次" value={`第 ${position.estimatedRank} 名`} />
+                  <PositionItem label="估算相对位置" value={`第 ${position.estimatedRank} 位`} />
                 )}
               </div>
 
@@ -728,10 +857,10 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
                 <div style={styles.positionHighlightValue}>约 {safeFormatPercent(position.percentile)}</div>
               </div>
 
-              <p style={styles.note}>百分位口径：低于该值人数 / 有效数值数量 × 100%。</p>
+              <p style={styles.note}>百分位口径：低于该值的记录数 / 该字段有效记录数 × 100%。</p>
 
               {!position.existsInData && (
-                <p style={styles.warning}>你的数值超出当前字段数据范围，排名结果仅作为插入估算。</p>
+                <p style={styles.warning}>你的数值超出当前字段数据范围，相对位置结果仅为基于当前数据的估算。</p>
               )}
             </section>
             </ErrorBoundary>
@@ -744,11 +873,40 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
 
               {selectedField && metricResult && chartProps && (
                 <>
-                  <ChartTabs activeTab={activeChartTab} onChange={setActiveChartTab} />
+                  <ChartTabs activeTab={activeChartTab} onChange={setActiveChartTab} hasTimeField={Boolean(timeField)} />
                   {activeChartTab === 'histogram' && <HistogramChart {...chartProps.histogram} />}
                   {activeChartTab === 'boxplot' && <BoxPlotChart {...chartProps.boxplot} />}
                   {activeChartTab === 'cdf' && <CdfChart {...chartProps.cdf} />}
                   {activeChartTab === 'quartile' && <QuartilePieChart {...chartProps.quartile} />}
+                  {activeChartTab === 'timeseries' && (
+                    <>
+                      {timeField && timeSeriesData ? (
+                        <>
+                          <TimeSeriesLineChart
+                            dates={timeSeriesData.dates}
+                            values={timeSeriesData.values}
+                            fieldName={selectedField}
+                            dateFieldName={timeField}
+                            duplicateCount={timeSeriesData.duplicateCount}
+                          />
+                          {timeSeriesData.invalidDateCount > 0 && (
+                            <p style={{ ...styles.hint, marginTop: '12px' }}>
+                              已跳过 {timeSeriesData.invalidDateCount} 条无法识别时间的数据。
+                            </p>
+                          )}
+                          {timeSeriesData.invalidValueCount > 0 && (
+                            <p style={{ ...styles.hint, marginTop: '8px' }}>
+                              检测到 {timeSeriesData.invalidValueCount} 个缺失或无效数值，折线将在对应位置断开。
+                            </p>
+                          )}
+                        </>
+                      ) : !timeField ? (
+                        <div style={styles.emptyChart}>当前数据集中未识别到可用的时间字段。</div>
+                      ) : (
+                        <div style={styles.emptyChart}>请选择一个数值字段查看时间趋势。</div>
+                      )}
+                    </>
+                  )}
                 </>
               )}
 

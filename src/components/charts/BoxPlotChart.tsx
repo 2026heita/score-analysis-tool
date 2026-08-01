@@ -93,6 +93,7 @@ export default function BoxPlotChart({ values, fieldName, stats, userValue }: Bo
       },
       tooltip: {
         trigger: 'item',
+        confine: true,
         formatter: (param: any) => {
           if (param.seriesType === 'boxplot') {
             return `最小值：${formatNumber(stats.min)}<br/>Q1 (25%)：${formatNumber(stats.q25)}<br/>中位数：${formatNumber(stats.median)}<br/>Q3 (75%)：${formatNumber(stats.q75)}<br/>最大值：${formatNumber(stats.max)}`;
@@ -103,11 +104,11 @@ export default function BoxPlotChart({ values, fieldName, stats, userValue }: Bo
           return '';
         },
       },
-      grid: { left: '5%', right: '15%', bottom: '20px', top: '15%' },
+      grid: { left: '3%', right: '4%', bottom: '3%', top: '15%', containLabel: true },
       xAxis: {
         type: 'category',
         data: [fieldName],
-        axisLabel: { fontSize: 12 },
+        axisLabel: { fontSize: 12, hideOverlap: true },
       },
       yAxis: {
         type: 'value',

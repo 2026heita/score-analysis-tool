@@ -36,7 +36,7 @@ export interface PositionResult {
   existsInData: boolean;
 }
 
-export type ChartTab = 'histogram' | 'boxplot' | 'cdf' | 'quartile';
+export type ChartTab = 'histogram' | 'boxplot' | 'cdf' | 'quartile' | 'timeseries';
 
 export type ViewMode = 'bar' | 'radar';
 

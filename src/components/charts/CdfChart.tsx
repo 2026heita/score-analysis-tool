@@ -69,6 +69,7 @@ export default function CdfChart({ values, fieldName, userValue }: CdfChartProps
       },
       tooltip: {
         trigger: 'axis',
+        confine: true,
         formatter: (params: any) => {
           const p = params[0];
           const value = extractNumericFromEChartsParam(p.value[0]);
@@ -79,9 +80,8 @@ export default function CdfChart({ values, fieldName, userValue }: CdfChartProps
       grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
       xAxis: {
         type: 'value',
-        name: fieldName,
-        nameTextStyle: { fontSize: 11, color: '#94a3b8', padding: [8, 0, 0, 0] },
         splitLine: { lineStyle: { type: 'dashed', color: '#e2e8f0' } },
+        axisLabel: { hideOverlap: true },
       },
       yAxis: {
         type: 'value',
@@ -89,7 +89,7 @@ export default function CdfChart({ values, fieldName, userValue }: CdfChartProps
         max: 100,
         name: '低于该值比例 (%)',
         nameTextStyle: { fontSize: 11, color: '#94a3b8' },
-        axisLabel: { formatter: '{value}%' },
+        axisLabel: { formatter: '{value}%', hideOverlap: true },
         splitLine: { lineStyle: { type: 'dashed', color: '#e2e8f0' } },
       },
       series: [

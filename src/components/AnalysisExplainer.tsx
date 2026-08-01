@@ -92,14 +92,14 @@ function FieldExplanationCard({ explanation }: { explanation: FieldExplanation }
           <strong>{userValue}</strong>
         </div>
         <div style={styles.statRow}>
-          <span style={styles.statLabel}>平均分：</span>
+          <span style={styles.statLabel}>平均值：</span>
           <span>{safeFormatNumber(mean, 2)}</span>
           <span style={getDiffStyle(diffFromMean)}>
             ({diffFromMean >= 0 ? '+' : ''}{safeFormatNumber(diffFromMean, 2)})
           </span>
         </div>
         <div style={styles.statRow}>
-          <span style={styles.statLabel}>超过人数：</span>
+          <span style={styles.statLabel}>高于该值记录数：</span>
           <span>{lowerCount} / {validCount}</span>
         </div>
         <div style={styles.statRow}>

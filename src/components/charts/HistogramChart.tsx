@@ -65,10 +65,11 @@ export default function HistogramChart({ values, fieldName, userValue, binCount 
       },
       tooltip: {
         trigger: 'axis',
+        confine: true,
         formatter: (params: any) => {
           const p = params[0];
           const bin = bins[p.dataIndex];
-          return `${bin.label}<br/>人数：${bin.count} 人`;
+          return `${bin.label}<br/>频数：${bin.count}`;
         },
       },
       grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
@@ -80,12 +81,10 @@ export default function HistogramChart({ values, fieldName, userValue, binCount 
           rotate: bins.length > 8 ? 30 : 0,
           fontSize: 10,
         },
-        name: '数值区间',
-        nameTextStyle: { fontSize: 11, color: '#94a3b8', padding: [8, 0, 0, 0] },
       },
       yAxis: {
         type: 'value',
-        name: '人数',
+        name: '频数',
         nameTextStyle: { fontSize: 11, color: '#94a3b8' },
         splitLine: { lineStyle: { type: 'dashed', color: '#e2e8f0' } },
       },

@@ -103,9 +103,10 @@ export default function App() {
 
   // ===== Stage 0A-1: 分析能力判断 =====
   const canAnalyze = useMemo(() => {
-    return parsedData != null && 
-           dataVolumeState != null && 
-           !dataVolumeState.isParseTruncated;
+    return (
+      parsedData != null &&
+      dataVolumeState?.isParseTruncated !== true
+    );
   }, [parsedData, dataVolumeState]);
 
   // ===== v1.3 Hooks：筛选 / 分组 / 导出 =====
@@ -430,7 +431,7 @@ export default function App() {
 
           <div className="hero-foreground">
             <h1 className="hero-title-shimmer" style={styles.title}>{APP_NAME}</h1>
-            <p style={styles.subtitle}>粘贴表格数据，快速分析数据分布、排名与相对位置</p>
+            <p style={styles.subtitle}>粘贴表格数据，快速分析数据分布、统计特征与相对位置</p>
             <div style={styles.headerActions}>
               <button className="hero-btn-primary" onClick={handleSave}>保存当前输入</button>
               <button className="hero-btn-secondary" onClick={() => { if (window.confirm('确定恢复默认设置？当前输入会被覆盖。')) handleReset(); }}>恢复默认</button>
@@ -465,8 +466,8 @@ export default function App() {
           <h2 style={styles.sectionTitle}>数据输入</h2>
           <UsageGuide />
           <UpdateNotice />
-          <p style={styles.hint}>建议直接从 Excel 复制整块表格后粘贴到下方文本框中。</p>
-          <p style={styles.rowLimitHint}>建议单次粘贴数据量不超过 2 万行。数据量过大时，浏览器可能出现卡顿。</p>
+          <p style={styles.hint}>可直接粘贴表格，或上传 CSV / Excel 文件；也可加载示例数据或使用下方的外部数据源。</p>
+          <p style={styles.rowLimitHint}>建议单次加载的数据量不超过 2 万行。数据量过大时，浏览器可能出现卡顿。</p>
           <div style={styles.fileUploadRow}>
             <label style={styles.fileUploadLabel}>
               <input
@@ -497,12 +498,8 @@ export default function App() {
             <button className="sample-btn" style={styles.sampleButton} onClick={handleFillSample}>填入示例数据</button>
           </div>
 
-          {/* 零售 BI 连接区域 */}
-          <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
-            <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 600, color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ display: 'inline-block', width: '4px', height: '18px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', borderRadius: '2px' }} />
-              连接零售 BI 项目
-            </h3>
+          {/* 外部数据源入口 */}
+          <div style={{ marginTop: '20px' }}>
             <RetailBiConnectionForm onDataLoaded={handleRetailBiDataLoaded} />
           </div>
 
@@ -515,7 +512,7 @@ export default function App() {
         </section>
 
         {!parsedData && !parseError && (
-          <p style={styles.emptyHint}>请先粘贴表格数据。</p>
+          <p style={styles.emptyHint}>请先粘贴、上传或加载一份数据。</p>
         )}
 
         {parsedData && dataVolumeState?.isParseTruncated && (
@@ -587,11 +584,11 @@ export default function App() {
         <div style={styles.footerVersion}>版本：{APP_VERSION}</div>
         <div style={styles.footerSection}>
           <div style={styles.footerLabel}>说明：</div>
-          <p style={styles.footerText}>本工具仅基于用户粘贴的数据进行统计分析，不代表官方排名结果。若输入数据不是完整全量数据，百分位、名次区间和图表结果可能失真。</p>
+          <p style={styles.footerText}>本工具仅基于当前加载的数据进行统计分析，不代表官方评价或业务结论。若当前数据不是完整全量数据，百分位、相对位置和图表结果可能存在偏差。</p>
         </div>
         <div style={styles.footerSection}>
           <div style={styles.footerLabel}>隐私：</div>
-          <p style={styles.footerText}>本工具在浏览器本地运行，数据默认不上传服务器。保存内容仅存储在当前浏览器中。不同用户、不同设备、不同浏览器之间的数据互不共享。</p>
+          <p style={styles.footerText}>本地文件、粘贴文本和示例数据默认在浏览器中处理；使用外部数据源时，页面会请求你配置的服务地址。本地保存的输入与设置仅存储在当前浏览器中，不会在不同设备或浏览器之间自动同步。</p>
         </div>
       </footer>
     </div>

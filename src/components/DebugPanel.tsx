@@ -70,7 +70,7 @@ export function DebugPanel({ context, metricResult, selectedField, metricDef }: 
 
       {metricResult.position && metricResult.direction !== 'neutral' && metricResult.direction !== 'unspecified' && (
         <div style={styles.debugSection}>
-          <div style={styles.debugLabel}>排名定位</div>
+          <div style={styles.debugLabel}>相对位置</div>
           <div style={styles.debugRow}>
             <span style={styles.debugKey}>rank:</span>
             <span style={styles.debugValue}>{metricResult.position.bestRank}</span>
@@ -119,7 +119,7 @@ export function DebugPanel({ context, metricResult, selectedField, metricDef }: 
       </div>
 
       <div style={styles.debugFooter}>
-        修改 MetricDefinition.direction 后，排名和百分位应同步变化
+        修改 MetricDefinition.direction 后，相对位置和百分位应同步变化
       </div>
     </div>
   );

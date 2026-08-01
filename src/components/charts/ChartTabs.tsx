@@ -3,6 +3,7 @@ import type { ChartTab } from '../../types';
 interface ChartTabsProps {
   activeTab: ChartTab;
   onChange: (tab: ChartTab) => void;
+  hasTimeField?: boolean;
 }
 
 const TABS: { key: ChartTab; label: string }[] = [
@@ -10,12 +11,17 @@ const TABS: { key: ChartTab; label: string }[] = [
   { key: 'boxplot', label: '箱线图' },
   { key: 'cdf', label: '累积分布图' },
   { key: 'quartile', label: '四分位占比图' },
+  { key: 'timeseries', label: '时间趋势' },
 ];
 
-export default function ChartTabs({ activeTab, onChange }: ChartTabsProps) {
+export default function ChartTabs({ activeTab, onChange, hasTimeField = false }: ChartTabsProps) {
+  const visibleTabs = hasTimeField
+    ? TABS
+    : TABS.filter((tab) => tab.key !== 'timeseries');
+
   return (
     <div style={styles.container}>
-      {TABS.map(tab => (
+      {visibleTabs.map(tab => (
         <button
           key={tab.key}
           onClick={() => onChange(tab.key)}
@@ -37,6 +43,8 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '8px',
     marginBottom: '12px',
     flexWrap: 'wrap',
+    maxWidth: '100%',
+    minWidth: 0,
   },
   tab: {
     padding: '6px 16px',
@@ -47,6 +55,8 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '13px',
     cursor: 'pointer',
     transition: 'all 0.15s',
+    flex: '0 0 auto',
+    whiteSpace: 'nowrap',
   },
   tabActive: {
     background: '#3b82f6',
