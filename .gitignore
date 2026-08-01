@@ -32,3 +32,6 @@ Thumbs.db
 *.zip
 *.tar.gz
 *.rar
+
+# Trae IDE internal files
+.trae/
