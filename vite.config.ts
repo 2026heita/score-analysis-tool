@@ -1,8 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+const isGitHubPages = process.env.GITHUB_ACTIONS === 'true'
+
 export default defineConfig({
-  base: '/score-analysis-tool/',
+  base: isGitHubPages ? '/score-analysis-tool/' : '/',
   plugins: [react()],
   build: {
     rollupOptions: {
