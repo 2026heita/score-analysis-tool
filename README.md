@@ -6,6 +6,10 @@
 
 当前版本：`v2.1.0`
 
+## 在线体验
+
+- GitHub Pages： `https://2026heita.github.io/score-analysis-tool/`
+
 ## 项目定位
 
 本项目最初用于成绩数据分析，现已逐步升级为通用表格数据分析平台。
@@ -287,7 +291,6 @@ scripts/                 # 自动检查与测试脚本
 tests/                   # 集成测试辅助文件
 test-data/               # 合成测试数据
 docs/                    # 发布和使用文档
-internal/                # 内部技术记录
 ```
 
 ## 本地开发
