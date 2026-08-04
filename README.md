@@ -180,10 +180,10 @@ GET {baseUrl}/api/v1/dashboard/overview/trend
     {
       "dt": "2026-04-08",
       "totalSales": 53230287.48,
-      "totalOrders": 36970,
+      "totalOrders": 36969,
       "totalCustomers": 5878,
       "totalQuantity": 32118447,
-      "avgOrderValue": 1439.82,
+      "avgOrderValue": 1439.86,
       "sourceSystem": "hive_ads"
     }
   ],
@@ -195,15 +195,39 @@ GET {baseUrl}/api/v1/dashboard/overview/trend
 
 当前连接器只适配项目配套的零售经营指标接口，暂不支持任意 API 响应格式。后续可在统一表格模型之上增加更多连接器。
 
+> 当前零售BI截图和示例基于 `engineering_legacy_3x` 与 `synthetic_multiday`，用于证明API接入、日环比和时间趋势链路，不代表真实企业连续经营趋势。
+>
+> canonical原始数据完整链路重跑完成后，再更新默认展示和截图。
+
 ### 可选环境变量
 
-可以通过 Vite 环境变量设置默认 API 地址：
+可以通过 Vite 环境变量设置默认 API 地址和数据 profile：
 
-```bash
-VITE_RETAIL_BI_API_BASE_URL=https://api.example.com
+```env
+VITE_RETAIL_BI_API_BASE_URL=
+VITE_RETAIL_DATA_PROFILE=
 ```
 
-未配置环境变量时，API 地址输入框保持为空，不会自动请求 `localhost`。
+未配置环境变量时：
+- API 地址输入框保持为空，不会自动请求 `localhost`
+- 数据 profile 显示为"未声明"
+
+配置 `VITE_RETAIL_DATA_PROFILE` 后，连接器区域会显示当前使用的数据 profile，便于追溯数据来源和口径。
+
+**数据 Profile 说明：**
+
+当前页面展示的"数据Profile"来自前端构建环境变量 `VITE_RETAIL_DATA_PROFILE`，仅用于声明当前部署期望连接的数据口径，并不代表后端API已返回或自动验证了该Profile。
+
+允许值：
+- `canonical`
+- `engineering_legacy_3x`
+- `synthetic_multiday`
+
+未配置时显示"未声明"，非法值显示"配置无效"。实际数据口径应以后端数据血缘文档和部署环境为准。
+
+**截图与示例说明：**
+
+当前 README 中的零售 BI 示例和截图基于 `engineering_legacy_3x` 或 `synthetic_multiday`，用于验证 API 接入、日环比和多日趋势链路，不代表真实企业连续经营趋势。`canonical` 完整链路完成后，再更新默认部署变量和截图。
 
 后端需要允许前端站点来源访问对应接口，并正确配置 CORS。
 

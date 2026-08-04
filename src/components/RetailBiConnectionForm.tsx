@@ -60,6 +60,35 @@ const LEGACY_LOCALHOST_URLS = new Set([
 ]);
 
 /**
+ * 允许的 profile 值白名单。
+ */
+const ALLOWED_PROFILES = new Set([
+  'canonical',
+  'engineering_legacy_3x',
+  'synthetic_multiday',
+]);
+
+/**
+ * 读取并验证零售数据 profile 环境变量。
+ *
+ * 仅用于在连接器区域展示数据来源口径，不影响后端 API 协议。
+ * 返回验证后的 profile 值或错误状态。
+ */
+function getRetailDataProfile(): { value: string | null; isValid: boolean } {
+  const profile = import.meta.env.VITE_RETAIL_DATA_PROFILE?.trim();
+
+  if (!profile || profile.length === 0) {
+    return { value: null, isValid: true };
+  }
+
+  if (!ALLOWED_PROFILES.has(profile)) {
+    return { value: profile, isValid: false };
+  }
+
+  return { value: profile, isValid: true };
+}
+
+/**
  * 从 localStorage 读取连接配置。
  *
  * 如果保存的地址是旧版 localhost 默认值，则清除该存储键。
@@ -285,6 +314,21 @@ export function RetailBiConnectionForm({
             <div style={styles.connectorHint}>
               用于连接项目配套的零售 BI 服务，暂不支持任意 API 数据格式。
             </div>
+            <div style={styles.profileInfo}>
+              {(() => {
+                const profile = getRetailDataProfile();
+                if (profile.value === null) {
+                  return '前端声明的数据Profile：未声明';
+                }
+                if (!profile.isValid) {
+                  return '前端声明的数据Profile：配置无效';
+                }
+                return `前端声明的数据Profile：${profile.value}`;
+              })()}
+              <div style={styles.profileHint}>
+                该值来自前端环境配置，实际口径以后端数据血缘说明为准。
+              </div>
+            </div>
           </div>
 
           <div style={styles.formGroup}>
@@ -425,6 +469,17 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '11px',
     color: '#94a3b8',
     marginTop: '4px',
+  },
+  profileInfo: {
+    fontSize: '11px',
+    color: '#64748b',
+    marginTop: '4px',
+    fontStyle: 'italic',
+  },
+  profileHint: {
+    fontSize: '10px',
+    color: '#94a3b8',
+    marginTop: '2px',
   },
   formGroup: {
     display: 'flex',
