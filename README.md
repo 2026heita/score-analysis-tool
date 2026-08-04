@@ -152,6 +152,18 @@
 
 当前支持的接口：
 
+- `GET {baseUrl}/api/v1/dashboard/overview/trend?startDate=...&endDate=...`
+- `GET {baseUrl}/api/v1/dashboard/overview?date=...`
+- `GET {baseUrl}/api/v1/dashboard/overview/comparison?date=...`
+
+说明：
+
+- 趋势接口使用开始日期和结束日期；
+- 单日概览与日环比使用结束日期作为查询日期；
+- 三类请求失败状态彼此隔离，不应展示上一次加载的旧数据。
+
+示例请求：
+
 ```text
 GET {baseUrl}/api/v1/dashboard/overview/trend
     ?startDate=2026-04-01
@@ -197,11 +209,23 @@ VITE_RETAIL_BI_API_BASE_URL=https://api.example.com
 
 ### 展示效果
 
-| 截图 | 说明 |
-|---|---|
-| [BI Connector 接入成功](docs/screenshots/10_retail_bi_connector_success.png) | 外部数据源折叠面板展开，API 地址和日期范围配置完成 |
-| [单日经营概览与日环比](docs/screenshots/11_retail_bi_overview_comparison.png) | 五个核心 KPI 卡片 + 日环比变化百分比 |
-| [多日趋势分析](docs/screenshots/12_retail_bi_sales_trend.png) | 时间趋势折线图展示销售额、订单数等指标变化 |
+#### 1. BI Connector 接入成功
+
+![BI Connector 接入成功](docs/screenshots/10_retail_bi_connector_success.png)
+
+> 配置 Spring Boot API 地址和日期范围后，成功加载零售经营指标数据。
+
+#### 2. 单日经营概览与日环比
+
+![单日经营概览与日环比](docs/screenshots/11_retail_bi_overview_comparison.png)
+
+> 展示总销售额、总订单数、总客户数、总销售数量和平均订单价值，并计算前一自然日环比。
+
+#### 3. 多日销售趋势
+
+![多日销售趋势](docs/screenshots/12_retail_bi_sales_trend.png)
+
+> 将日期范围指标转换为统一 ParsedTable，复用平台时间趋势分析能力；截图以总销售额为例。
 
 ## 数据处理与隐私边界
 
