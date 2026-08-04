@@ -4,6 +4,7 @@ import { useParsedTable } from './hooks/useParsedTable';
 import { latestAppVersion } from './data/updateLogs';
 import { APP_NAME } from './config/app';
 import type { ChartTab, OriginalFieldRadarState, ParsedTable } from './types';
+import type { SalesOverviewVO, SalesOverviewComparisonVO } from './types/retailBi';
 import UsageGuide from './components/UsageGuide';
 import UpdateNotice from './components/UpdateNotice';
 import { clearOriginalFieldRadarCache } from './components/charts/OriginalFieldRadar';
@@ -16,6 +17,8 @@ import { useAnalysisDataset } from './hooks/useAnalysisDataset';
 import { calculateFieldAnalyticScore } from './utils/tableParser/fieldClassifier';
 import { createHeroDataFlowSelection } from './data/heroDataFlowPool';
 import { RetailBiConnectionForm } from './components/RetailBiConnectionForm';
+import RetailBiOverview from './components/RetailBiOverview';
+import RetailBiComparison from './components/RetailBiComparison';
 
 // v1.8: Lazy load analysis section — 分析引擎 + 图表不在首屏加载
 const AnalysisSection = lazy(() => import('./components/AnalysisSection'));
@@ -23,6 +26,8 @@ const AnalysisSection = lazy(() => import('./components/AnalysisSection'));
 export default function App() {
   const { loadState, save, clear, getDefault } = usePersistedState();
   const [showSampleSelector, setShowSampleSelector] = useState(false);
+  const [retailBiOverview, setRetailBiOverview] = useState<SalesOverviewVO | null>(null);
+  const [retailBiComparison, setRetailBiComparison] = useState<SalesOverviewComparisonVO | null>(null);
 
   // ===== 注入全局动画样式 =====
   useEffect(() => {
@@ -384,6 +389,14 @@ export default function App() {
     ],
   );
 
+  const handleRetailBiOverviewLoaded = useCallback((overview: SalesOverviewVO) => {
+    setRetailBiOverview(overview);
+  }, []);
+
+  const handleRetailBiComparisonLoaded = useCallback((comparison: SalesOverviewComparisonVO) => {
+    setRetailBiComparison(comparison);
+  }, []);
+
   const handleFillSample = useCallback(() => {
     setShowSampleSelector(true);
   }, []);
@@ -500,8 +513,30 @@ export default function App() {
 
           {/* 外部数据源入口 */}
           <div style={{ marginTop: '20px' }}>
-            <RetailBiConnectionForm onDataLoaded={handleRetailBiDataLoaded} />
+            <RetailBiConnectionForm
+              onDataLoaded={handleRetailBiDataLoaded}
+              onOverviewLoaded={handleRetailBiOverviewLoaded}
+              onComparisonLoaded={handleRetailBiComparisonLoaded}
+              onReloadStart={() => {
+                setRetailBiOverview(null);
+                setRetailBiComparison(null);
+              }}
+            />
           </div>
+
+          {/* 零售 BI 单日经营概览 */}
+          {retailBiOverview && (
+            <div style={{ marginTop: '20px' }}>
+              <RetailBiOverview data={retailBiOverview} />
+            </div>
+          )}
+
+          {/* 零售 BI 日环比 */}
+          {retailBiComparison && (
+            <div style={{ marginTop: '20px' }}>
+              <RetailBiComparison data={retailBiComparison} />
+            </div>
+          )}
 
           {parseError && <p style={styles.error}>{parseError}</p>}
           {fileError && <p style={styles.error}>{fileError}</p>}

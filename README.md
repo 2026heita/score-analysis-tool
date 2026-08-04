@@ -195,6 +195,14 @@ VITE_RETAIL_BI_API_BASE_URL=https://api.example.com
 
 后端需要允许前端站点来源访问对应接口，并正确配置 CORS。
 
+### 展示效果
+
+| 截图 | 说明 |
+|---|---|
+| [BI Connector 接入成功](docs/screenshots/10_retail_bi_connector_success.png) | 外部数据源折叠面板展开，API 地址和日期范围配置完成 |
+| [单日经营概览与日环比](docs/screenshots/11_retail_bi_overview_comparison.png) | 五个核心 KPI 卡片 + 日环比变化百分比 |
+| [多日趋势分析](docs/screenshots/12_retail_bi_sales_trend.png) | 时间趋势折线图展示销售额、订单数等指标变化 |
+
 ## 数据处理与隐私边界
 
 ### 本地数据

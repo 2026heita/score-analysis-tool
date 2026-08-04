@@ -15,9 +15,12 @@
 
 import { useState, useEffect, useRef } from 'react';
 import type { ParsedTable } from '../types';
+import type { SalesOverviewVO, SalesOverviewComparisonVO } from '../types/retailBi';
 import {
   getDefaultRetailBiBaseUrl,
   fetchSalesTrend,
+  fetchSalesOverview,
+  fetchSalesComparison,
   RetailBiApiError,
 } from '../services/retailBiApi';
 import { convertSalesDataToParsedTable } from '../services/retailBiAdapter';
@@ -27,6 +30,9 @@ import { convertSalesDataToParsedTable } from '../services/retailBiAdapter';
  */
 export interface RetailBiConnectionFormProps {
   onDataLoaded: (table: ParsedTable) => void;
+  onOverviewLoaded?: (overview: SalesOverviewVO) => void;
+  onComparisonLoaded?: (comparison: SalesOverviewComparisonVO) => void;
+  onReloadStart?: () => void;
 }
 
 /**
@@ -92,6 +98,9 @@ function saveStoredConfig(config: StoredConnectionConfig): void {
  */
 export function RetailBiConnectionForm({
   onDataLoaded,
+  onOverviewLoaded,
+  onComparisonLoaded,
+  onReloadStart,
 }: RetailBiConnectionFormProps) {
   // 初始化表单状态
   const [baseUrl, setBaseUrl] = useState('');
@@ -168,11 +177,14 @@ export function RetailBiConnectionForm({
       return;
     }
 
+    // 通知父组件清理旧的概览和环比数据
+    onReloadStart?.();
+
     // 开始加载
     setIsLoading(true);
 
     try {
-      // 调用 API
+      // 调用 API 获取趋势数据
       const data = await fetchSalesTrend({
         baseUrl: baseUrl.trim(),
         startDate: startDate.trim(),
@@ -191,6 +203,34 @@ export function RetailBiConnectionForm({
 
       // 通知父组件
       onDataLoaded(parsedTable);
+
+      // 如果提供了概览回调，加载单日概览数据
+      if (onOverviewLoaded) {
+        try {
+          const overview = await fetchSalesOverview(
+            baseUrl.trim(),
+            endDate.trim()
+          );
+          onOverviewLoaded(overview);
+        } catch (overviewError) {
+          // 概览数据加载失败不影响趋势数据
+          console.warn('加载单日概览数据失败:', overviewError);
+        }
+      }
+
+      // 如果提供了环比回调，加载日环比数据
+      if (onComparisonLoaded) {
+        try {
+          const comparison = await fetchSalesComparison(
+            baseUrl.trim(),
+            endDate.trim()
+          );
+          onComparisonLoaded(comparison);
+        } catch (comparisonError) {
+          // 环比数据加载失败不影响趋势数据
+          console.warn('加载日环比数据失败:', comparisonError);
+        }
+      }
 
       // 显示成功消息
       setSuccessMessage(`成功加载 ${data.length} 行数据`);

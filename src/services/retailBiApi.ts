@@ -11,7 +11,9 @@
 import type {
   ApiResponse,
   RetailBiConnectionConfig,
+  SalesOverviewComparisonVO,
   SalesOverviewRow,
+  SalesOverviewVO,
 } from '../types/retailBi';
 
 /**
@@ -155,6 +157,178 @@ export async function fetchSalesTrend(
   if (!Array.isArray(apiResponse.data)) {
     throw new RetailBiApiError(
       '零售 BI 服务返回的数据格式不正确',
+      apiResponse.code,
+      requestId,
+    );
+  }
+
+  return apiResponse.data;
+}
+
+/**
+ * 查询指定日期的单日销售概览数据。
+ */
+export async function fetchSalesOverview(
+  baseUrl: string,
+  date: string,
+): Promise<SalesOverviewVO> {
+  const resolvedBaseUrl = resolveBaseUrl(baseUrl);
+
+  let url: URL;
+
+  try {
+    url = new URL(
+      '/api/v1/dashboard/overview',
+      resolvedBaseUrl,
+    );
+  } catch {
+    throw new RetailBiApiError(
+      'API 基础地址格式不正确，请检查后重新输入',
+    );
+  }
+
+  url.searchParams.set('date', date);
+
+  let response: Response;
+
+  try {
+    response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+  } catch (error) {
+    const detail =
+      error instanceof Error ? error.message : '未知网络错误';
+
+    throw new RetailBiApiError(
+      `无法连接零售 BI 服务：${detail}`,
+    );
+  }
+
+  const apiResponse =
+    await parseApiResponse<SalesOverviewVO>(response);
+
+  const requestId =
+    apiResponse?.requestId
+    || response.headers.get('X-Request-Id')
+    || undefined;
+
+  if (!response.ok) {
+    throw new RetailBiApiError(
+      apiResponse?.message
+      || `请求失败，HTTP 状态码：${response.status}`,
+      response.status,
+      requestId,
+    );
+  }
+
+  if (apiResponse === null) {
+    throw new RetailBiApiError(
+      '零售 BI 服务返回的内容不是有效 JSON',
+      response.status,
+      requestId,
+    );
+  }
+
+  if (apiResponse.code !== 200) {
+    throw new RetailBiApiError(
+      apiResponse.message || '零售 BI 服务返回业务错误',
+      apiResponse.code,
+      requestId,
+    );
+  }
+
+  if (apiResponse.data === null) {
+    throw new RetailBiApiError(
+      '零售 BI 服务未返回数据',
+      apiResponse.code,
+      requestId,
+    );
+  }
+
+  return apiResponse.data;
+}
+
+/**
+ * 查询指定日期的销售概览日环比数据。
+ */
+export async function fetchSalesComparison(
+  baseUrl: string,
+  date: string,
+): Promise<SalesOverviewComparisonVO> {
+  const resolvedBaseUrl = resolveBaseUrl(baseUrl);
+
+  let url: URL;
+
+  try {
+    url = new URL(
+      '/api/v1/dashboard/overview/comparison',
+      resolvedBaseUrl,
+    );
+  } catch {
+    throw new RetailBiApiError(
+      'API 基础地址格式不正确，请检查后重新输入',
+    );
+  }
+
+  url.searchParams.set('date', date);
+
+  let response: Response;
+
+  try {
+    response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+  } catch (error) {
+    const detail =
+      error instanceof Error ? error.message : '未知网络错误';
+
+    throw new RetailBiApiError(
+      `无法连接零售 BI 服务：${detail}`,
+    );
+  }
+
+  const apiResponse =
+    await parseApiResponse<SalesOverviewComparisonVO>(response);
+
+  const requestId =
+    apiResponse?.requestId
+    || response.headers.get('X-Request-Id')
+    || undefined;
+
+  if (!response.ok) {
+    throw new RetailBiApiError(
+      apiResponse?.message
+      || `请求失败，HTTP 状态码：${response.status}`,
+      response.status,
+      requestId,
+    );
+  }
+
+  if (apiResponse === null) {
+    throw new RetailBiApiError(
+      '零售 BI 服务返回的内容不是有效 JSON',
+      response.status,
+      requestId,
+    );
+  }
+
+  if (apiResponse.code !== 200) {
+    throw new RetailBiApiError(
+      apiResponse.message || '零售 BI 服务返回业务错误',
+      apiResponse.code,
+      requestId,
+    );
+  }
+
+  if (apiResponse.data === null) {
+    throw new RetailBiApiError(
+      '零售 BI 服务未返回数据',
       apiResponse.code,
       requestId,
     );
