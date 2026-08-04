@@ -60,6 +60,17 @@ const LEGACY_LOCALHOST_URLS = new Set([
 ]);
 
 /**
+ * 读取零售数据 profile 环境变量。
+ *
+ * 仅用于在连接器区域展示数据来源口径，不影响后端 API 协议。
+ * 未配置时返回 null，由 UI 显示为"未声明"。
+ */
+function getRetailDataProfile(): string | null {
+  const profile = import.meta.env.VITE_RETAIL_DATA_PROFILE?.trim();
+  return profile && profile.length > 0 ? profile : null;
+}
+
+/**
  * 从 localStorage 读取连接配置。
  *
  * 如果保存的地址是旧版 localhost 默认值，则清除该存储键。
@@ -285,6 +296,9 @@ export function RetailBiConnectionForm({
             <div style={styles.connectorHint}>
               用于连接项目配套的零售 BI 服务，暂不支持任意 API 数据格式。
             </div>
+            <div style={styles.profileInfo}>
+              数据 Profile：{getRetailDataProfile() || '未声明'}
+            </div>
           </div>
 
           <div style={styles.formGroup}>
@@ -425,6 +439,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '11px',
     color: '#94a3b8',
     marginTop: '4px',
+  },
+  profileInfo: {
+    fontSize: '11px',
+    color: '#64748b',
+    marginTop: '4px',
+    fontStyle: 'italic',
   },
   formGroup: {
     display: 'flex',
