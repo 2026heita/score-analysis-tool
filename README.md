@@ -162,13 +162,15 @@
 - 单日概览与日环比使用结束日期作为查询日期；
 - 三类请求失败状态彼此隔离，不应展示上一次加载的旧数据。
 
-示例请求：
+示例请求（canonical 主案例）：
 
 ```text
 GET {baseUrl}/api/v1/dashboard/overview/trend
-    ?startDate=2026-04-01
-    &endDate=2026-04-08
+    ?startDate=2009-12-11
+    &endDate=2009-12-13
 ```
+
+该日期范围包含两个真实业务日期：2009-12-11 和 2009-12-13（2009-12-12 无业务数据）。
 
 预期响应结构：
 
@@ -178,13 +180,22 @@ GET {baseUrl}/api/v1/dashboard/overview/trend
   "message": "success",
   "data": [
     {
-      "dt": "2026-04-08",
-      "totalSales": 53230287.48,
-      "totalOrders": 36969,
-      "totalCustomers": 5878,
-      "totalQuantity": 32118447,
-      "avgOrderValue": 1439.86,
-      "sourceSystem": "hive_ads"
+      "dt": "2009-12-11",
+      "totalSales": 39388.54,
+      "totalOrders": 65,
+      "totalCustomers": 58,
+      "totalQuantity": 21276,
+      "avgOrderValue": 605.98,
+      "sourceSystem": "retail_canonical_ads"
+    },
+    {
+      "dt": "2009-12-13",
+      "totalSales": 21711.46,
+      "totalOrders": 69,
+      "totalCustomers": 63,
+      "totalQuantity": 12293,
+      "avgOrderValue": 314.66,
+      "sourceSystem": "retail_canonical_ads"
     }
   ],
   "requestId": "..."
@@ -195,9 +206,21 @@ GET {baseUrl}/api/v1/dashboard/overview/trend
 
 当前连接器只适配项目配套的零售经营指标接口，暂不支持任意 API 响应格式。后续可在统一表格模型之上增加更多连接器。
 
-> 当前零售BI截图和示例基于 `engineering_legacy_3x` 与 `synthetic_multiday`，用于证明API接入、日环比和时间趋势链路，不代表真实企业连续经营趋势。
+> 当前 canonical 端到端链路已完成本地联调，主案例为 2009-12-13 与上一可用业务日 2009-12-11 比较。
 >
-> canonical原始数据完整链路重跑完成后，再更新默认展示和截图。
+> 历史工程验证：早期版本曾使用 `engineering_legacy_3x` 与 `synthetic_multiday` 验证 API 接入链路，不代表真实业务数据。
+
+![Canonical Retail BI 上一可用业务日环比](docs/screenshots/13_retail_bi_canonical_business_day_comparison.png)
+
+> 截图证明内容：
+> - 查询范围 2009-12-11 ~ 2009-12-13
+> - 成功加载 2 个真实业务日期
+> - 当前业务日 2009-12-13
+> - 上一可用业务日 2009-12-11
+> - 2009-12-12 无业务数据
+> - 页面展示五项经营指标及环比
+>
+> API 验证结果：comparisonAvailable=true，sourceSystem=retail_canonical_ads（来自后端 API 响应，非截图直接展示）。
 
 ### 可选环境变量
 
@@ -227,7 +250,7 @@ VITE_RETAIL_DATA_PROFILE=
 
 **截图与示例说明：**
 
-当前 README 中的零售 BI 示例和截图基于 `engineering_legacy_3x` 或 `synthetic_multiday`，用于验证 API 接入、日环比和多日趋势链路，不代表真实企业连续经营趋势。`canonical` 完整链路完成后，再更新默认部署变量和截图。
+当前主案例已更新为 canonical 数据（2009-12-13 与上一可用业务日 2009-12-11 比较）。历史截图仍保留 `engineering_legacy_3x` 与 `synthetic_multiday` 的验证结果，用于证明 API 接入和多日趋势链路，不代表真实企业连续经营趋势。
 
 后端需要允许前端站点来源访问对应接口，并正确配置 CORS。
 
@@ -243,7 +266,9 @@ VITE_RETAIL_DATA_PROFILE=
 
 ![单日经营概览与日环比](docs/screenshots/11_retail_bi_overview_comparison.png)
 
-> 展示总销售额、总订单数、总客户数、总销售数量和平均订单价值，并计算前一自然日环比。
+> 展示总销售额、总订单数、总客户数、总销售数量和平均订单价值，并比较当前业务日与同一 source_system 下上一可用业务日。
+>
+> 当前实现：2009-12-13 与上一可用业务日 2009-12-11 比较（2009-12-12 无数据）。comparisonDate 完全由后端 API 返回，前端不自行计算上一日期。
 
 #### 3. 多日销售趋势
 
@@ -271,6 +296,37 @@ VITE_RETAIL_DATA_PROFILE=
 使用外部数据源时，浏览器会向用户填写或环境变量配置的服务地址发起请求。
 
 平台无法替外部服务承诺数据留存、日志记录或访问控制策略，实际安全边界取决于所连接的服务。
+
+### Retail BI 连接配置本地持久化
+
+Retail BI Connector 自动在当前浏览器保存以下连接配置：
+
+- `baseUrl`：API 基础地址
+- `startDate`：开始日期
+- `endDate`：结束日期
+
+**Storage Key：** `game-score.retail-bi.connection`
+
+刷新或重新打开页面时自动恢复已保存的配置。
+
+**不会持久化的内容：**
+- API 返回的业务数据（overview/comparison 响应）
+- 密码或 token
+- 服务端不存储这些配置，仅保存在当前浏览器
+
+**环境变量说明：**
+
+可以通过 Vite 环境变量设置默认 API 地址和数据 profile：
+
+```env
+VITE_RETAIL_BI_API_BASE_URL=
+VITE_RETAIL_DATA_PROFILE=canonical
+```
+
+**重要说明：**
+- `VITE_RETAIL_DATA_PROFILE` 只是前端声明的期望 profile
+- 真正 `sourceSystem` 应以后端 API 返回值为准
+- 不要将真实密码、MySQL 地址等敏感配置写入仓库
 
 ## 数据量策略
 
