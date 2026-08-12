@@ -123,6 +123,25 @@ function saveStoredConfig(config: StoredConnectionConfig): void {
 }
 
 /**
+ * 将 yyyy-MM-dd 格式的日期字符串加减指定天数。
+ * 使用本地年月日构造 Date，避免时区导致日期偏移。
+ */
+function adjustDateByDays(dateStr: string, delta: number): string {
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const year = Number(parts[0]);
+  const month = Number(parts[1]);
+  const day = Number(parts[2]);
+  if (isNaN(year) || isNaN(month) || isNaN(day)) return dateStr;
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() + delta);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/**
  * 零售 BI 连接表单组件。
  */
 export function RetailBiConnectionForm({
@@ -143,6 +162,9 @@ export function RetailBiConnectionForm({
   const [isExpanded, setIsExpanded] = useState(false);
   const detailsRef = useRef<HTMLDetailsElement>(null);
 
+  // 标记 localStorage hydration 是否完成，避免首次 mount 用空字符串覆盖已有配置
+  const [isHydrated, setIsHydrated] = useState(false);
+
   // 组件挂载时读取 localStorage
   useEffect(() => {
     const stored = loadStoredConfig();
@@ -154,7 +176,35 @@ export function RetailBiConnectionForm({
       // 仅使用显式环境变量，不自动填入 localhost
       setBaseUrl(getDefaultRetailBiBaseUrl());
     }
+    // 延迟标记 hydration 完成，确保本次 state 更新不会触发自动保存
+    const timer = setTimeout(() => setIsHydrated(true), 0);
+    return () => clearTimeout(timer);
   }, []);
+
+  // hydration 完成后，用户修改任意字段时自动持久化
+  useEffect(() => {
+    if (!isHydrated) return;
+
+    const trimmedBaseUrl = baseUrl.trim();
+    const trimmedStartDate = startDate.trim();
+    const trimmedEndDate = endDate.trim();
+
+    // 三个字段全部为空时删除存储键
+    if (!trimmedBaseUrl && !trimmedStartDate && !trimmedEndDate) {
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch {
+        // 忽略
+      }
+      return;
+    }
+
+    saveStoredConfig({
+      baseUrl: trimmedBaseUrl,
+      startDate: trimmedStartDate,
+      endDate: trimmedEndDate,
+    });
+  }, [isHydrated, baseUrl, startDate, endDate]);
 
   // 同步 details 元素的 open 属性与 React 状态
   useEffect(() => {
@@ -332,8 +382,10 @@ export function RetailBiConnectionForm({
           </div>
 
           <div style={styles.formGroup}>
-            <label style={styles.label}>API 基础地址</label>
+            <label style={styles.label} htmlFor="retail-bi-base-url">API 基础地址</label>
             <input
+              id="retail-bi-base-url"
+              name="retail-bi-base-url"
               type="text"
               className="retail-bi-input"
               style={styles.input}
@@ -346,27 +398,107 @@ export function RetailBiConnectionForm({
 
           <div className="retail-bi-date-row" style={styles.dateRow}>
             <div className="retail-bi-date-group" style={styles.dateGroup}>
-              <label style={styles.label}>开始日期</label>
-              <input
-                type="date"
-                className="retail-bi-input"
-                style={styles.input}
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                disabled={isLoading}
-              />
+              <label style={styles.label} htmlFor="retail-bi-start-date">开始日期</label>
+              <div style={styles.dateInputGroup}>
+                <button
+                  type="button"
+                  style={styles.dateAdjustButton}
+                  onClick={() => setStartDate(adjustDateByDays(startDate, -7))}
+                  disabled={!startDate || isLoading}
+                  aria-label="开始日期减 7 天"
+                >
+                  -7天
+                </button>
+                <button
+                  type="button"
+                  style={styles.dateAdjustButton}
+                  onClick={() => setStartDate(adjustDateByDays(startDate, -1))}
+                  disabled={!startDate || isLoading}
+                  aria-label="开始日期减 1 天"
+                >
+                  -1天
+                </button>
+                <input
+                  id="retail-bi-start-date"
+                  name="retail-bi-start-date"
+                  type="date"
+                  className="retail-bi-input"
+                  style={styles.dateInput}
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  disabled={isLoading}
+                />
+                <button
+                  type="button"
+                  style={styles.dateAdjustButton}
+                  onClick={() => setStartDate(adjustDateByDays(startDate, 1))}
+                  disabled={!startDate || isLoading}
+                  aria-label="开始日期加 1 天"
+                >
+                  +1天
+                </button>
+                <button
+                  type="button"
+                  style={styles.dateAdjustButton}
+                  onClick={() => setStartDate(adjustDateByDays(startDate, 7))}
+                  disabled={!startDate || isLoading}
+                  aria-label="开始日期加 7 天"
+                >
+                  +7天
+                </button>
+              </div>
             </div>
 
             <div className="retail-bi-date-group" style={styles.dateGroup}>
-              <label style={styles.label}>结束日期</label>
-              <input
-                type="date"
-                className="retail-bi-input"
-                style={styles.input}
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                disabled={isLoading}
-              />
+              <label style={styles.label} htmlFor="retail-bi-end-date">结束日期</label>
+              <div style={styles.dateInputGroup}>
+                <button
+                  type="button"
+                  style={styles.dateAdjustButton}
+                  onClick={() => setEndDate(adjustDateByDays(endDate, -7))}
+                  disabled={!endDate || isLoading}
+                  aria-label="结束日期减 7 天"
+                >
+                  -7天
+                </button>
+                <button
+                  type="button"
+                  style={styles.dateAdjustButton}
+                  onClick={() => setEndDate(adjustDateByDays(endDate, -1))}
+                  disabled={!endDate || isLoading}
+                  aria-label="结束日期减 1 天"
+                >
+                  -1天
+                </button>
+                <input
+                  id="retail-bi-end-date"
+                  name="retail-bi-end-date"
+                  type="date"
+                  className="retail-bi-input"
+                  style={styles.dateInput}
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  disabled={isLoading}
+                />
+                <button
+                  type="button"
+                  style={styles.dateAdjustButton}
+                  onClick={() => setEndDate(adjustDateByDays(endDate, 1))}
+                  disabled={!endDate || isLoading}
+                  aria-label="结束日期加 1 天"
+                >
+                  +1天
+                </button>
+                <button
+                  type="button"
+                  style={styles.dateAdjustButton}
+                  onClick={() => setEndDate(adjustDateByDays(endDate, 7))}
+                  disabled={!endDate || isLoading}
+                  aria-label="结束日期加 7 天"
+                >
+                  +7天
+                </button>
+              </div>
             </div>
           </div>
 
@@ -380,6 +512,10 @@ export function RetailBiConnectionForm({
           >
             {isLoading ? '加载中……' : '加载数据'}
           </button>
+
+          <p style={styles.autoSaveHint}>
+            连接配置会自动保存在当前浏览器。可使用快捷按钮调整日期，也可直接打开日历选择。
+          </p>
 
           {error && <p style={styles.error}>{error}</p>}
           {successMessage && <p style={styles.success}>{successMessage}</p>}
@@ -499,6 +635,11 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     gap: '6px',
   },
+  dateInputGroup: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+  },
   label: {
     fontSize: '13px',
     fontWeight: 500,
@@ -517,6 +658,28 @@ const styles: Record<string, React.CSSProperties> = {
     maxWidth: '100%',
     display: 'block',
   },
+  dateInput: {
+    flex: 1,
+    minWidth: 0,
+    padding: '8px 10px',
+    border: '1px solid #e2e8f0',
+    borderRadius: '6px',
+    fontSize: '13px',
+    boxSizing: 'border-box',
+    outline: 'none',
+  },
+  dateAdjustButton: {
+    padding: '6px 8px',
+    fontSize: '11px',
+    fontWeight: 500,
+    color: '#475569',
+    background: '#f1f5f9',
+    border: '1px solid #e2e8f0',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
+  },
   button: {
     padding: '10px 24px',
     background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
@@ -532,6 +695,12 @@ const styles: Record<string, React.CSSProperties> = {
   buttonDisabled: {
     opacity: 0.6,
     cursor: 'not-allowed',
+  },
+  autoSaveHint: {
+    margin: 0,
+    fontSize: '11px',
+    color: '#94a3b8',
+    fontStyle: 'italic',
   },
   error: {
     margin: 0,

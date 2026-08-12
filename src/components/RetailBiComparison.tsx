@@ -9,7 +9,7 @@
  * - avgOrderValuePercent
  *
  * 状态处理：
- * - comparisonAvailable=false：显示"暂无昨日数据，无法比较"
+ * - comparisonAvailable=false：当前数据源不存在更早的可用业务日期
  * - 单项百分比为 null：显示"暂无数据"
  */
 
@@ -84,13 +84,13 @@ export default function RetailBiComparison({ data }: RetailBiComparisonProps) {
           <div style={styles.dateNote}>
             <span style={styles.noteIcon}>ℹ️</span>
             <span style={styles.noteText}>
-              当前日期 <strong>{data.date}</strong>，对比日期 {data.comparisonDate}
+              当前日期 <strong>{data.date}</strong>
             </span>
           </div>
           <div style={styles.unavailableState}>
-            <p style={styles.unavailableText}>暂无昨日数据，无法比较</p>
+            <p style={styles.unavailableText}>暂无上一可用业务日，无法比较</p>
             <p style={styles.unavailableHint}>
-              请确保对比日期 {data.comparisonDate} 有对应的销售数据
+              当前 source_system 下不存在更早的可用业务日期
             </p>
           </div>
         </div>
@@ -138,7 +138,7 @@ export default function RetailBiComparison({ data }: RetailBiComparisonProps) {
         <div style={styles.dateNote}>
           <span style={styles.noteIcon}>ℹ️</span>
           <span style={styles.noteText}>
-            当前日期 <strong>{data.date}</strong>，对比日期 {data.comparisonDate}
+            当前日期 <strong>{data.date}</strong>，与上一可用业务日 {data.comparisonDate} 比较
           </span>
         </div>
         <div style={styles.metricsGrid}>

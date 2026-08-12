@@ -48,7 +48,7 @@ export interface RetailBiConnectionConfig {
 /**
  * 环比变化百分比（comparison 接口返回）。
  * 字段名包含 Percent，表示返回值 12.34 是百分之十二点三四。
- * 当前一日某项指标为 0 时，对应百分比为 null。
+ * 上一可用业务日某项指标为 0 时，对应百分比为 null。
  */
 export interface SalesOverviewChangePercentVO {
   totalSalesPercent: number | null;
@@ -60,10 +60,12 @@ export interface SalesOverviewChangePercentVO {
 
 /**
  * 日环比对比结果（comparison 接口返回）。
+ * comparisonDate 表示同一 source_system 下上一可用业务日期。
+ * 当 comparisonAvailable=false 时，comparisonDate 为 null。
  */
 export interface SalesOverviewComparisonVO {
   date: string;
-  comparisonDate: string;
+  comparisonDate: string | null;
   comparisonAvailable: boolean;
   current: SalesOverviewVO;
   previous: SalesOverviewVO | null;
