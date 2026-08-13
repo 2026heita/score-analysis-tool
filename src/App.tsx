@@ -4,7 +4,7 @@ import { useParsedTable } from './hooks/useParsedTable';
 import { latestAppVersion } from './data/updateLogs';
 import { APP_NAME } from './config/app';
 import type { ChartTab, OriginalFieldRadarState, ParsedTable } from './types';
-import type { SalesOverviewVO, SalesOverviewComparisonVO } from './types/retailBi';
+import type { SalesAnomalyVO, SalesOverviewVO, SalesOverviewComparisonVO } from './types/retailBi';
 import UsageGuide from './components/UsageGuide';
 import UpdateNotice from './components/UpdateNotice';
 import { clearOriginalFieldRadarCache } from './components/charts/OriginalFieldRadar';
@@ -19,6 +19,7 @@ import { createHeroDataFlowSelection } from './data/heroDataFlowPool';
 import { RetailBiConnectionForm } from './components/RetailBiConnectionForm';
 import RetailBiOverview from './components/RetailBiOverview';
 import RetailBiComparison from './components/RetailBiComparison';
+import RetailBiAnomalyPanel from './components/RetailBiAnomalyPanel';
 
 // v1.8: Lazy load analysis section — 分析引擎 + 图表不在首屏加载
 const AnalysisSection = lazy(() => import('./components/AnalysisSection'));
@@ -28,6 +29,7 @@ export default function App() {
   const [showSampleSelector, setShowSampleSelector] = useState(false);
   const [retailBiOverview, setRetailBiOverview] = useState<SalesOverviewVO | null>(null);
   const [retailBiComparison, setRetailBiComparison] = useState<SalesOverviewComparisonVO | null>(null);
+  const [retailBiAnomalies, setRetailBiAnomalies] = useState<SalesAnomalyVO[] | null>(null);
 
   // ===== 注入全局动画样式 =====
   useEffect(() => {
@@ -397,6 +399,10 @@ export default function App() {
     setRetailBiComparison(comparison);
   }, []);
 
+  const handleRetailBiAnomaliesLoaded = useCallback((anomalies: SalesAnomalyVO[]) => {
+    setRetailBiAnomalies(anomalies);
+  }, []);
+
   const handleFillSample = useCallback(() => {
     setShowSampleSelector(true);
   }, []);
@@ -517,9 +523,11 @@ export default function App() {
               onDataLoaded={handleRetailBiDataLoaded}
               onOverviewLoaded={handleRetailBiOverviewLoaded}
               onComparisonLoaded={handleRetailBiComparisonLoaded}
+              onAnomaliesLoaded={handleRetailBiAnomaliesLoaded}
               onReloadStart={() => {
                 setRetailBiOverview(null);
                 setRetailBiComparison(null);
+                setRetailBiAnomalies(null);
               }}
             />
           </div>
@@ -535,6 +543,13 @@ export default function App() {
           {retailBiComparison && (
             <div style={{ marginTop: '20px' }}>
               <RetailBiComparison data={retailBiComparison} />
+            </div>
+          )}
+
+          {/* 零售 BI 经营异常 */}
+          {retailBiAnomalies !== null && (
+            <div style={{ marginTop: '20px' }}>
+              <RetailBiAnomalyPanel data={retailBiAnomalies} />
             </div>
           )}
 

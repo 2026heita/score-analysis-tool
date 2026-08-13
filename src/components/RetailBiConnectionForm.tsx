@@ -15,12 +15,13 @@
 
 import { useState, useEffect, useRef } from 'react';
 import type { ParsedTable } from '../types';
-import type { SalesOverviewVO, SalesOverviewComparisonVO } from '../types/retailBi';
+import type { SalesAnomalyVO, SalesOverviewVO, SalesOverviewComparisonVO } from '../types/retailBi';
 import {
   getDefaultRetailBiBaseUrl,
   fetchSalesTrend,
   fetchSalesOverview,
   fetchSalesComparison,
+  fetchSalesAnomalies,
   RetailBiApiError,
 } from '../services/retailBiApi';
 import { convertSalesDataToParsedTable } from '../services/retailBiAdapter';
@@ -32,6 +33,7 @@ export interface RetailBiConnectionFormProps {
   onDataLoaded: (table: ParsedTable) => void;
   onOverviewLoaded?: (overview: SalesOverviewVO) => void;
   onComparisonLoaded?: (comparison: SalesOverviewComparisonVO) => void;
+  onAnomaliesLoaded?: (anomalies: SalesAnomalyVO[]) => void;
   onReloadStart?: () => void;
 }
 
@@ -148,6 +150,7 @@ export function RetailBiConnectionForm({
   onDataLoaded,
   onOverviewLoaded,
   onComparisonLoaded,
+  onAnomaliesLoaded,
   onReloadStart,
 }: RetailBiConnectionFormProps) {
   // 初始化表单状态
@@ -308,6 +311,21 @@ export function RetailBiConnectionForm({
         } catch (comparisonError) {
           // 环比数据加载失败不影响趋势数据
           console.warn('加载日环比数据失败:', comparisonError);
+        }
+      }
+
+      // 如果提供了经营异常回调，加载同一日期范围内的异常数据
+      if (onAnomaliesLoaded) {
+        try {
+          const anomalies = await fetchSalesAnomalies({
+            baseUrl: baseUrl.trim(),
+            startDate: startDate.trim(),
+            endDate: endDate.trim(),
+          });
+          onAnomaliesLoaded(anomalies);
+        } catch (anomalyError) {
+          // 异常模块加载失败不影响趋势、概览与环比数据
+          console.warn('加载经营异常数据失败:', anomalyError);
         }
       }
 

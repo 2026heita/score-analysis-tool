@@ -71,3 +71,30 @@ export interface SalesOverviewComparisonVO {
   previous: SalesOverviewVO | null;
   changePercent: SalesOverviewChangePercentVO | null;
 }
+
+/**
+ * 经营异常数据行（anomalies 接口返回）。
+ *
+ * anomalyLevel 当前仅展示 MEDIUM / HIGH；
+ * primaryDriver 仅表示基于指标分解选出的主要直接驱动项，
+ * 不表示因果关系。
+ */
+export interface SalesAnomalyVO {
+  dt: string;
+  totalSales: number;
+  totalOrders: number;
+  totalCustomers: number;
+  totalQuantity: number;
+  avgOrderValue: number;
+  prevDt: string | null;
+  prevSales: number | null;
+  salesChangePct: number | null;
+  salesLossAmount: number | null;
+  ordersChangePct: number | null;
+  customersChangePct: number | null;
+  quantityChangePct: number | null;
+  aovChangePct: number | null;
+  anomalyLevel: 'MEDIUM' | 'HIGH' | string;
+  primaryDriver: 'ORDERS' | 'AVG_ORDER_VALUE' | string | null;
+  sourceSystem: string;
+}

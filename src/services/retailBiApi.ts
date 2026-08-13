@@ -11,6 +11,7 @@
 import type {
   ApiResponse,
   RetailBiConnectionConfig,
+  SalesAnomalyVO,
   SalesOverviewComparisonVO,
   SalesOverviewRow,
   SalesOverviewVO,
@@ -329,6 +330,99 @@ export async function fetchSalesComparison(
   if (apiResponse.data === null) {
     throw new RetailBiApiError(
       '零售 BI 服务未返回数据',
+      apiResponse.code,
+      requestId,
+    );
+  }
+
+  return apiResponse.data;
+}
+
+
+/**
+ * 查询指定日期范围内的经营异常数据。
+ *
+ * 后端当前返回 MEDIUM / HIGH 异常；无异常时返回空数组。
+ */
+export async function fetchSalesAnomalies(
+  config: RetailBiConnectionConfig,
+): Promise<SalesAnomalyVO[]> {
+  const baseUrl = resolveBaseUrl(config.baseUrl);
+
+  let url: URL;
+
+  try {
+    url = new URL(
+      '/api/v1/dashboard/anomalies',
+      baseUrl,
+    );
+  } catch {
+    throw new RetailBiApiError(
+      'API 基础地址格式不正确，请检查后重新输入',
+    );
+  }
+
+  url.searchParams.set('startDate', config.startDate);
+  url.searchParams.set('endDate', config.endDate);
+
+  let response: Response;
+
+  try {
+    response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+  } catch (error) {
+    const detail =
+      error instanceof Error ? error.message : '未知网络错误';
+
+    throw new RetailBiApiError(
+      `无法连接零售 BI 服务：${detail}`,
+    );
+  }
+
+  const apiResponse =
+    await parseApiResponse<SalesAnomalyVO[]>(response);
+
+  const requestId =
+    apiResponse?.requestId
+    || response.headers.get('X-Request-Id')
+    || undefined;
+
+  if (!response.ok) {
+    throw new RetailBiApiError(
+      apiResponse?.message
+      || `请求失败，HTTP 状态码：${response.status}`,
+      response.status,
+      requestId,
+    );
+  }
+
+  if (apiResponse === null) {
+    throw new RetailBiApiError(
+      '零售 BI 服务返回的内容不是有效 JSON',
+      response.status,
+      requestId,
+    );
+  }
+
+  if (apiResponse.code !== 200) {
+    throw new RetailBiApiError(
+      apiResponse.message || '零售 BI 服务返回业务错误',
+      apiResponse.code,
+      requestId,
+    );
+  }
+
+  if (apiResponse.data === null) {
+    return [];
+  }
+
+  if (!Array.isArray(apiResponse.data)) {
+    throw new RetailBiApiError(
+      '零售 BI 服务返回的数据格式不正确',
       apiResponse.code,
       requestId,
     );
