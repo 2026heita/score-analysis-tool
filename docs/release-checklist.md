@@ -2,7 +2,7 @@
 
 ## 更新日志规则
 
-**重要**：`updateLogs.ts` 不是每次小修改都更新，而是以"准备推送部署到 Cloudflare Pages 的版本"为单位更新。
+**重要**：`updateLogs.ts` 不是每次小修改都更新，而是以“准备通过 Cloudflare Workers Builds 部署到 datainsightkit.com 的版本”为单位更新。
 
 ### 不需要更新 updateLogs 的情况（开发过程中的小修改）
 - 改样式、调位置

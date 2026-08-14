@@ -8,7 +8,8 @@
 
 ## 在线体验
 
-- GitHub Pages： `https://2026heita.github.io/score-analysis-tool/`
+- 主站（Cloudflare Worker）：`https://datainsightkit.com/`
+- GitHub Pages：`https://2026heita.github.io/score-analysis-tool/`
 
 ## 项目定位
 
@@ -160,7 +161,7 @@
 
 - 趋势接口使用开始日期和结束日期；
 - 单日概览与日环比使用结束日期作为查询日期；
-- 三类请求失败状态彼此隔离，不应展示上一次加载的旧数据。
+- 重新加载时会清理上一轮的概览、环比和经营异常结果；概览、环比或经营异常请求失败不会影响已经成功加载的趋势数据。
 
 示例请求（canonical 主案例）：
 
