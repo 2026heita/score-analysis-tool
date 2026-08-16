@@ -185,10 +185,10 @@ export function calculatePercentileRank(
 ): number {
   if (sorted.length === 0) return 0;
   
+  // 使用小于等于口径：小于等于该值的记录数 / 总记录数 * 100
   let count = 0;
   for (const v of sorted) {
-    if (v < value) count++;
-    else if (v === value) count += 0.5;
+    if (v <= value) count++;
   }
   
   return (count / sorted.length) * 100;

@@ -43,6 +43,7 @@ import type { MetricDefinition, DimensionDefinition } from '../engine/metricLaye
 import type { AnalysisDataset } from './useAnalysisDataset';
 import type { ParseSummary } from '../utils/tableParser/types';
 import type { AnalyticScore } from '../utils/tableParser/fieldClassifier';
+import { parseNumericValueLegacy } from '../utils/tableParser/numericParser';
 
 export interface AnalysisOrchestratorOutput {
   /** 核心分析结果 */
@@ -124,7 +125,7 @@ export function useAnalysisOrchestrator(
     if (!derivedData || !selectedField) return null;
     const metricDef = metricDefs.find(m => m.name === selectedField);
     if (!metricDef) return null;
-    const userValue = inputValue ? parseFloat(inputValue) : undefined;
+    const userValue = inputValue ? (parseNumericValueLegacy(inputValue) ?? undefined) : undefined;
     return computeMetric(derivedData, metricDef, userValue);
   }, [derivedData, metricDefs, selectedField, inputValue]);
 

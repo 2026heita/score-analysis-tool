@@ -11,7 +11,8 @@
  */
 
 import type { StatsResult, PositionResult } from '../types';
-import { calculateQuantile } from '../utils/stats';
+import { calculateQuantile, minMax } from '../utils/stats';
+import { parseNumericValueLegacy } from '../utils/tableParser/numericParser';
 import type { DerivedDataContext, MetricResult } from './context';
 import type { MetricDefinition } from './metricLayer';
 
@@ -50,8 +51,8 @@ export function extractFieldValues(
       invalidCount++;
       continue;
     }
-    const num = parseFloat(raw);
-    if (Number.isFinite(num)) {
+    const num = parseNumericValueLegacy(raw);
+    if (num !== null) {
       values.push(num);
     } else {
       invalidCount++;
@@ -132,16 +133,36 @@ export function computePosition(
     bestRank = lowerCount + 1;
     worstRank = lowerCount + equalCount;
     estimatedRank = lowerCount + 1;
-    // 百分位：高于该值人数 / 有效人数 * 100（反转）
-    percentile = total === 0 ? 0 : (higherCount / total) * 100;
+    // 百分位：大于等于该值人数 / 有效人数 * 100
+    percentile = total === 0 ? 0 : ((higherCount + equalCount) / total) * 100;
   } else {
     // 普通字段：数值越大越好
     // 排名 = 高于该值人数 + 1
     bestRank = higherCount + 1;
     worstRank = higherCount + equalCount;
     estimatedRank = higherCount + 1;
-    // 百分位：低于该值人数 / 有效人数 * 100
-    percentile = total === 0 ? 0 : (lowerCount / total) * 100;
+    // 百分位：小于等于该值人数 / 有效人数 * 100
+    percentile = total === 0 ? 0 : ((lowerCount + equalCount) / total) * 100;
+  }
+
+  // 判断是否超出数据范围（与 existsInData 分离）
+  const existsInData = equalCount > 0;
+  let isOutOfRange = false;
+  let outOfRangeDirection: 'below' | 'above' | undefined;
+
+  if (total > 0) {
+    const mm = minMax(cleanValues);
+    if (mm) {
+      const { min, max } = mm;
+
+      if (inputValue < min) {
+        isOutOfRange = true;
+        outOfRangeDirection = 'below';
+      } else if (inputValue > max) {
+        isOutOfRange = true;
+        outOfRangeDirection = 'above';
+      }
+    }
   }
 
   return {
@@ -153,7 +174,9 @@ export function computePosition(
     worstRank,
     estimatedRank,
     percentile,
-    existsInData: equalCount > 0,
+    existsInData,
+    isOutOfRange,
+    outOfRangeDirection,
   };
 }
 
@@ -162,8 +185,8 @@ export function computePosition(
  * 
  * 统一规则：
  * 1. 先过滤无效值（Number.isFinite）
- * 2. 普通字段：低于该值人数 / 有效人数 * 100
- * 3. rank 字段：高于该值人数 / 有效人数 * 100（反转）
+ * 2. 普通字段：小于等于该值人数 / 有效人数 * 100
+ * 3. rank 字段：大于等于该值人数 / 有效人数 * 100（反转）
  * 
  * @param values 原始数值数组
  * @param inputValue 输入值
@@ -179,13 +202,13 @@ export function computePercentile(
   const cleanValues = values.filter(v => Number.isFinite(v));
   if (cleanValues.length === 0) return 0;
 
-  // 普通字段：低于该值人数 / 有效人数 * 100
-  // rank 字段：高于该值人数 / 有效人数 * 100（反转）
-  const lowerCount = isRankField
-    ? cleanValues.filter(v => v > inputValue).length
-    : cleanValues.filter(v => v < inputValue).length;
+  // 普通字段：小于等于该值人数 / 有效人数 * 100
+  // rank 字段：大于等于该值人数 / 有效人数 * 100（反转）
+  const count = isRankField
+    ? cleanValues.filter(v => v >= inputValue).length
+    : cleanValues.filter(v => v <= inputValue).length;
   
-  return (lowerCount / cleanValues.length) * 100;
+  return (count / cleanValues.length) * 100;
 }
 
 /**

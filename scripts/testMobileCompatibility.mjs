@@ -41,6 +41,22 @@ function assertNoCrash(name, fn) {
 // ============================================================
 console.log('\n=== 场景 1: recommendedFields 为空但有数值候选字段 ===');
 
+// 严格数字解析（支持千分位）
+function parseNumericStringStrict(str) {
+  if (!str || typeof str !== 'string') return null;
+  const trimmed = str.trim();
+  if (trimmed === '') return null;
+  if (trimmed.includes(',')) {
+    const thousandsRegex = /^[+-]?\d{1,3}(,\d{3})+(\.\d+)?$/;
+    if (!thousandsRegex.test(trimmed)) return null;
+    const withoutCommas = trimmed.replace(/,/g, '');
+    const num = Number(withoutCommas);
+    return Number.isFinite(num) ? num : null;
+  }
+  const num = Number(trimmed);
+  return Number.isFinite(num) ? num : null;
+}
+
 const scenario1_data = {
   headers: ['字段A', '字段B', '字段C'],
   rows: [
@@ -106,8 +122,8 @@ const fieldValues2 = {};
 for (const row of scenario2_data.rows) {
   const val = row['总分'];
   if (val !== undefined && val !== null && val !== '') {
-    const num = parseFloat(val);
-    if (!isNaN(num)) {
+    const num = parseNumericStringStrict(String(val));
+    if (num !== null) {
       fieldValues2['总分'] = num;
     }
   }
@@ -216,8 +232,8 @@ const fieldValues6 = [];
 for (const row of scenario6_data.rows) {
   const val = row['总分'];
   if (val !== undefined && val !== null && val !== '') {
-    const num = parseFloat(val);
-    if (!isNaN(num) && Number.isFinite(num)) {
+    const num = parseNumericStringStrict(String(val));
+    if (num !== null) {
       fieldValues6.push(num);
     }
   }
@@ -253,8 +269,8 @@ const availableFields7 = scenario7_headers.filter(h => {
   const values = scenario7_rows.map(row => {
     const val = row[h];
     if (val === undefined || val === '' || val === null) return null;
-    const num = parseFloat(val);
-    return isNaN(num) ? null : num;
+    const num = parseNumericStringStrict(String(val));
+    return num === null ? null : num;
   });
   const numericCount = values.filter(v => v !== null).length;
   return numericCount > scenario7_rows.length * 0.5;

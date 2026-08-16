@@ -11,6 +11,25 @@ let failed = 0;
 
 // ===== 内联核心算法 =====
 
+// 统一数值解析（与 production 一致）
+function parseNumericValueLegacy(val) {
+  if (val === null || val === undefined) return null;
+  const str = String(val).trim();
+  if (str === '') return null;
+
+  // 包含逗号时必须通过严格千分位校验
+  if (str.includes(',')) {
+    const strictThousands = /^[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/;
+    if (!strictThousands.test(str)) return null;
+  }
+
+  const cleaned = str.replace(/,/g, '');
+  const num = Number(cleaned);
+
+  if (isNaN(num) || !Number.isFinite(num)) return null;
+  return num;
+}
+
 function extractFieldValues(rows, fieldName) {
   const MAX_ROWS = 5000;
   const truncatedRows = Math.min(rows.length, MAX_ROWS);
@@ -20,8 +39,8 @@ function extractFieldValues(rows, fieldName) {
   for (const row of limitedRows) {
     const raw = row[fieldName];
     if (raw === undefined || raw === null || raw.trim() === '') { invalidCount++; continue; }
-    const num = parseFloat(raw);
-    if (Number.isFinite(num)) { values.push(num); } else { invalidCount++; }
+    const num = parseNumericValueLegacy(raw);
+    if (num !== null) { values.push(num); } else { invalidCount++; }
   }
   return { values, invalidCount, totalRows: rows.length, truncatedRows };
 }
@@ -35,7 +54,7 @@ function computeStats(values, truncatedRows) {
   return { count: validCount, validCount, invalidCount, max: cleanValues[validCount - 1], min: cleanValues[0], mean: sum / validCount };
 }
 
-// 新版 computePosition：带 direction 参数
+// 新版 computePosition：带 direction 参数（与 analysisEngine.ts 保持一致）
 function computePosition(values, inputValue, direction = 'higher-is-better') {
   const cleanValues = values.filter(v => Number.isFinite(v));
   const total = cleanValues.length;
@@ -43,10 +62,15 @@ function computePosition(values, inputValue, direction = 'higher-is-better') {
   const equalCount = cleanValues.filter(v => v === inputValue).length;
   const lowerCount = cleanValues.filter(v => v < inputValue).length;
 
+  let percentile;
   if (direction === 'lower-is-better') {
-    return { total, higherCount, equalCount, lowerCount, bestRank: lowerCount + 1, worstRank: lowerCount + equalCount, estimatedRank: lowerCount + 1, percentile: total === 0 ? 0 : (higherCount / total) * 100, existsInData: equalCount > 0 };
+    // lower-is-better: 大于等于该值人数 / 有效人数 * 100
+    percentile = total === 0 ? 0 : ((higherCount + equalCount) / total) * 100;
+    return { total, higherCount, equalCount, lowerCount, bestRank: lowerCount + 1, worstRank: lowerCount + equalCount, estimatedRank: lowerCount + 1, percentile, existsInData: equalCount > 0 };
   } else {
-    return { total, higherCount, equalCount, lowerCount, bestRank: higherCount + 1, worstRank: higherCount + equalCount, estimatedRank: higherCount + 1, percentile: total === 0 ? 0 : (lowerCount / total) * 100, existsInData: equalCount > 0 };
+    // higher-is-better: 小于等于该值人数 / 有效人数 * 100
+    percentile = total === 0 ? 0 : ((lowerCount + equalCount) / total) * 100;
+    return { total, higherCount, equalCount, lowerCount, bestRank: higherCount + 1, worstRank: higherCount + equalCount, estimatedRank: higherCount + 1, percentile, existsInData: equalCount > 0 };
   }
 }
 
@@ -104,11 +128,11 @@ const scoreResult = computeMetric(testContext, '总分', 95);
 // 等于 95: 2 人
 // 低于 95: 4 人 (90, 85, 80, 75)
 // higher-is-better: 排名 = higherCount + 1 = 2
-// 百分位 = lowerCount / total * 100 = 4/7 * 100 ≈ 57.1%
+// 百分位 = (lowerCount + equalCount) / total * 100 = 6/7 * 100 ≈ 85.7%
 assert(scoreResult.direction === 'higher-is-better', 'direction 正确');
 assert(scoreResult.stats.validCount === 7, `有效数值数量 = 7（实际 ${scoreResult.stats.validCount}）`);
 assert(scoreResult.position.bestRank === 2, `排名 = 2（实际 ${scoreResult.position.bestRank}）`);
-assert(Math.abs(scoreResult.position.percentile - 57.14) < 0.1, `百分位 ≈ 57.1%（实际 ${scoreResult.position.percentile.toFixed(1)}%）`);
+assert(Math.abs(scoreResult.position.percentile - 85.71) < 0.1, `百分位 ≈ 85.7%（实际 ${scoreResult.position.percentile.toFixed(1)}%）`);
 assert(scoreResult.position.existsInData === true, 'existsInData = true');
 
 console.log();
@@ -121,11 +145,11 @@ const rankResult = computeMetric(testContext, '排名', 4);
 // 等于 4: 1 人
 // 低于 4: 3 人 (1, 2, 2)
 // lower-is-better: 排名 = lowerCount + 1 = 4
-// 百分位 = higherCount / total * 100 = 4/8 * 100 = 50.0%（反转）
+// 百分位 = (higherCount + equalCount) / total * 100 = 5/8 * 100 = 62.5%（反转）
 assert(rankResult.direction === 'lower-is-better', 'direction 正确');
 assert(rankResult.stats.validCount === 8, `有效数值数量 = 8（实际 ${rankResult.stats.validCount}）`);
 assert(rankResult.position.bestRank === 4, `排名 = 4（实际 ${rankResult.position.bestRank}）`);
-assert(Math.abs(rankResult.position.percentile - 50.0) < 0.1, `百分位 = 50.0%（实际 ${rankResult.position.percentile.toFixed(1)}%）`);
+assert(Math.abs(rankResult.position.percentile - 62.5) < 0.1, `百分位 = 62.5%（实际 ${rankResult.position.percentile.toFixed(1)}%）`);
 assert(rankResult.position.existsInData === true, 'existsInData = true');
 
 console.log();
@@ -137,10 +161,10 @@ const modifiedContext = { fields: [], rawRows: testRows, metrics: modifiedMetric
 const modifiedResult = computeMetric(modifiedContext, '排名', 4);
 // 改为 higher-is-better 后：
 // 排名 = higherCount + 1 = 4 + 1 = 5
-// 百分位 = lowerCount / total * 100 = 3/8 * 100 = 37.5%
+// 百分位 = (lowerCount + equalCount) / total * 100 = 4/8 * 100 = 50.0%
 assert(modifiedResult.direction === 'higher-is-better', 'direction 已修改');
 assert(modifiedResult.position.bestRank === 5, `排名 = 5（实际 ${modifiedResult.position.bestRank}）`);
-assert(Math.abs(modifiedResult.position.percentile - 37.5) < 0.1, `百分位 = 37.5%（实际 ${modifiedResult.position.percentile.toFixed(1)}%）`);
+assert(Math.abs(modifiedResult.position.percentile - 50.0) < 0.1, `百分位 = 50.0%（实际 ${modifiedResult.position.percentile.toFixed(1)}%）`);
 assert(modifiedResult.position.bestRank !== rankResult.position.bestRank, '修改 direction 后排名确实变化了');
 
 console.log();

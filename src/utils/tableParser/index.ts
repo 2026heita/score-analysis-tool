@@ -83,11 +83,19 @@ export type {
   MultiRowHeaderDetection,
 } from './headerFlattener';
 
+// CSV 引号感知解析
+export {
+  parseCsvText,
+  parseCsvLine,
+  countUnquotedChar,
+} from './csvParser';
+
 // ============================================================
 // 向后兼容：导出旧接口
 // ============================================================
 import { parseRawRows } from './workbook';
 import { parseNumericValueLegacy } from './numericParser';
+import { countUnquotedChar, parseCsvLine } from './csvParser';
 import { detectHeaderRow as detectHeaderRowNew, dedupeHeaders as dedupeHeadersNew, cleanHeaderName as cleanHeaderNameNew } from './headerDetection';
 import type { ParsedTable } from '../../types';
 
@@ -134,10 +142,12 @@ export function detectHeaderRow(rawRows: unknown[][]): {
 // 文本模式分隔符检测
 export function detectDelimiter(line: string): 'tab' | 'comma' | 'multi-space' {
   if (line.includes('\t')) return 'tab';
-  const commaCount = (line.match(/,/g) || []).length;
+  // 使用引号感知的逗号计数，避免引号内逗号被误判
+  const commaCount = countUnquotedChar(line, ',');
   if (commaCount >= 1) {
-    const parts = line.split(',');
-    const textParts = parts.filter(p => isNaN(parseFloat(p.trim())) || p.trim() === '');
+    // 使用引号感知解析检查是否确实有多个字段
+    const parts = parseCsvLine(line, ',');
+    const textParts = parts.filter(p => parseNumericValueLegacy(p.trim()) === null || p.trim() === '');
     if (textParts.length > 0 || parts.length >= 2) return 'comma';
   }
   return 'multi-space';
@@ -148,7 +158,8 @@ export function splitLine(line: string, delimiter: 'tab' | 'comma' | 'multi-spac
     case 'tab':
       return line.split('\t').map(c => c.trim());
     case 'comma':
-      return line.split(',').map(c => c.trim());
+      // 使用引号感知 CSV 解析，避免千分位逗号或引号内逗号导致错列
+      return parseCsvLine(line, ',');
     case 'multi-space':
       return line.split(/\s{2,}/).map(c => c.trim());
   }

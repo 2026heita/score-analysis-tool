@@ -30,6 +30,22 @@ function assertMinCount(name, actual, min) {
 // 模拟状态管理逻辑
 // ============================================================
 
+// 严格数字解析（支持千分位）
+function parseNumericStringStrict(str) {
+  if (!str || typeof str !== 'string') return null;
+  const trimmed = str.trim();
+  if (trimmed === '') return null;
+  if (trimmed.includes(',')) {
+    const thousandsRegex = /^[+-]?\d{1,3}(,\d{3})+(\.\d+)?$/;
+    if (!thousandsRegex.test(trimmed)) return null;
+    const withoutCommas = trimmed.replace(/,/g, '');
+    const num = Number(withoutCommas);
+    return Number.isFinite(num) ? num : null;
+  }
+  const num = Number(trimmed);
+  return Number.isFinite(num) ? num : null;
+}
+
 // 模拟 FieldSelection
 class FieldSelection {
   constructor(field, userValue = 0) {
@@ -87,8 +103,8 @@ class StateManager {
     this.selections = this.selections.map(sel => {
       const rawValue = studentRow[sel.field];
       if (rawValue !== undefined && rawValue !== null && rawValue !== '') {
-        const numValue = parseFloat(rawValue);
-        if (!isNaN(numValue)) {
+        const numValue = parseNumericStringStrict(String(rawValue));
+        if (numValue !== null) {
           filledCount++;
           return { ...sel, userValue: numValue };
         }

@@ -26,40 +26,106 @@ function buildNumericFieldSet(fieldMetas) {
   return new Set(fieldMetas.filter(m => isNumericFilterField(m)).map(m => m.header));
 }
 
-function evaluateNumericCondition(raw, operator, condValue) {
+function parseNumericValueLegacy(val) {
+  if (val === null || val === undefined) return null;
+  const str = String(val).trim();
+  if (str === '') return null;
+  
+  // 严格千分位校验
+  if (str.includes(',')) {
+    const strictThousands = /^[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/;
+    if (!strictThousands.test(str)) return null;
+    const cleaned = str.replace(/,/g, '');
+    const num = Number(cleaned);
+    return Number.isFinite(num) ? num : null;
+  }
+  
+  const num = Number(str);
+  return Number.isFinite(num) ? num : null;
+}
+
+function parseBetweenBounds(cond) {
+  // 新格式：只要存在 betweenMin/betweenMax 字段，就以它们为准
+  const hasNewFields = cond.betweenMin !== undefined || cond.betweenMax !== undefined;
+  if (hasNewFields) {
+    const min = parseNumericValueLegacy(cond.betweenMin);
+    const max = parseNumericValueLegacy(cond.betweenMax);
+    if (min === null || max === null) return null;
+    if (min > max) return null;
+    return [min, max];
+  }
+
+  // 旧格式兼容：value "min,max"，仅限明确无千分位歧义的简单场景（如 "80,90"）
+  const legacy = cond.value;
+  if (legacy === null || legacy === undefined || String(legacy).trim() === '') return null;
+  const trimmed = String(legacy).trim();
+  // 整个字符串本身是合法数值（如 "1,000"）→ 是单个值，不是范围 → 无效
+  if (parseNumericValueLegacy(trimmed) !== null) return null;
+  const commaCount = (trimmed.match(/,/g) || []).length;
+  if (commaCount !== 1) return null;
+  const parts = trimmed.split(',');
+  const min = parseNumericValueLegacy(parts[0].trim());
+  const max = parseNumericValueLegacy(parts[1].trim());
+  if (min === null || max === null) return null;
+  if (min > max) return null;
+  return [min, max];
+}
+
+function normalizeFilterCondition(cond) {
+  if (cond.operator !== 'between') return cond;
+  if (cond.betweenMin !== undefined || cond.betweenMax !== undefined) return cond;
+
+  const bounds = parseBetweenBounds(cond);
+  if (bounds === null) return cond;
+
+  return {
+    ...cond,
+    value: '',
+    betweenMin: String(bounds[0]),
+    betweenMax: String(bounds[1]),
+  };
+}
+
+function normalizeFilterConditions(conditions) {
+  return conditions.map(normalizeFilterCondition);
+}
+
+function evaluateNumericCondition(raw, cond) {
+  const operator = cond.operator;
+  const condValue = cond.value;
   const isEmpty = raw === undefined || raw === null || raw.trim() === '';
   if (operator === 'isEmpty') return isEmpty;
   if (operator === 'isNotEmpty') return !isEmpty;
   if (isEmpty) return false;
 
-  const num = parseFloat(raw);
-  if (!Number.isFinite(num)) return false;
+  const num = parseNumericValueLegacy(raw);
+  if (num === null) return false;
 
   switch (operator) {
     case 'gt': {
-      const v = parseFloat(condValue);
-      return Number.isFinite(v) && num > v;
+      const v = parseNumericValueLegacy(condValue);
+      return v !== null && num > v;
     }
     case 'lt': {
-      const v = parseFloat(condValue);
-      return Number.isFinite(v) && num < v;
+      const v = parseNumericValueLegacy(condValue);
+      return v !== null && num < v;
     }
     case 'gte': {
-      const v = parseFloat(condValue);
-      return Number.isFinite(v) && num >= v;
+      const v = parseNumericValueLegacy(condValue);
+      return v !== null && num >= v;
     }
     case 'lte': {
-      const v = parseFloat(condValue);
-      return Number.isFinite(v) && num <= v;
+      const v = parseNumericValueLegacy(condValue);
+      return v !== null && num <= v;
     }
     case 'equals': {
-      const v = parseFloat(condValue);
-      return Number.isFinite(v) && num === v;
+      const v = parseNumericValueLegacy(condValue);
+      return v !== null && num === v;
     }
     case 'between': {
-      const parts = condValue.split(',').map(s => parseFloat(s.trim()));
-      if (parts.length !== 2 || !parts.every(Number.isFinite)) return false;
-      return num >= parts[0] && num <= parts[1];
+      const bounds = parseBetweenBounds(cond);
+      if (bounds === null) return false;
+      return num >= bounds[0] && num <= bounds[1];
     }
     default:
       return true;
@@ -106,7 +172,7 @@ function filterRows(rows, conditions, numericFields) {
       const isNumeric = numericFields.has(cond.field);
 
       if (isNumeric) {
-        return evaluateNumericCondition(rawValue, cond.operator, cond.value);
+        return evaluateNumericCondition(rawValue, cond);
       } else {
         return evaluateTextCondition(rawValue || '', cond.operator, cond.value);
       }
@@ -226,7 +292,7 @@ const result6 = filterRows(rows, [
   { field: '总分', operator: 'gt', value: '85' },
 ], numericFields);
 assertEqual(result6.filteredRows.length, 2, '总分>85 2 条');
-assert(result6.filteredRows.every(r => parseFloat(r['总分']) > 85), '总分都>85');
+assert(result6.filteredRows.every(r => parseNumericValueLegacy(r['总分']) > 85), '总分都>85');
 
 // ============================================================
 // 测试 7: 数值小于
@@ -269,8 +335,8 @@ const result10 = filterRows(rows, [
 ], numericFields);
 assertEqual(result10.filteredRows.length, 3, '总分在80-90之间 3 条');
 assert(result10.filteredRows.every(r => {
-  const v = parseFloat(r['总分']);
-  return v >= 80 && v <= 90;
+  const v = parseNumericValueLegacy(r['总分']);
+  return v !== null && v >= 80 && v <= 90;
 }), '总分都在 80-90 之间');
 
 // ============================================================
@@ -374,6 +440,16 @@ const result18c = filterRows(rows, [
 ], numericFields);
 assertEqual(result18c.filteredRows.length, 0, 'between只有一个值 0 条（不崩溃）');
 
+const result18d = filterRows(rows, [
+  { field: '总分', operator: 'between', value: '', betweenMin: '80' },
+], numericFields);
+assertEqual(result18d.filteredRows.length, 0, '新格式只填最小值 0 条（条件不完整）');
+
+const result18e = filterRows(rows, [
+  { field: '总分', operator: 'between', value: '', betweenMax: '90' },
+], numericFields);
+assertEqual(result18e.filteredRows.length, 0, '新格式只填最大值 0 条（条件不完整）');
+
 // ============================================================
 // 测试 19: buildNumericFieldSet
 // ============================================================
@@ -426,8 +502,8 @@ function groupByDimension(rows, metricField, dimensionField) {
       : dimRaw.trim();
     const metricRaw = row[metricField];
     if (metricRaw === undefined || metricRaw === null || metricRaw.trim() === '') continue;
-    const num = parseFloat(metricRaw);
-    if (!Number.isFinite(num)) continue;
+    const num = parseNumericValueLegacy(metricRaw);
+    if (num === null) continue;
     if (!groups.has(dimKey)) groups.set(dimKey, []);
     groups.get(dimKey).push(num);
   }
@@ -491,6 +567,210 @@ const result21 = filterRows(rows, [
 assertEqual(rows.length, 6, '原始 rows 仍然是 6 条');
 assertEqual(originalRows.length, 6, '备份的 originalRows 也是 6 条');
 assertEqual(result21.filteredRows.length, 2, '筛选结果 2 条');
+
+// ============================================================
+// 测试 22: 千分位 between（新格式两输入框）
+// ============================================================
+console.log('\n22. 千分位 between（两输入框）');
+
+// 边界数据：1000 / 1500 / 2000（含边界值）
+const boundRows = [
+  { 姓名: 'C1', 金额: '1000' },
+  { 姓名: 'C2', 金额: '1500' },
+  { 姓名: 'C3', 金额: '2000' },
+  { 姓名: 'C4', 金额: '800' },
+  { 姓名: 'C5', 金额: '2200' },
+];
+const boundFields = new Set(['金额']);
+
+const result22a = filterRows(boundRows, [
+  { field: '金额', operator: 'between', value: '', betweenMin: '1,000', betweenMax: '2,000' },
+], boundFields);
+assertEqual(result22a.filteredRows.length, 3, '1,000~2,000 含边界 3 条（1000/1500/2000）');
+assert(result22a.filteredRows.every(r => {
+  const v = parseNumericValueLegacy(r['金额']);
+  return v !== null && v >= 1000 && v <= 2000;
+}), '数值都在 1000-2000 之间（含边界）');
+
+const bigRows = [
+  { 姓名: 'D1', 金额: '9,000' },
+  { 姓名: 'D2', 金额: '10,000' },
+  { 姓名: 'D3', 金额: '15,000' },
+  { 姓名: 'D4', 金额: '20,000' },
+  { 姓名: 'D5', 金额: '25,000' },
+];
+const bigFields = new Set(['金额']);
+
+const result22b = filterRows(bigRows, [
+  { field: '金额', operator: 'between', value: '', betweenMin: '10,000', betweenMax: '20,000' },
+], bigFields);
+assertEqual(result22b.filteredRows.length, 3, '10,000~20,000 含边界 3 条');
+
+const decRows = [
+  { 姓名: 'E1', 金额: '1,000.5' },
+  { 姓名: 'E2', 金额: '1,500.25' },
+  { 姓名: 'E3', 金额: '2,000.75' },
+  { 姓名: 'E4', 金额: '2,500' },
+  { 姓名: 'E5', 金额: '999.5' },
+];
+const decFields = new Set(['金额']);
+
+const result22c = filterRows(decRows, [
+  { field: '金额', operator: 'between', value: '', betweenMin: '1,000.5', betweenMax: '2,000.75' },
+], decFields);
+assertEqual(result22c.filteredRows.length, 3, '1,000.5~2,000.75 含边界 3 条');
+
+const negRows = [
+  { 姓名: 'F1', 金额: '-2,500' },
+  { 姓名: 'F2', 金额: '-2,000' },
+  { 姓名: 'F3', 金额: '-1,500' },
+  { 姓名: 'F4', 金额: '-1,000' },
+  { 姓名: 'F5', 金额: '-500' },
+];
+const negFields = new Set(['金额']);
+
+const result22d = filterRows(negRows, [
+  { field: '金额', operator: 'between', value: '', betweenMin: '-2,000', betweenMax: '-1,000' },
+], negFields);
+assertEqual(result22d.filteredRows.length, 3, '-2,000~-1,000 含边界 3 条');
+
+const sciRows = [
+  { 姓名: 'G1', 金额: '800' },
+  { 姓名: 'G2', 金额: '1000' },
+  { 姓名: 'G3', 金额: '1500' },
+  { 姓名: 'G4', 金额: '2000' },
+  { 姓名: 'G5', 金额: '2200' },
+];
+const sciFields = new Set(['金额']);
+
+const result22e = filterRows(sciRows, [
+  { field: '金额', operator: 'between', value: '', betweenMin: '1e3', betweenMax: '2e3' },
+], sciFields);
+assertEqual(result22e.filteredRows.length, 3, '1e3~2e3 含边界 3 条');
+
+// ============================================================
+// 测试 23: 非法 between 输入（不静默转换）
+// ============================================================
+console.log('\n23. 非法 between 输入');
+
+const invalidCases = [
+  { label: '非法千分位 1,00 ~ 2,000', min: '1,00', max: '2,000' },
+  { label: '多逗号 1,2,3 ~ 2,000', min: '1,2,3', max: '2,000' },
+  { label: 'abc ~ 2000', min: 'abc', max: '2000' },
+  { label: '1000 ~ abc', min: '1000', max: 'abc' },
+];
+for (const c of invalidCases) {
+  const res = filterRows(boundRows, [
+    { field: '金额', operator: 'between', value: '', betweenMin: c.min, betweenMax: c.max },
+  ], boundFields);
+  assertEqual(res.filteredRows.length, 0, `${c.label} 0 条（不崩溃、不静默转换）`);
+}
+
+const singleRes = filterRows(boundRows, [
+  { field: '金额', operator: 'between', value: '', betweenMin: '1,000' },
+], boundFields);
+assertEqual(singleRes.filteredRows.length, 0, '新格式只填最小值 0 条');
+
+// ============================================================
+// 测试 24: 旧格式兼容与歧义防护
+// ============================================================
+console.log('\n24. 旧格式兼容与歧义防护');
+
+// 无歧义旧格式 "80,90" 由测试 10 覆盖；这里验证歧义场景
+const legacySingle = filterRows(boundRows, [
+  { field: '金额', operator: 'between', value: '1,000' },
+], boundFields);
+assertEqual(legacySingle.filteredRows.length, 0, '旧格式 value "1,000" 0 条（不拆成 1~0）');
+
+const legacyMulti = filterRows(boundRows, [
+  { field: '金额', operator: 'between', value: '1,000,2,000' },
+], boundFields);
+assertEqual(legacyMulti.filteredRows.length, 0, '旧格式 value "1,000,2,000" 0 条（不拆 4 段）');
+
+// ============================================================
+// 测试 25: 下限大于上限（不自动交换）
+// ============================================================
+console.log('\n25. 下限大于上限');
+
+const result25a = filterRows(rows, [
+  { field: '总分', operator: 'between', value: '', betweenMin: '90', betweenMax: '80' },
+], numericFields);
+assertEqual(result25a.filteredRows.length, 0, '新格式 90~80 0 条（条件无效）');
+
+const result25b = filterRows(rows, [
+  { field: '总分', operator: 'between', value: '90,80' },
+], numericFields);
+assertEqual(result25b.filteredRows.length, 0, '旧格式 90,80 0 条（条件无效）');
+
+// ============================================================
+// 测试 26: 旧版 between 格式迁移（normalizeFilterCondition）
+// ============================================================
+console.log('\n26. 旧版 between 格式迁移');
+
+// 26a: 无歧义旧格式 "80,90" → betweenMin/betweenMax
+const legacy1 = { field: '总分', operator: 'between', value: '80,90' };
+const migrated1 = normalizeFilterCondition(legacy1);
+assertEqual(migrated1.betweenMin, '80', '旧格式 "80,90" → betweenMin "80"');
+assertEqual(migrated1.betweenMax, '90', '旧格式 "80,90" → betweenMax "90"');
+assertEqual(migrated1.value, '', '迁移后旧 value 被清空');
+assertEqual(migrated1.operator, 'between', 'operator 保持 between');
+assert(!Object.prototype.hasOwnProperty.call(legacy1, 'betweenMin'), '原对象不被修改（纯函数）');
+
+// 26b: 迁移后筛选结果与迁移前一致
+const result26bBefore = filterRows(rows, [legacy1], numericFields);
+const result26bAfter = filterRows(rows, [migrated1], numericFields);
+assertEqual(result26bBefore.filteredRows.length, 3, '迁移前筛选 3 条');
+assertEqual(result26bAfter.filteredRows.length, 3, '迁移后筛选 3 条');
+assertEqual(result26bAfter.filteredRows.map(r => r['姓名']).join(','), result26bBefore.filteredRows.map(r => r['姓名']).join(','), '迁移前后筛选结果完全一致');
+
+// 26c: 歧义旧格式 "1,000,2,000" 不迁移（不猜测）
+const ambiguous = { field: '金额', operator: 'between', value: '1,000,2,000' };
+const ambiguousNorm = normalizeFilterCondition(ambiguous);
+assertEqual(ambiguousNorm.betweenMin, undefined, '歧义格式不生成 betweenMin');
+assertEqual(ambiguousNorm.betweenMax, undefined, '歧义格式不生成 betweenMax');
+assertEqual(ambiguousNorm.value, '1,000,2,000', '歧义格式 value 保持原样（不偷偷转换）');
+
+// 26d: 单值 "1,000" 不迁移
+const single = { field: '金额', operator: 'between', value: '1,000' };
+const singleNorm = normalizeFilterCondition(single);
+assertEqual(singleNorm.betweenMin, undefined, '单值 "1,000" 不迁移');
+assertEqual(singleNorm.value, '1,000', '单值 "1,000" value 保持原样');
+
+// 26e: 新格式（已有 betweenMin/betweenMax）保持不变
+const newFormat = { field: '金额', operator: 'between', value: '', betweenMin: '1,000', betweenMax: '2,000' };
+const newFormatNorm = normalizeFilterCondition(newFormat);
+assertEqual(newFormatNorm.betweenMin, '1,000', '新格式 betweenMin 保持原字符串');
+assertEqual(newFormatNorm.betweenMax, '2,000', '新格式 betweenMax 保持原字符串');
+assertEqual(newFormatNorm.value, '', '新格式 value 保持为空');
+
+// 26f: 非 between 操作符不受影响
+const gtCond = { field: '总分', operator: 'gt', value: '80' };
+const gtNorm = normalizeFilterCondition(gtCond);
+assertEqual(gtNorm, gtCond, 'gt 条件原样返回（同一引用）');
+const eqCond = { field: '班级', operator: 'equals', value: 'A班' };
+assertEqual(normalizeFilterCondition(eqCond), eqCond, '文本 equals 原样返回（同一引用）');
+
+// 26g: 归一化数组（混合场景）
+const mixed = normalizeFilterConditions([
+  { field: '总分', operator: 'between', value: '80,90' },
+  { field: '金额', operator: 'between', value: '1,000,2,000' },
+  { field: '班级', operator: 'equals', value: 'A班' },
+]);
+assertEqual(mixed[0].betweenMin, '80', '数组归一化：旧格式迁移为 80');
+assertEqual(mixed[0].betweenMax, '90', '数组归一化：旧格式迁移为 90');
+assertEqual(mixed[1].value, '1,000,2,000', '数组归一化：歧义格式保持原样');
+assertEqual(mixed[1].betweenMin, undefined, '数组归一化：歧义格式不生成 betweenMin');
+assertEqual(mixed[2].operator, 'equals', '数组归一化：非 between 不变');
+
+// 26h: 幂等性 — 迁移结果再次归一化不变
+const idempotent = normalizeFilterCondition(migrated1);
+assertEqual(idempotent.betweenMin, '80', '幂等：再次归一化 betweenMin 不变');
+assertEqual(idempotent.betweenMax, '90', '幂等：再次归一化 betweenMax 不变');
+assertEqual(idempotent.value, '', '幂等：value 保持为空');
+
+// 26i: 迁移后新格式边界（含千分位）筛选正确
+const result26i = filterRows(boundRows, [normalizeFilterCondition({ field: '金额', operator: 'between', value: '1,000,2,000' })], boundFields);
+assertEqual(result26i.filteredRows.length, 0, '迁移后歧义格式条件仍无效 0 条');
 
 // 输出测试结果
 console.log('\n=== 测试完成 ===');

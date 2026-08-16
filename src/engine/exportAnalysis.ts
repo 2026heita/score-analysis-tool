@@ -158,6 +158,7 @@ export function exportSummaryToCsv(
     lines.push(buildCsvLine(['估算相对位置', position.estimatedRank]));
     lines.push(buildCsvLine(['百分位', position.percentile]));
     lines.push(buildCsvLine(['该值是否存在于数据中', position.existsInData ? '是' : '否']));
+    lines.push(buildCsvLine(['是否超出数据范围', position.isOutOfRange ? (position.outOfRangeDirection === 'below' ? '低于数据范围' : '高于数据范围') : '否']));
   }
 
   lines.push('');

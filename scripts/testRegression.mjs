@@ -20,6 +20,21 @@ let failed = 0;
 
 const MAX_ROWS = 5000;
 
+function parseNumericValueLegacy(val) {
+  if (val === null || val === undefined) return null;
+  const str = String(val).trim();
+  if (str === '') return null;
+  // 包含逗号时必须通过严格千分位校验
+  if (str.includes(',')) {
+    const strictThousands = /^[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/;
+    if (!strictThousands.test(str)) return null;
+  }
+  const cleaned = str.replace(/,/g, '');
+  const num = Number(cleaned);
+  if (isNaN(num) || !Number.isFinite(num)) return null;
+  return num;
+}
+
 function extractFieldValues(rows, fieldName) {
   const totalRows = rows.length;
   const truncatedRows = Math.min(totalRows, MAX_ROWS);
@@ -34,8 +49,8 @@ function extractFieldValues(rows, fieldName) {
       invalidCount++;
       continue;
     }
-    const num = parseFloat(raw);
-    if (Number.isFinite(num)) {
+    const num = parseNumericValueLegacy(raw);
+    if (num !== null) {
       values.push(num);
     } else {
       invalidCount++;
@@ -102,13 +117,15 @@ function computePosition(values, inputValue, direction = 'higher-is-better') {
     bestRank = lowerCount + 1;
     worstRank = lowerCount + equalCount;
     estimatedRank = lowerCount + 1;
-    percentile = total === 0 ? 0 : (higherCount / total) * 100;
+    // 百分位：大于等于该值人数 / 有效人数 * 100
+    percentile = total === 0 ? 0 : ((higherCount + equalCount) / total) * 100;
   } else {
     // 普通字段：数值越大越好
     bestRank = higherCount + 1;
     worstRank = higherCount + equalCount;
     estimatedRank = higherCount + 1;
-    percentile = total === 0 ? 0 : (lowerCount / total) * 100;
+    // 百分位：小于等于该值人数 / 有效人数 * 100
+    percentile = total === 0 ? 0 : ((lowerCount + equalCount) / total) * 100;
   }
 
   return {
@@ -236,10 +253,12 @@ console.log('1.1 普通分数字段 higher-is-better');
   const result = computeMetric(ctx, 'score', 80);
 
   // 高于 80: 2 人 (90, 100) → 排名 = 3
-  // 低于 80: 2 人 (60, 70) → 百分位 = 2/5 * 100 = 40%
+  // 等于 80: 1 人
+  // 低于 80: 2 人 (60, 70)
+  // higher-is-better: 百分位 = (lowerCount + equalCount) / total * 100 = 3/5 * 100 = 60%
   assertEqual(result.position.bestRank, 3, '排名 = 3');
   assertEqual(result.position.worstRank, 3, '无同分，最差排名 = 3');
-  assertClose(result.position.percentile, 40, 0.01, '百分位 = 40%');
+  assertClose(result.position.percentile, 60, 0.01, '百分位 = 60%');
   assert(result.position.existsInData, 'existsInData = true');
   assertEqual(result.position.higherCount, 2, '高于 80 的有 2 人');
   assertEqual(result.position.lowerCount, 2, '低于 80 的有 2 人');
@@ -259,11 +278,13 @@ console.log('\n1.2 rank 字段 lower-is-better 方向反转');
 
   // lower-is-better: 越小越好
   // 低于 3: 2 人 (1, 2) → 排名 = 3
-  // 高于 3: 2 人 (4, 5) → 百分位 = 2/5 * 100 = 40%（反转）
+  // 等于 3: 1 人
+  // 高于 3: 2 人 (4, 5)
+  // lower-is-better: 百分位 = (higherCount + equalCount) / total * 100 = 3/5 * 100 = 60%
   assertEqual(result.direction, 'lower-is-better', 'direction = lower-is-better');
   assertEqual(result.position.bestRank, 3, '排名 = 3');
   assertEqual(result.position.worstRank, 3, '无同分，最差排名 = 3');
-  assertClose(result.position.percentile, 40, 0.01, '百分位 = 40%（反转后）');
+  assertClose(result.position.percentile, 60, 0.01, '百分位 = 60%（反转后）');
   assert(result.position.existsInData, 'existsInData = true');
   assertEqual(result.position.higherCount, 2, '高于 3 的有 2 人（排名更差）');
   assertEqual(result.position.lowerCount, 2, '低于 3 的有 2 人（排名更好）');
@@ -277,15 +298,15 @@ console.log('\n1.3 rank 字段方向反转与普通字段对比');
     { val: '4' }, { val: '5' },
   ];
 
-  // 普通字段 higher-is-better：输入 3 → 排名 = 3, 百分位 = 40%
+  // 普通字段 higher-is-better：输入 3 → 排名 = 3, 百分位 = 60%
   const ctxHi = makeContext(rows, [makeMetric('val', 'val', 'higher-is-better')]);
   const rHi = computeMetric(ctxHi, 'val', 3);
-  assertClose(rHi.position.percentile, 40, 0.01, 'higher-is-better: 百分位 = 40%');
+  assertClose(rHi.position.percentile, 60, 0.01, 'higher-is-better: 百分位 = 60%');
 
-  // rank 字段 lower-is-better：输入 3 → 排名 = 3, 百分位 = 40%
+  // rank 字段 lower-is-better：输入 3 → 排名 = 3, 百分位 = 60%
   const ctxLo = makeContext(rows, [makeMetric('val', 'val', 'lower-is-better')]);
   const rLo = computeMetric(ctxLo, 'val', 3);
-  assertClose(rLo.position.percentile, 40, 0.01, 'lower-is-better: 百分位 = 40%');
+  assertClose(rLo.position.percentile, 60, 0.01, 'lower-is-better: 百分位 = 60%');
   assertEqual(rLo.position.bestRank, 3, 'lower-is-better: 排名 = 3');
 
   // 两种方向在对称数据下结果相同（因为 3 正好在中间）
@@ -341,9 +362,9 @@ console.log('\n2.2 单值');
   assertClose(result.stats.median, 85, 0.01, 'median = 85');
 
   // 高于 85: 0 人 → 排名 = 1
-  // 低于 85: 0 人 → 百分位 = 0%
+  // 等于 85: 1 人 → 百分位 = (0 + 1) / 1 * 100 = 100%
   assertEqual(result.position.bestRank, 1, '排名 = 1');
-  assertClose(result.position.percentile, 0, 0.01, '百分位 = 0%');
+  assertClose(result.position.percentile, 100, 0.01, '百分位 = 100%');
   assert(result.position.existsInData, 'existsInData = true');
 }
 
@@ -359,7 +380,8 @@ console.log('\n2.3 全相等');
 
   assertEqual(result.position.bestRank, 1, '排名 = 1');
   assertEqual(result.position.worstRank, 5, '最差排名 = 5（全部同分）');
-  assertClose(result.position.percentile, 0, 0.01, '百分位 = 0%（无低于）');
+  // 等于 90: 5 人 → 百分位 = (0 + 5) / 5 * 100 = 100%
+  assertClose(result.position.percentile, 100, 0.01, '百分位 = 100%');
   assertEqual(result.position.equalCount, 5, '等于 90 的有 5 人');
   assertEqual(result.position.higherCount, 0, '高于 90 的有 0 人');
   assertEqual(result.position.lowerCount, 0, '低于 90 的有 0 人');
@@ -378,7 +400,8 @@ console.log('\n2.4 全相等 rank 字段 lower-is-better');
 
   assertEqual(result.position.bestRank, 1, '排名 = 1');
   assertEqual(result.position.worstRank, 5, '最差排名 = 5');
-  assertClose(result.position.percentile, 0, 0.01, '百分位 = 0%（无高于）');
+  // lower-is-better: (higherCount + equalCount) / total = (0 + 5) / 5 = 100%
+  assertClose(result.position.percentile, 100, 0.01, '百分位 = 100%（全部大于等于）');
   assertEqual(result.position.equalCount, 5, '等于 3 的有 5 人');
 }
 
@@ -397,7 +420,8 @@ console.log('\n2.5 重复值（部分相等）');
   assertEqual(result.position.lowerCount, 2, '低于 95 的有 2 人');
   assertEqual(result.position.bestRank, 2, '最佳排名 = 2');
   assertEqual(result.position.worstRank, 3, '最差排名 = 3');
-  assertClose(result.position.percentile, 40, 0.01, '百分位 = 40%');
+  // higher-is-better: (lowerCount + equalCount) / total = (2 + 2) / 5 = 80%
+  assertClose(result.position.percentile, 80, 0.01, '百分位 = 80%');
 }
 
 // --- 2.6: 重复值 rank 字段 lower-is-better ---
@@ -415,7 +439,8 @@ console.log('\n2.6 重复值 rank 字段 lower-is-better');
   assertEqual(result.position.higherCount, 2, '高于 2 的有 2 人 (4, 5)');
   assertEqual(result.position.bestRank, 2, '最佳排名 = 2');
   assertEqual(result.position.worstRank, 3, '最差排名 = 3');
-  assertClose(result.position.percentile, 40, 0.01, '百分位 = 40%');
+  // lower-is-better: (higherCount + equalCount) / total = (2 + 2) / 5 = 80%
+  assertClose(result.position.percentile, 80, 0.01, '百分位 = 80%');
 }
 
 // ================================================================
@@ -506,7 +531,8 @@ console.log('\n3.6 0 值有效');
   assertEqual(result.stats.validCount, 3, '0 值被正确识别');
   assertEqual(result.stats.min, 0, 'min = 0');
   assertEqual(result.position.bestRank, 3, '排名 = 3（最高 2 人高于 0）');
-  assertClose(result.position.percentile, 0, 0.01, '百分位 = 0%');
+  // higher-is-better: (lowerCount + equalCount) / total = (0 + 1) / 3 = 33.33%
+  assertClose(result.position.percentile, 100 / 3, 0.01, '百分位 = 33.33%');
 }
 
 // --- 3.7: 负数有效 ---
@@ -521,7 +547,8 @@ console.log('\n3.7 负数有效');
   assertEqual(result.stats.validCount, 3, '负数被正确识别');
   assertEqual(result.stats.min, -10, 'min = -10');
   assertEqual(result.position.bestRank, 2, '排名 = 2');
-  assertClose(result.position.percentile, 100 / 3, 0.1, '百分位 = 33.3%');
+  // higher-is-better: (lowerCount + equalCount) / total = (1 + 1) / 3 = 66.67%
+  assertClose(result.position.percentile, 200 / 3, 0.1, '百分位 = 66.67%');
 }
 
 // --- 3.8: 全部无效值 ---

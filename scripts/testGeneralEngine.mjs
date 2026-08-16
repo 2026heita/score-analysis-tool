@@ -81,12 +81,8 @@ function detectFeatureType(fieldName, values) {
   // 检测数值型
   let numericCount = 0;
   for (const v of nonEmptyValues) {
-    const str = String(v).trim();
-    // 去除千分位逗号和百分号后再用 Number() 严格解析
-    // 避免 parseFloat('2024-01-15') = 2024 这种误匹配
-    const cleaned = str.replace(/,/g, '').replace(/%$/, '');
-    const num = Number(cleaned);
-    if (!isNaN(num) && isFinite(num)) {
+    const parsed = parseNumericValue(String(v).trim());
+    if (parsed.status === 'valid') {
       numericCount++;
     }
   }
@@ -129,18 +125,58 @@ function detectFeatureType(fieldName, values) {
   return { featureType: FEATURE_TYPES.INVALID, confidence: 0.5, reason: '无法识别' };
 }
 
+// 严格数字解析（支持千分位）
+function parseNumericStringStrict(str) {
+  if (!str || typeof str !== 'string') return null;
+  const trimmed = str.trim();
+  if (trimmed === '') return null;
+  if (trimmed.includes(',')) {
+    const thousandsRegex = /^[+-]?\d{1,3}(,\d{3})+(\.\d+)?$/;
+    if (!thousandsRegex.test(trimmed)) return null;
+    const withoutCommas = trimmed.replace(/,/g, '');
+    const num = Number(withoutCommas);
+    return Number.isFinite(num) ? num : null;
+  }
+  const num = Number(trimmed);
+  return Number.isFinite(num) ? num : null;
+}
+
+// 完整数值解析（与 production numericParser.ts 语义一致）
+function parseNumericValue(val) {
+  if (val === null || val === undefined || val === '') return { status: 'empty' };
+  if (typeof val === 'number') return Number.isFinite(val) ? { status: 'valid', value: val } : { status: 'invalid' };
+  if (typeof val === 'boolean') return { status: 'invalid' };
+  const str = String(val).trim();
+  if (str === '') return { status: 'empty' };
+  if (str === '-' || str === '—' || str === '–' || str === '/' || str === '\\' || str === '|') return { status: 'empty' };
+  const invalidKeywords = ['缺考', '弃考', '转班', '转到', '无', '无成绩', '休学', '退学', '请假', '缓考'];
+  const lower = str.toLowerCase();
+  for (const kw of invalidKeywords) {
+    if (lower.includes(kw.toLowerCase())) return { status: 'invalid' };
+  }
+  if (str.endsWith('%')) {
+    const num = parseNumericStringStrict(str.slice(0, -1).trim());
+    if (num !== null) return { status: 'valid', value: num };
+    return { status: 'invalid' };
+  }
+  const num = parseNumericStringStrict(str);
+  if (num !== null) return { status: 'valid', value: num };
+  if (/\d/.test(str)) return { status: 'invalid' };
+  return { status: 'invalid' };
+}
+
 // 标准化数值
 function standardizeNumerical(str) {
-  let cleaned = str.trim().replace(/,/g, '');
+  let cleaned = str.trim();
   if (cleaned.endsWith('%')) {
-    cleaned = cleaned.slice(0, -1);
-    const num = parseFloat(cleaned);
-    if (!isNaN(num) && isFinite(num)) {
+    cleaned = cleaned.slice(0, -1).trim();
+    const num = parseNumericStringStrict(cleaned);
+    if (num !== null) {
       return { type: 'numerical', value: num / 100, original: str };
     }
   }
-  const num = parseFloat(cleaned);
-  if (!isNaN(num) && isFinite(num)) {
+  const num = parseNumericStringStrict(cleaned);
+  if (num !== null) {
     return { type: 'numerical', value: num, original: str };
   }
   return { type: 'invalid', value: null, original: str };

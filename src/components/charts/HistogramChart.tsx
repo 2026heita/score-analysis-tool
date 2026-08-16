@@ -36,16 +36,33 @@ export default function HistogramChart({ values, fieldName, userValue, binCount 
     }
 
     const bins = generateBins(cleanValues, binCount);
+    const dataMin = bins.length > 0 ? bins[0].start : 0;
+    const dataMax = bins.length > 0 ? bins[bins.length - 1].end : 0;
+
+    // 查找用户值所属 bin：普通 bin 为 [start, end)，最后一个 bin 为 [start, end]
+    // 确保最大值能正确落入最后一组
     const userBinIndex = userValue !== undefined
-      ? bins.findIndex(b => userValue >= b.start && userValue < b.end)
+      ? bins.findIndex((b, i) => {
+          if (i < bins.length - 1) {
+            return userValue >= b.start && userValue < b.end;
+          }
+          // 最后一个 bin：包含上界
+          return userValue >= b.start && userValue <= b.end;
+        })
       : -1;
+
+    // 判断用户值是否超出数据范围
+    const isBelowRange = userValue !== undefined && userValue < dataMin;
+    const isAboveRange = userValue !== undefined && userValue > dataMax;
+    const isOutOfRange = isBelowRange || isAboveRange;
 
     const colors = bins.map((_, i) => i === userBinIndex ? '#f59e0b' : '#3b82f6');
 
     const markLineData: any[] = [];
-    if (userValue !== undefined) {
+    if (userValue !== undefined && userBinIndex >= 0) {
+      // 用户在范围内：高亮对应 bin 并标记红线
       markLineData.push({
-        xAxis: userValue,
+        xAxis: bins[userBinIndex].label,
         label: {
           formatter: `你的数值：${safeFormatNumber(userValue, 2)}`,
           position: 'end',
@@ -56,6 +73,35 @@ export default function HistogramChart({ values, fieldName, userValue, binCount 
 
     const xLabels = bins.map(b => b.label);
     const counts = bins.map(b => b.count);
+
+    // 超范围时使用 graphic 组件在图表边缘显示标记
+    const graphicElements: any[] = [];
+    if (userValue !== undefined && isOutOfRange) {
+      const rangeText = isBelowRange ? '← 低于数据范围' : '高于数据范围 →';
+      const xPos = isBelowRange ? '8%' : '92%';
+      graphicElements.push({
+        type: 'text',
+        style: {
+          text: `你的数值：${safeFormatNumber(userValue, 2)}`,
+          fill: '#dc2626',
+          fontSize: 12,
+          fontWeight: 'bold',
+          textAlign: 'center',
+        },
+        left: xPos,
+        top: 55,
+      }, {
+        type: 'text',
+        style: {
+          text: rangeText,
+          fill: '#ef4444',
+          fontSize: 11,
+          textAlign: 'center',
+        },
+        left: xPos,
+        top: 75,
+      });
+    }
 
     return {
       title: {
@@ -99,6 +145,7 @@ export default function HistogramChart({ values, fieldName, userValue, binCount 
           barGap: '5%',
         },
       ],
+      graphic: graphicElements.length > 0 ? graphicElements : undefined,
     } as EChartsOption;
   }, [cleanValues, fieldName, userValue, binCount]);
 

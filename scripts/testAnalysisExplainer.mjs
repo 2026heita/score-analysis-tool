@@ -63,12 +63,15 @@ function explainField(field, userValue, values, isRankField = false) {
   if (cleanValues.length === 0) return null;
   const stats = calculateStats(cleanValues, cleanValues.length);
   if (!stats) return null;
-  // 排名字段：数值越小越好，所以"超过"是指比用户值大的
-  // 普通字段：数值越大越好，所以"超过"是指比用户值小的
+  // 排名字段：数值越小越好，百分位 = 大于等于该值人数 / 有效人数 * 100
+  // 普通字段：数值越大越好，百分位 = 小于等于该值人数 / 有效人数 * 100
+  const count = isRankField
+    ? cleanValues.filter(v => v >= userValue).length
+    : cleanValues.filter(v => v <= userValue).length;
+  const percentile = (count / cleanValues.length) * 100;
   const lowerCount = isRankField
     ? cleanValues.filter(v => v > userValue).length
     : cleanValues.filter(v => v < userValue).length;
-  const percentile = (lowerCount / cleanValues.length) * 100;
   const { tier, tierLabel } = getPerformanceTier(percentile);
   const p75 = calculateQuantile(cleanValues, 0.75);
   const p90 = calculateQuantile(cleanValues, 0.9);
@@ -120,7 +123,8 @@ assert(result1 !== null, '返回结果不为空');
 assert(result1.field === '数学', '字段名正确');
 assert(result1.userValue === 85, '用户值正确');
 assert(result1.lowerCount === 5, '超过人数正确（低于85的有5个: 60,65,70,75,80）');
-assert(result1.percentile === 50, '百分位正确（50%）');
+// P(X<=85) = (5 个小于 + 1 个等于 85) / 10 = 60%
+assert(result1.percentile === 60, '百分位正确（60%）');
 assert(result1.tier === 'middle', '层级正确（中游）');
 assert(result1.tierLabel === '中游', '层级标签正确');
 assert(Math.abs(result1.mean - 82.5) < 0.01, '平均值正确');
@@ -259,24 +263,28 @@ const rankValues = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; // 排名数据，1最好，
 // 普通字段逻辑：85分在 [60,65,70,75,80,85,90,95,100,105] 中超过5人（60,65,70,75,80）
 const scoreResult = explainField('数学', 85, [60, 65, 70, 75, 80, 85, 90, 95, 100, 105], false);
 assert(scoreResult.lowerCount === 5, '普通字段：85分超过5人（比85小的有5个）');
-assert(scoreResult.percentile === 50, '普通字段：百分位50%');
+// P(X<=85) = (5 个小于 + 1 个等于 85) / 10 = 60%
+assert(scoreResult.percentile === 60, '普通字段：百分位60%');
 
 // 排名字段逻辑：排名5在 [1,2,3,4,5,6,7,8,9,10] 中超过5人（6,7,8,9,10）
 const rankResult = explainField('排名', 5, rankValues, true);
 assert(rankResult.lowerCount === 5, '排名字段：排名5超过5人（比5大的有5个：6,7,8,9,10）');
-assert(rankResult.percentile === 50, '排名字段：百分位50%');
+// P(X>=5) = (5 个大于 + 1 个等于 5) / 10 = 60%
+assert(rankResult.percentile === 60, '排名字段：百分位60%');
 
 // 排名1（最好）应该超过9人
 const rank1Result = explainField('排名', 1, rankValues, true);
 assert(rank1Result.lowerCount === 9, '排名字段：排名1超过9人');
-assert(rank1Result.percentile === 90, '排名字段：排名1百分位90%');
+// P(X>=1) = 10 / 10 = 100%
+assert(rank1Result.percentile === 100, '排名字段：排名1百分位100%');
 assert(rank1Result.tier === 'top10', '排名字段：排名1属于前10%');
 
 // 排名10（最差）应该超过0人
 const rank10Result = explainField('排名', 10, rankValues, true);
 assert(rank10Result.lowerCount === 0, '排名字段：排名10超过0人');
-assert(rank10Result.percentile === 0, '排名字段：排名10百分位0%');
-assert(rank10Result.tier === 'bottom10', '排名字段：排名10属于后10%');
+// P(X>=10) = 只有自身 1 个 / 10 = 10%
+assert(rank10Result.percentile === 10, '排名字段：排名10百分位10%');
+assert(rank10Result.tier === 'bottom25', '排名字段：排名10属于后25%（10% 落在 10-25 区间）');
 
 // 测试 11: generateExplanation 传入 rankFields 参数
 console.log('\n测试 11: generateExplanation 传入 rankFields 参数');
@@ -296,8 +304,9 @@ assert(mathExp !== undefined, '数学解释存在');
 assert(rankExp !== undefined, '排名解释存在');
 assert(mathExp.lowerCount === 5, '数学：85分超过5人');
 assert(rankExp.lowerCount === 5, '排名：排名5超过5人（方向反转）');
-assert(mathExp.percentile === 50, '数学：百分位50%');
-assert(rankExp.percentile === 50, '排名：百分位50%');
+// P(X<=85)=60%；P(X>=5)=60%
+assert(mathExp.percentile === 60, '数学：百分位60%');
+assert(rankExp.percentile === 60, '排名：百分位60%');
 
 console.log(`\n=== 测试完成 ===`);
 console.log(`通过: ${passed}`);

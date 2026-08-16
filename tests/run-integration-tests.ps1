@@ -7,6 +7,7 @@ Write-Host ""
 # Test files
 $tests = @(
     "tests/integration/safeFormat.test.ts",
+    "tests/integration/numericParser.test.ts",
     "tests/integration/dateParsing.test.ts",
     "tests/integration/stage0A1.test.ts",
     "tests/integration/stage0A2.test.ts",

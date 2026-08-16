@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import type { EChartsOption } from 'echarts';
 import { extractFieldValues, computeStats, computePercentile } from '../../engine/analysisEngine';
-import { parseNumericValue } from '../../utils/tableParser/numericParser';
+import { parseNumericValue, parseNumericValueLegacy } from '../../utils/tableParser/numericParser';
 import { safeFormatPercent, extractNumericFromEChartsParam, isValidPercentile } from '../../utils/safeFormat';
 import EChartsWrapper from './EChartsWrapper';
 import type { OriginalFieldRadarState } from '../../types';
@@ -437,15 +437,15 @@ export default function OriginalFieldRadar({
     // 尝试匹配字段和数值
     for (let i = 0; i < values.length; i++) {
       const value = values[i].trim();
-      const numValue = parseFloat(value);
+      const parsed = parseNumericValueLegacy(value);
 
       // 如果当前索引对应一个已选字段
       if (i < selections.length) {
         const field = selections[i].field;
-        if (isNaN(numValue)) {
+        if (parsed === null) {
           errors.push(`${field}: "${value}" 不是有效数字`);
         } else {
-          matchedFields.push({ field, value: numValue });
+          matchedFields.push({ field, value: parsed });
         }
       } else {
         // 超出已选字段数量
@@ -957,9 +957,9 @@ export default function OriginalFieldRadar({
                         return next;
                       });
                     } else {
-                      const num = parseFloat(val);
-                      if (!isNaN(num)) {
-                        updateField(index, 'userValue', num);
+                      const parsed = parseNumericValueLegacy(val);
+                      if (parsed !== null) {
+                        updateField(index, 'userValue', parsed);
                       }
                     }
                   }}
@@ -1031,7 +1031,7 @@ export default function OriginalFieldRadar({
         <br />
         如果当前表格不是完整全量数据，字段百分位结果可能存在偏差。
         <br />
-        百分位口径：低于该值的记录数 / 该字段有效记录数 × 100%。
+        百分位口径：根据字段方向计算，高于或等于该值的记录占比（或低于或等于该值的记录占比）/ 该字段有效记录数 × 100%。
       </div>
 
       {/* 视图切换 */}

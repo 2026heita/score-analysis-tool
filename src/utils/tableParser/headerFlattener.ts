@@ -2,6 +2,9 @@
 // 成绩表智能解析器 - 多级表头扁平化
 // ============================================================
 
+import { parseNumericValueLegacy } from './numericParser';
+import { minMax } from '../stats';
+
 // ============================================================
 // 不需要前缀的完整字段（这些字段本身已完整，不要拼接父级）
 // ============================================================
@@ -43,7 +46,8 @@ export function getMergedHeaders(rawRows: unknown[][], merges?: MergeRange[]): s
   }
 
   const rowCount = rawRows.length;
-  const colCount = Math.max(...rawRows.map(r => r.length));
+  const mm = minMax(rawRows.map(r => r.length));
+  const colCount = mm ? mm.max : 0;
   const grid: string[][] = [];
 
   for (let r = 0; r < rowCount; r++) {
@@ -118,8 +122,7 @@ export function detectAndFlattenMultiRowHeaders(
     let numericCells = 0;
     for (const c of row) {
       if (!c || c === '-') continue;
-      const n = parseFloat(c);
-      if (isNaN(n) || !Number.isFinite(n)) {
+      if (parseNumericValueLegacy(c) === null) {
         textCells++;
       } else {
         numericCells++;
@@ -160,7 +163,8 @@ export function detectAndFlattenMultiRowHeaders(
   }
 
   // 扁平化多级表头
-  const colCount = Math.max(...bestGroup.map(r => grid[r]?.length ?? 0));
+  const mm = minMax(bestGroup.map(r => grid[r]?.length ?? 0));
+  const colCount = mm ? mm.max : 0;
   const headers: string[] = [];
 
   for (let col = 0; col < colCount; col++) {

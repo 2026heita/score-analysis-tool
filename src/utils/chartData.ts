@@ -1,7 +1,7 @@
 /**
  * 图表数据整理工具函数
  */
-import { calculateQuantile, formatNumber as _formatNumber } from './stats';
+import { calculateQuantile, minMax, formatNumber as _formatNumber } from './stats';
 
 export interface BinData {
   start: number;
@@ -21,18 +21,25 @@ export function generateBins(values: number[], binCount: number): BinData[] {
   const cleanValues = values.filter(v => Number.isFinite(v));
   if (cleanValues.length === 0) return [];
 
-  const min = Math.min(...cleanValues);
-  const max = Math.max(...cleanValues);
+  const mm = minMax(cleanValues);
+  if (!mm) return [];
+
+  const min = mm.min;
+  const max = mm.max;
 
   if (min === max) {
     return [{ start: min, end: max, count: cleanValues.length, label: `${min}` }];
   }
 
   const binWidth = (max - min) / binCount;
+  
+  // 根据 binWidth 计算显示精度：确保相邻 bin 的边界在显示后能被区分
+  const precision = calculatePrecisionForBinWidth(binWidth);
+  
   const bins: BinData[] = Array.from({ length: binCount }, (_, i) => {
     const start = min + i * binWidth;
     const end = start + binWidth;
-    return { start, end, count: 0, label: `${formatValue(start)}~${formatValue(end)}` };
+    return { start, end, count: 0, label: `${formatValueFixed(start, precision)}~${formatValueFixed(end, precision)}` };
   });
 
   cleanValues.forEach(v => {
@@ -46,8 +53,44 @@ export function generateBins(values: number[], binCount: number): BinData[] {
 }
 
 /**
- * CDF 累积分布：按严格小于口径生成阶梯数据
- * percentile = count(v < value) / total * 100
+ * 根据 binWidth 计算显示精度
+ * 确保相邻 bin 的边界在显示后能被区分
+ */
+function calculatePrecisionForBinWidth(binWidth: number): number {
+  if (!Number.isFinite(binWidth) || binWidth <= 0) return 2;
+  
+  // 找到 binWidth 的有效小数位
+  // 例如：binWidth = 0.001 -> precision = 3
+  // binWidth = 0.01 -> precision = 2
+  // binWidth = 1 -> precision = 0
+  // binWidth = 10 -> precision = 0
+  
+  // 取 binWidth 的 1/10 作为参考，确保能区分相邻 bin
+  const ref = binWidth / 10;
+  if (ref >= 1) return 0;
+  if (ref <= 0) return 8;
+  
+  // 计算需要的小数位：-log10(ref) 向上取整
+  const precision = Math.ceil(-Math.log10(ref));
+  
+  // 限制在 0-8 之间
+  return Math.max(0, Math.min(8, precision));
+}
+
+/**
+ * 使用固定精度格式化数值
+ */
+function formatValueFixed(val: number, precision: number): string {
+  if (!Number.isFinite(val)) return '-';
+  if (precision === 0) return Math.round(val).toString();
+  return val.toFixed(precision);
+}
+
+/**
+ * CDF 累积分布：按小于等于口径生成阶梯数据
+ * percentile = count(v <= value) / total * 100
+ * 
+ * 合并相同 value，只保留该值最终累计比例，避免重复坐标
  */
 export function generateCdf(values: number[]): CdfPoint[] {
   if (!values || values.length === 0) return [];
@@ -56,17 +99,25 @@ export function generateCdf(values: number[]): CdfPoint[] {
   if (sorted.length === 0) return [];
 
   const total = sorted.length;
+  const result: CdfPoint[] = [];
 
-  // 使用严格小于口径：percentile = count(v < value) / total * 100
-  // 对于重复值，取第一个出现的 index 确保一致性
-  return sorted.map((v, i) => {
-    // 找到第一个等于当前值的位置，确保所有相同值对应同一个 percentile
-    let firstIdx = i;
-    while (firstIdx > 0 && sorted[firstIdx - 1] === v) firstIdx--;
-    // percentile = 严格小于该值的人数 / total * 100
-    const percentile = (firstIdx / total) * 100;
-    return { value: v, percentile };
-  });
+  // 遍历排序后的数据，合并相同 value
+  let i = 0;
+  while (i < sorted.length) {
+    const currentValue = sorted[i];
+    // 找到最后一个等于当前值的位置
+    let lastIdx = i;
+    while (lastIdx < sorted.length - 1 && sorted[lastIdx + 1] === currentValue) {
+      lastIdx++;
+    }
+    // percentile = 小于等于该值的人数 / total * 100
+    const percentile = ((lastIdx + 1) / total) * 100;
+    result.push({ value: currentValue, percentile });
+    // 跳到下一个不同的值
+    i = lastIdx + 1;
+  }
+
+  return result;
 }
 
 /**
@@ -90,7 +141,8 @@ export function inferFieldMax(fieldName: string, values: number[]): number {
   if (fieldName.includes('首选') || fieldName.includes('再选')) return 100;
 
   if (cleanValues.length === 0) return 100;
-  return Math.ceil(Math.max(...cleanValues) / 10) * 10;
+  const mm = minMax(cleanValues);
+  return Math.ceil((mm ? mm.max : 0) / 10) * 10;
 }
 
 /** 计算四分位区间占比数据 */
@@ -152,7 +204,16 @@ export function buildQuartilePieData(values: number[]): QuartilePieData | null {
 function formatValue(val: number): string {
   if (!Number.isFinite(val)) return '-';
   if (Number.isInteger(val)) return val.toString();
-  return val.toFixed(1);
+  // 根据数值大小动态决定小数位数
+  const absVal = Math.abs(val);
+  if (absVal >= 100) return val.toFixed(0);
+  if (absVal >= 10) return val.toFixed(1);
+  if (absVal >= 1) return val.toFixed(2);
+  if (absVal >= 0.1) return val.toFixed(3);
+  if (absVal >= 0.01) return val.toFixed(4);
+  if (absVal >= 0.001) return val.toFixed(5);
+  // 极小值：最多保留 8 位小数
+  return val.toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
 }
 
 // 导出 stats 中的 formatNumber，方便 chartData 模块统一使用

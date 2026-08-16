@@ -17,6 +17,7 @@ import type {
   FieldStatistics,
 } from './types';
 import type { ContentFeature } from '../utils/tableParser/types';
+import { parseNumericValueLegacy } from '../utils/tableParser/numericParser';
 
 // ============================================================
 // 通用字段名规则（不包含教育特定关键词）
@@ -363,8 +364,8 @@ function computeFieldStatistics(columnValues: string[]): FieldStatistics {
     // 收集前 3 个非空值作为示例
     if (sampleValues.length < 3) {
       // 尝试解析为数值
-      const num = parseFloat(val);
-      if (!isNaN(num) && isFinite(num)) {
+      const num = parseNumericValueLegacy(val);
+      if (num !== null) {
         sampleValues.push(num);
       } else {
         sampleValues.push(val);
@@ -420,8 +421,8 @@ function computeContentFeature(columnValues: string[]): ContentFeature {
     const trimmed = val.trim();
     if (!trimmed) continue;
     
-    const num = parseFloat(trimmed);
-    if (!isNaN(num) && isFinite(num)) {
+    const num = parseNumericValueLegacy(trimmed);
+    if (num !== null) {
       validCount++;
       sum += num;
       

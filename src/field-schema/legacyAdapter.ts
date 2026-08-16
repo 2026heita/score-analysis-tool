@@ -16,6 +16,7 @@ import type {
   FieldInference,
 } from './types';
 import type { FieldType, AnalysisRole, FieldMeta } from '../utils/tableParser/types';
+import { parseNumericValueLegacy } from '../utils/tableParser/numericParser';
 
 // ============================================================
 // 旧 FieldType 到新 FieldDataType 的映射
@@ -204,8 +205,8 @@ function computeStatistics(columnValues: string[]): {
     uniqueValues.add(val);
     
     if (sampleValues.length < 3) {
-      const num = parseFloat(val);
-      if (!isNaN(num) && isFinite(num)) {
+      const num = parseNumericValueLegacy(val);
+      if (num !== null) {
         sampleValues.push(num);
       } else {
         sampleValues.push(val);

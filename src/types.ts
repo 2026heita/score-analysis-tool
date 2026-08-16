@@ -34,6 +34,8 @@ export interface PositionResult {
   estimatedRank: number;
   percentile: number;
   existsInData: boolean;
+  isOutOfRange: boolean;
+  outOfRangeDirection?: 'below' | 'above';
 }
 
 export type ChartTab = 'histogram' | 'boxplot' | 'cdf' | 'quartile' | 'timeseries';

@@ -78,12 +78,13 @@ export default function BoxPlotChart({ values, fieldName, stats, userValue }: Bo
       });
     }
 
-    const yMin = userValue !== undefined
-      ? Math.min(dataMin, userValue) - (dataMax - dataMin) * 0.1
-      : dataMin - (dataMax - dataMin) * 0.1;
-    const yMax = userValue !== undefined
-      ? Math.max(dataMax, userValue) + (dataMax - dataMin) * 0.1
-      : dataMax + (dataMax - dataMin) * 0.1;
+    // 当所有数据相同时，padding 为 0，需要设置最小显示范围
+    const range = dataMax - dataMin;
+    const padding = range > 0 ? range * 0.1 : Math.abs(dataMin) * 0.1 || 1;
+    const effectiveMin = userValue !== undefined ? Math.min(dataMin, userValue) : dataMin;
+    const effectiveMax = userValue !== undefined ? Math.max(dataMax, userValue) : dataMax;
+    const yMin = effectiveMin - padding;
+    const yMax = effectiveMax + padding;
 
     return {
       title: {

@@ -90,7 +90,13 @@ export default function FilterPanel({
 
   const handleOperatorChange = (index: number, operator: string) => {
     const next = [...conditions];
-    next[index] = { ...next[index], operator: operator as TextOperator | NumericOperator, value: '' };
+    next[index] = {
+      ...next[index],
+      operator: operator as TextOperator | NumericOperator,
+      value: '',
+      betweenMin: undefined,
+      betweenMax: undefined,
+    };
     onConditionsChange(next);
   };
 
@@ -100,14 +106,21 @@ export default function FilterPanel({
     onConditionsChange(next);
   };
 
+  const handleBetweenMinChange = (index: number, value: string) => {
+    const next = [...conditions];
+    next[index] = { ...next[index], betweenMin: value };
+    onConditionsChange(next);
+  };
+
+  const handleBetweenMaxChange = (index: number, value: string) => {
+    const next = [...conditions];
+    next[index] = { ...next[index], betweenMax: value };
+    onConditionsChange(next);
+  };
+
   const getOperators = (field: string) => {
     if (!field) return [];
     return numericFields.has(field) ? NUMERIC_OPERATORS : TEXT_OPERATORS;
-  };
-
-  const getValuePlaceholder = (operator: string) => {
-    if (operator === 'between') return '最小值,最大值';
-    return '输入筛选值';
   };
 
   return (
@@ -154,13 +167,33 @@ export default function FilterPanel({
                   ))}
                 </select>
 
-                {needsValue && (
+                {cond.operator === 'between' ? (
+                  <div style={styles.betweenGroup}>
+                    <input
+                      style={styles.betweenInput}
+                      type="text"
+                      value={cond.betweenMin ?? ''}
+                      onChange={e => handleBetweenMinChange(i, e.target.value)}
+                      placeholder="最小值"
+                      aria-label="最小值"
+                    />
+                    <span style={styles.betweenSeparator}>~</span>
+                    <input
+                      style={styles.betweenInput}
+                      type="text"
+                      value={cond.betweenMax ?? ''}
+                      onChange={e => handleBetweenMaxChange(i, e.target.value)}
+                      placeholder="最大值"
+                      aria-label="最大值"
+                    />
+                  </div>
+                ) : needsValue && (
                   <input
                     style={styles.input}
                     type="text"
                     value={cond.value}
                     onChange={e => handleValueChange(i, e.target.value)}
-                    placeholder={getValuePlaceholder(cond.operator)}
+                    placeholder="输入筛选值"
                   />
                 )}
 
@@ -249,6 +282,29 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: '120px',
     flex: 1,
     outline: 'none',
+  },
+  betweenGroup: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    flex: 1,
+    minWidth: '120px',
+  },
+  betweenInput: {
+    padding: '6px 8px',
+    fontSize: '13px',
+    border: '1px solid #cbd5e1',
+    borderRadius: '6px',
+    background: '#fff',
+    color: '#334155',
+    minWidth: '0',
+    flex: 1,
+    outline: 'none',
+  },
+  betweenSeparator: {
+    fontSize: '13px',
+    color: '#94a3b8',
+    flexShrink: 0,
   },
   removeBtn: {
     padding: '4px 8px',

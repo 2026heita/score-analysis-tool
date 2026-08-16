@@ -8,6 +8,7 @@ import type { EChartsOption } from 'echarts';
 import { normalizeScore } from '../../../utils/chartData';
 import type { TraditionalSubjectEntry } from '../../../types';
 import EChartsWrapper from '../../../components/charts/EChartsWrapper';
+import { parseNumericValueLegacy } from '../../../utils/tableParser/numericParser';
 
 interface TraditionalSubjectRadarProps {
   initialEntries?: TraditionalSubjectEntry[];
@@ -197,7 +198,7 @@ export default function TraditionalSubjectRadar({ initialEntries, onStateChange 
                     type="number"
                     style={styles.scoreInput}
                     value={entry.score || ''}
-                    onChange={e => updateEntry(index, 'score', parseFloat(e.target.value) || 0)}
+                    onChange={e => updateEntry(index, 'score', parseNumericValueLegacy(e.target.value) ?? 0)}
                     placeholder="0"
                   />
                 </label>
@@ -207,7 +208,7 @@ export default function TraditionalSubjectRadar({ initialEntries, onStateChange 
                     type="number"
                     style={styles.scoreInput}
                     value={entry.maxScore}
-                    onChange={e => updateEntry(index, 'maxScore', parseFloat(e.target.value) || 100)}
+                    onChange={e => updateEntry(index, 'maxScore', parseNumericValueLegacy(e.target.value) ?? 100)}
                     placeholder="100"
                   />
                 </label>

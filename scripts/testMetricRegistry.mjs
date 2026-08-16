@@ -26,10 +26,25 @@ function extractFieldValues(rows, fieldName) {
   for (const row of limitedRows) {
     const raw = row[fieldName];
     if (raw === undefined || raw === null || raw.trim() === '') { invalidCount++; continue; }
-    const num = parseFloat(raw);
-    if (Number.isFinite(num)) { values.push(num); } else { invalidCount++; }
+    const num = parseNumericValueLegacy(raw);
+    if (num !== null) { values.push(num); } else { invalidCount++; }
   }
   return { values, invalidCount, totalRows: rows.length, truncatedRows };
+}
+
+function parseNumericValueLegacy(val) {
+  if (val === null || val === undefined) return null;
+  const str = String(val).trim();
+  if (str === '') return null;
+  // 包含逗号时必须通过严格千分位校验
+  if (str.includes(',')) {
+    const strictThousands = /^[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/;
+    if (!strictThousands.test(str)) return null;
+  }
+  const cleaned = str.replace(/,/g, '');
+  const num = Number(cleaned);
+  if (isNaN(num) || !Number.isFinite(num)) return null;
+  return num;
 }
 
 function computeStats(values, truncatedRows) {
@@ -48,10 +63,15 @@ function computePosition(values, inputValue, direction = 'higher-is-better') {
   const equalCount = cleanValues.filter(v => v === inputValue).length;
   const lowerCount = cleanValues.filter(v => v < inputValue).length;
 
+  let percentile;
   if (direction === 'lower-is-better') {
-    return { total, higherCount, equalCount, lowerCount, bestRank: lowerCount + 1, worstRank: lowerCount + equalCount, estimatedRank: lowerCount + 1, percentile: total === 0 ? 0 : (higherCount / total) * 100, existsInData: equalCount > 0 };
+    // lower-is-better: 大于等于该值人数 / 有效人数 * 100
+    percentile = total === 0 ? 0 : ((higherCount + equalCount) / total) * 100;
+    return { total, higherCount, equalCount, lowerCount, bestRank: lowerCount + 1, worstRank: lowerCount + equalCount, estimatedRank: lowerCount + 1, percentile, existsInData: equalCount > 0 };
   } else {
-    return { total, higherCount, equalCount, lowerCount, bestRank: higherCount + 1, worstRank: higherCount + equalCount, estimatedRank: higherCount + 1, percentile: total === 0 ? 0 : (lowerCount / total) * 100, existsInData: equalCount > 0 };
+    // higher-is-better: 小于等于该值人数 / 有效人数 * 100
+    percentile = total === 0 ? 0 : ((lowerCount + equalCount) / total) * 100;
+    return { total, higherCount, equalCount, lowerCount, bestRank: higherCount + 1, worstRank: higherCount + equalCount, estimatedRank: higherCount + 1, percentile, existsInData: equalCount > 0 };
   }
 }
 
@@ -164,7 +184,7 @@ console.log('测试 4: rank 字段 direction 反转');
 const rankResult = computeMetric(testContext, '排名', 4);
 assert(rankResult.direction === 'lower-is-better', 'direction = lower-is-better');
 assert(rankResult.position.bestRank === 4, `bestRank = 4（实际 ${rankResult.position.bestRank}）`);
-assert(Math.abs(rankResult.position.percentile - 50.0) < 0.1, `percentile = 50.0%（实际 ${rankResult.position.percentile.toFixed(1)}%）`);
+assert(Math.abs(rankResult.position.percentile - 62.5) < 0.1, `percentile = 62.5%（实际 ${rankResult.position.percentile.toFixed(1)}%）`);
 
 console.log();
 

@@ -3,7 +3,7 @@
 // ============================================================
 
 import type { FieldMeta, FieldType, AnalysisRole, ContentFeature } from './types';
-import { parseNumericValue } from './numericParser';
+import { parseNumericValue, parseNumericValueLegacy } from './numericParser';
 import { analyzeContentFeature } from './contentAnalyzer';
 
 // ============================================================
@@ -726,8 +726,8 @@ export function calculateFieldAnalyticScore(
   } else if (sampleValues && sampleValues.length > 0) {
     // 从样本值重新计算
     const nums = sampleValues
-      .map(v => parseFloat(v))
-      .filter(v => !isNaN(v));
+      .map(v => parseNumericValueLegacy(v))
+      .filter((v): v is number => v !== null);
     if (nums.length >= 2) {
       const mean = nums.reduce((a, b) => a + b, 0) / nums.length;
       const variance = nums.reduce((a, b) => a + (b - mean) ** 2, 0) / nums.length;

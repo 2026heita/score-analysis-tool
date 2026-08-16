@@ -4,12 +4,14 @@
 
 import type { ParsedNumber } from './types';
 
-// 明确的非数值关键词
+// 明确的非数值关键词（带文字的状态，返回 invalid）
 const INVALID_KEYWORDS = [
   '缺考', '弃考', '转班', '转到', '无', '无成绩',
   '休学', '退学', '请假', '缓考',
-  '—', '–', '/', '\\', '|',
 ];
+
+// 缺失值占位符（单独作为占位符，返回 empty）
+const EMPTY_PLACEHOLDERS = ['-', '—', '–', '/', '\\', '|'];
 
 // 日期格式正则（优先于数字解析）
 const DATE_PATTERNS = [
@@ -17,6 +19,34 @@ const DATE_PATTERNS = [
   /^\d{4}年\d{1,2}月\d{1,2}日?$/,            // 2024年1月1日
   /^\d{4}[-/]\d{1,2}[-/]\d{1,2}\s+\d{1,2}:\d{2}/, // 2024-01-01 12:30
 ];
+
+// 严格千分位格式正则：可选正负号 + 1-3位数字 + (逗号 + 恰好3位数字) + 可选小数
+const STRICT_THOUSANDS_FORMAT = /^[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/;
+
+/**
+ * 严格解析数字字符串
+ * - 如果包含逗号，必须通过千分位格式校验
+ * - 如果不包含逗号，使用 Number() 解析
+ * - 返回 number | null
+ */
+function parseNumericStringStrict(str: string): number | null {
+  if (str === '') return null;
+  
+  // 如果包含逗号，必须严格校验千分位格式
+  if (str.includes(',')) {
+    if (!STRICT_THOUSANDS_FORMAT.test(str)) {
+      return null; // 千分位格式不合法
+    }
+    // 格式合法，去除逗号后解析
+    const cleaned = str.replace(/,/g, '');
+    const num = Number(cleaned);
+    return Number.isFinite(num) ? num : null;
+  }
+  
+  // 不包含逗号，直接使用 Number() 解析
+  const num = Number(str);
+  return Number.isFinite(num) ? num : null;
+}
 
 /**
  * 解析单个单元格的数值
@@ -57,14 +87,14 @@ export function parseNumericValue(val: unknown): ParsedNumber {
     return { status: 'empty' };
   }
 
-  // 4.2 检查是否为明确的无效关键词
-  if (isInvalidKeyword(str)) {
-    return { status: 'invalid' };
+  // 4.2 特殊符号（缺失值占位符，返回 empty）
+  if (EMPTY_PLACEHOLDERS.includes(str)) {
+    return { status: 'empty' };
   }
 
-  // 4.3 特殊符号
-  if (str === '-' || str === '—' || str === '–' || str === '/' || str === '\\' || str === '|') {
-    return { status: 'empty' };
+  // 4.3 检查是否为明确的无效关键词（带文字的状态，返回 invalid）
+  if (isInvalidKeyword(str)) {
+    return { status: 'invalid' };
   }
 
   // 4.4 日期格式检测（优先于数字解析）
@@ -77,28 +107,22 @@ export function parseNumericValue(val: unknown): ParsedNumber {
   // 4.5 处理百分号：成绩场景解析为数值部分
   if (str.endsWith('%')) {
     const numStr = str.slice(0, -1).trim();
-    const num = parseFloat(numStr);
-    if (!isNaN(num) && Number.isFinite(num)) {
+    // 百分号内部也使用严格千分位校验
+    const num = parseNumericStringStrict(numStr);
+    if (num !== null) {
       return { status: 'valid', value: num };
     }
     return { status: 'invalid' };
   }
 
-  // 4.5 去除千分位逗号后解析
-  const cleaned = str.replace(/,/g, '');
-  
-  // 4.6 检查清洗后是否为无效关键词
-  if (isInvalidKeyword(cleaned)) {
-    return { status: 'invalid' };
-  }
-
-  const num = parseFloat(cleaned);
-  if (!isNaN(num) && Number.isFinite(num)) {
+  // 4.6 使用严格解析函数（包含千分位校验）
+  const num = parseNumericStringStrict(str);
+  if (num !== null) {
     return { status: 'valid', value: num };
   }
 
   // 4.7 包含数字但解析失败的情况（如 "转到7班"）
-  if (/\d/.test(cleaned)) {
+  if (/\d/.test(str)) {
     // 包含数字但整体不是有效数字 → 无效
     return { status: 'invalid' };
   }

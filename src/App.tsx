@@ -12,6 +12,7 @@ import SampleDataSelector from './components/SampleDataSelector';
 import { isNumericField as checkIsNumericField } from './engine/analysisEngine';
 import type { SampleDataset } from './data/sampleDatasets';
 import { useFilterState } from './hooks/useFilterState';
+import { normalizeFilterConditions } from './engine/filterRows';
 import { useGroupAnalysis } from './hooks/useGroupAnalysis';
 import { useAnalysisDataset } from './hooks/useAnalysisDataset';
 import { calculateFieldAnalyticScore } from './utils/tableParser/fieldClassifier';
@@ -131,7 +132,9 @@ export default function App() {
   const filterRevision = useMemo(() => {
     if (!filterConditions.length) return 0;
     const serialized = filterConditions
-      .map(c => `${c.field}:${c.operator}:${c.value}`)
+      .map(c => c.operator === 'between'
+        ? `${c.field}:between:${c.betweenMin ?? ''}:${c.betweenMax ?? ''}`
+        : `${c.field}:${c.operator}:${c.value}`)
       .join('|');
     // 简单哈希转为正整数
     let hash = 0;
@@ -182,7 +185,8 @@ export default function App() {
       setShowAllFields(savedState.showAllFields ?? false);
       setActiveChartTab((savedState.activeChartTab as ChartTab) ?? 'histogram');
       setOriginalFieldState(savedState.originalFieldRadar ?? { selections: [], viewMode: 'bar' });
-      setFilterConditions(savedState.filterConditions ?? [{ field: '', operator: 'equals', value: '' }]);
+      // 恢复筛选条件时归一化旧版 between 格式（value "80,90" → betweenMin/betweenMax）
+      setFilterConditions(normalizeFilterConditions(savedState.filterConditions ?? [{ field: '', operator: 'equals', value: '' }]));
       setSelectedDimension(savedState.selectedDimension ?? '');
     }
   }, []);

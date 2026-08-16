@@ -7,6 +7,8 @@
 import type { FeatureSchema } from './types';
 import type { FieldMeta, AnalysisRole } from '../utils/tableParser/types';
 import type { DerivedDataContext } from './context';
+import { parseNumericValueLegacy } from '../utils/tableParser/numericParser';
+import { minMax } from '../utils/stats';
 
 // 一对字段的相关性结果
 export interface CorrelationPair {
@@ -124,7 +126,8 @@ function isHighUniqueLongNumberId(
   if (validValues.length >= 10) {
     const uniqueCount = new Set(validValues).size;
     const uniqueRatio = uniqueCount / validValues.length;
-    const maxVal = Math.max(...validValues);
+    const mm = minMax(validValues);
+    const maxVal = mm ? mm.max : 0;
     // 唯一性 > 95% 且最大值 > 10000（可能是 ID）
     if (uniqueRatio > 0.95 && maxVal > 10000) {
       return true;
@@ -210,8 +213,8 @@ function extractColumnVectors(
     columns[field] = rows.map(row => {
       const raw = row[field];
       if (raw === undefined || raw === null || raw.trim() === '') return null;
-      const num = parseFloat(raw.replace(/,/g, ''));
-      return isNaN(num) || !isFinite(num) ? null : num;
+      const num = parseNumericValueLegacy(raw);
+      return num;
     });
   }
 
@@ -456,8 +459,8 @@ export function analyzeCorrelationsSimple(
       const raw = row[header];
       if (raw === undefined || raw === null || raw.trim() === '') continue;
       total++;
-      const num = parseFloat(raw.replace(/,/g, ''));
-      if (!isNaN(num) && isFinite(num)) numCount++;
+      const num = parseNumericValueLegacy(raw);
+      if (num !== null) numCount++;
     }
     if (total > 0 && numCount / total >= 0.7) {
       numericalFields.push(header);

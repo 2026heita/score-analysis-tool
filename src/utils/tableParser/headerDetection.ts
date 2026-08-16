@@ -4,6 +4,7 @@
 
 import type { HeaderDetectionResult } from './types';
 import { detectAndFlattenMultiRowHeaders, MergeRange } from './headerFlattener';
+import { parseNumericValueLegacy } from './numericParser';
 
 // ============================================================
 // 常量
@@ -138,26 +139,26 @@ function detectSingleHeaderRow(rawRows: unknown[][]): HeaderDetectionResult {
 // ============================================================
 // 表头候选评分
 // ============================================================
-function scoreHeaderCandidate(
+export function scoreHeaderCandidate(
   rowStrs: string[],
   _row: unknown[],
   allRows: unknown[][],
   index: number,
 ): number {
-  let score = 0;
-
   const nonEmpty = rowStrs.filter(c => c !== '' && c !== '-');
   const nonEmptyCount = nonEmpty.length;
 
+  // 稀疏表头（非空单元格 < 2）：单列表 / 空列 + 单个有效表头
   if (nonEmptyCount < 2) {
-    score -= 20;
-    return score;
+    return scoreSparseHeaderCandidate(rowStrs, nonEmpty, nonEmptyCount, allRows, index);
   }
+
+  let score = 0;
 
   // 非空越多适当加分
   score += Math.min(nonEmptyCount * 2, 10);
 
-  // 说明性文字扣分
+  // 说明性文字扣分（行级语义判断）
   if (isExplanationRow(rowStrs)) {
     score -= 15;
   }
@@ -176,8 +177,7 @@ function scoreHeaderCandidate(
 
   // 字段大部分是纯数字 → 像数据行不像表头
   const numericCells = nonEmpty.filter(c => {
-    const n = parseFloat(c);
-    return !isNaN(n) && c !== '';
+    return parseNumericValueLegacy(c) !== null;
   }).length;
   if (numericCells / Math.max(nonEmptyCount, 1) > 0.7 && nonEmptyCount >= 3) {
     score -= 15;
@@ -201,9 +201,68 @@ function scoreHeaderCandidate(
     }
   }
 
-  // 整行像标题（只有一个长文本）
-  if (nonEmptyCount === 1 && nonEmpty[0] && nonEmpty[0].length > 20) {
-    score -= 20;
+  return score;
+}
+
+/**
+ * 稀疏表头候选评分：单列表，或"空列 + 单个有效字段"的表头行。
+ *
+ * 不再仅凭"非空单元格数量 < 2"就无条件淘汰，而是基于强证据：
+ * - 单元格是否具有表头语义（命中 HEADER_KEYWORDS）
+ * - 下方的数据是否在该单元格所在列出现，且与字段类型匹配
+ *
+ * 同时避免把纯数字数据行当表头。
+ */
+export function scoreSparseHeaderCandidate(
+  rowStrs: string[],
+  nonEmpty: string[],
+  nonEmptyCount: number,
+  allRows: unknown[][],
+  index: number,
+): number {
+  if (nonEmptyCount === 0) return -Infinity;
+
+  const cellText = String(nonEmpty[0]).trim();
+
+  // 超长文本通常是标题/说明，不是字段表头
+  if (cellText.length > 30) return -50;
+
+  // 单列说明行（如 "备注：..."、"说明：..."）重罚
+  if (isExplanationRow(rowStrs)) return -40;
+
+  const isNumericCell = parseNumericValueLegacy(cellText) !== null;
+
+  // 该单元格在行中的列位置（用于对齐下方数据）
+  const colIndex = rowStrs.indexOf(cellText);
+  if (colIndex < 0) return -Infinity;
+
+  // 收集后续行同列的非空值（最多 30 条）
+  const below: string[] = [];
+  for (let i = index + 1; i < allRows.length && below.length < 30; i++) {
+    const r = allRows[i];
+    if (!r || !Array.isArray(r)) continue;
+    const v = String(r[colIndex] ?? '').trim();
+    if (v !== '' && v !== '-') below.push(v);
+  }
+
+  // 纯数字单元格：更像数据行，不是表头
+  if (isNumericCell) return -5;
+
+  // 文本表头证据
+  let score = 0;
+  const kwHit = HEADER_KEYWORDS.some(kw => cellText.includes(kw));
+  if (kwHit) score += 15;
+
+  const belowNumeric = below.filter(v => parseNumericValueLegacy(v) !== null).length;
+  if (below.length >= 1 && belowNumeric === below.length) {
+    // 下方同列全部为数值，结构证据最强（表头→数值→数值）
+    score += 20;
+    if (belowNumeric >= 2) score += 5;
+  } else if (below.length >= 1 && belowNumeric >= 1) {
+    score += 8; // 部分数值
+  }
+  if (below.length === 0) {
+    score -= 4; // 无后续数据支撑
   }
 
   return score;
@@ -217,9 +276,35 @@ function isEmptyRow(row: unknown[]): boolean {
   return row.every(c => c === '' || c === '-' || c === null || c === undefined);
 }
 
+/**
+ * 判断一行是否为"说明行"（行级语义，而非简单包含匹配）。
+ *
+ * 以下之一视为说明行（重罚，不作为表头）：
+ * 1. 明确前缀：某个单元格以「说明:/说明：/备注:/备注：/提示:/提示：/注:/注：」等开头；
+ * 2. 单一长文本：整行只有一个主要非空单元格，文本较长且包含说明性词语。
+ *
+ * 多列表头（如「姓名 | 总分 | 备注」）不因单个"备注"单元格被误判为说明行。
+ */
 function isExplanationRow(strs: string[]): boolean {
-  const text = strs.join(' ');
-  return EXPLANATION_KEYWORDS.some(kw => text.includes(kw));
+  const nonEmpty = strs.map(s => s.trim()).filter(c => c !== '');
+  if (nonEmpty.length === 0) return false;
+
+  // 1. 明确前缀：单元格以 说明/备注/提示/注 + 冒号 开头
+  const PREFIX_RE = /^(说明|备注|提示|注|注意事项)\s*[:：]/;
+  for (const c of nonEmpty) {
+    if (PREFIX_RE.test(c)) return true;
+  }
+
+  // 2. 单一长文本说明：只有一个主要非空单元格，文本较长，且含说明性词语
+  if (nonEmpty.length === 1) {
+    const only = nonEmpty[0];
+    if (only.length >= 5 && EXPLANATION_KEYWORDS.some(kw => only.includes(kw))) {
+      return true;
+    }
+  }
+
+  // 多列表头不因单个"备注/说明"单元格被误判
+  return false;
 }
 
 function rowHasManyNumbers(row: unknown[]): number {
@@ -227,8 +312,7 @@ function rowHasManyNumbers(row: unknown[]): number {
   return row.filter(v => {
     const str = String(v ?? '').trim();
     if (str === '' || str === '-') return false;
-    const n = parseFloat(str);
-    return !isNaN(n) && Number.isFinite(n);
+    return parseNumericValueLegacy(str) !== null;
   }).length;
 }
 

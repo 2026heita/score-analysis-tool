@@ -68,6 +68,21 @@ const INVALID_KEYWORDS = [
   '—', '–', '/', '\\', '|',
 ];
 
+// 严格千分位格式正则：可选正负号 + 1-3位数字 + (逗号 + 恰好3位数字) + 可选小数
+const STRICT_THOUSANDS_FORMAT = /^[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/;
+
+function parseNumericStringStrict(str) {
+  if (str === '') return null;
+  if (str.includes(',')) {
+    if (!STRICT_THOUSANDS_FORMAT.test(str)) return null;
+    const cleaned = str.replace(/,/g, '');
+    const num = Number(cleaned);
+    return Number.isFinite(num) ? num : null;
+  }
+  const num = Number(str);
+  return Number.isFinite(num) ? num : null;
+}
+
 function parseNumericValue(val) {
   if (val === null || val === undefined || val === '') return { status: 'empty' };
   if (typeof val === 'number') return Number.isFinite(val) ? { status: 'valid', value: val } : { status: 'invalid' };
@@ -78,15 +93,13 @@ function parseNumericValue(val) {
   if (str === '-' || str === '—' || str === '–' || str === '/' || str === '\\' || str === '|') return { status: 'empty' };
   if (str.endsWith('%')) {
     const numStr = str.slice(0, -1).trim();
-    const num = parseFloat(numStr);
-    if (!isNaN(num) && Number.isFinite(num)) return { status: 'valid', value: num };
+    const num = parseNumericStringStrict(numStr);
+    if (num !== null) return { status: 'valid', value: num };
     return { status: 'invalid' };
   }
-  const cleaned = str.replace(/,/g, '');
-  if (isInvalidKeyword(cleaned)) return { status: 'invalid' };
-  const num = parseFloat(cleaned);
-  if (!isNaN(num) && Number.isFinite(num)) return { status: 'valid', value: num };
-  if (/\d/.test(cleaned)) return { status: 'invalid' };
+  const num = parseNumericStringStrict(str);
+  if (num !== null) return { status: 'valid', value: num };
+  if (/\d/.test(str)) return { status: 'invalid' };
   return { status: 'invalid' };
 }
 
@@ -158,14 +171,14 @@ function scoreHeaderCandidate(rowStrs, _row, allRows, index) {
     }
   }
   score += keywordHits * 5;
-  const numericCells = nonEmpty.filter(c => { const n = parseFloat(c); return !isNaN(n) && c !== ''; }).length;
+  const numericCells = nonEmpty.filter(c => parseNumericValue(c).status === 'valid').length;
   if (numericCells / Math.max(nonEmptyCount, 1) > 0.7 && nonEmptyCount >= 3) score -= 15;
   for (let offset = 1; offset <= 3; offset++) {
     const nextIdx = index + offset;
     if (nextIdx < allRows.length) {
       const nextRow = allRows[nextIdx];
       if (nextRow && Array.isArray(nextRow)) {
-        const nextNumCount = nextRow.filter(v => { const s = String(v ?? '').trim(); if (s === '' || s === '-') return false; const n = parseFloat(s); return !isNaN(n) && Number.isFinite(n); }).length;
+        const nextNumCount = nextRow.filter(v => { const s = String(v ?? '').trim(); if (s === '' || s === '-') return false; return parseNumericValue(s).status === 'valid'; }).length;
         if (nextNumCount >= 2) { score += 3; break; }
         if (nextRow.every(c => c === '' || c === '-' || c === null || c === undefined)) score -= 2;
       }
@@ -574,8 +587,8 @@ function detectAndFlattenMultiRowHeaders(rawRows, merges) {
     let numericCells = 0;
     for (const c of row) {
       if (!c || c === '-') continue;
-      const n = parseFloat(c);
-      if (isNaN(n) || !Number.isFinite(n)) {
+      const parsed = parseNumericValue(c);
+      if (parsed.status !== 'valid') {
         textCells++;
       } else {
         numericCells++;
@@ -773,6 +786,110 @@ assert('千分位 "1,234" 值', r.value, 1234);
 assert('旧接口 "550"', parseNumericValueLegacy('550'), 550);
 assert('旧接口 "缺考"', parseNumericValueLegacy('缺考'), null);
 
+// 测试 1b：千分位严格校验
+console.log('\n=== 测试 1b：千分位严格校验 ===\n');
+
+// 合法千分位
+r = parseNumericValue('1,000');
+assert('合法千分位 "1,000"', r.status, 'valid');
+assert('合法千分位 "1,000" 值', r.value, 1000);
+
+r = parseNumericValue('12,345');
+assert('合法千分位 "12,345"', r.status, 'valid');
+assert('合法千分位 "12,345" 值', r.value, 12345);
+
+r = parseNumericValue('123,456');
+assert('合法千分位 "123,456"', r.status, 'valid');
+assert('合法千分位 "123,456" 值', r.value, 123456);
+
+r = parseNumericValue('1,234,567');
+assert('合法千分位 "1,234,567"', r.status, 'valid');
+assert('合法千分位 "1,234,567" 值', r.value, 1234567);
+
+r = parseNumericValue('1,234.5');
+assert('合法千分位 "1,234.5"', r.status, 'valid');
+assert('合法千分位 "1,234.5" 值', r.value, 1234.5);
+
+r = parseNumericValue('1,234.50');
+assert('合法千分位 "1,234.50"', r.status, 'valid');
+assert('合法千分位 "1,234.50" 值', r.value, 1234.5);
+
+r = parseNumericValue('12,345.678');
+assert('合法千分位 "12,345.678"', r.status, 'valid');
+assert('合法千分位 "12,345.678" 值', r.value, 12345.678);
+
+r = parseNumericValue('-1,234');
+assert('合法千分位 "-1,234"', r.status, 'valid');
+assert('合法千分位 "-1,234" 值', r.value, -1234);
+
+r = parseNumericValue('-1,234.56');
+assert('合法千分位 "-1,234.56"', r.status, 'valid');
+assert('合法千分位 "-1,234.56" 值', r.value, -1234.56);
+
+r = parseNumericValue('+1,234');
+assert('合法千分位 "+1,234"', r.status, 'valid');
+assert('合法千分位 "+1,234" 值', r.value, 1234);
+
+r = parseNumericValue('  1,234.50  ');
+assert('合法千分位带空格 "  1,234.50  "', r.status, 'valid');
+assert('合法千分位带空格值', r.value, 1234.5);
+
+// 非法千分位
+r = parseNumericValue('1,23');
+assert('非法千分位 "1,23"', r.status, 'invalid');
+
+r = parseNumericValue('1,2,3');
+assert('非法千分位 "1,2,3"', r.status, 'invalid');
+
+r = parseNumericValue('12,34,567');
+assert('非法千分位 "12,34,567"', r.status, 'invalid');
+
+r = parseNumericValue('1,,234');
+assert('非法千分位 "1,,234"', r.status, 'invalid');
+
+r = parseNumericValue(',123');
+assert('非法千分位 ",123"', r.status, 'invalid');
+
+r = parseNumericValue('123,');
+assert('非法千分位 "123,"', r.status, 'invalid');
+
+r = parseNumericValue('1,234,');
+assert('非法千分位 "1,234,"', r.status, 'invalid');
+
+r = parseNumericValue('1,234,56');
+assert('非法千分位 "1,234,56"', r.status, 'invalid');
+
+r = parseNumericValue('1, 234');
+assert('非法千分位 "1, 234"', r.status, 'invalid');
+
+// 百分号与千分位
+r = parseNumericValue('1,000%');
+assert('合法百分号千分位 "1,000%"', r.status, 'valid');
+assert('合法百分号千分位值', r.value, 1000);
+
+r = parseNumericValue('1,00%');
+assert('非法百分号千分位 "1,00%"', r.status, 'invalid');
+
+r = parseNumericValue('1,2,3%');
+assert('非法百分号千分位 "1,2,3%"', r.status, 'invalid');
+
+// 无逗号数字保持原有行为
+r = parseNumericValue('1234');
+assert('无逗号 "1234"', r.status, 'valid');
+assert('无逗号 "1234" 值', r.value, 1234);
+
+r = parseNumericValue('1234.56');
+assert('无逗号 "1234.56"', r.status, 'valid');
+assert('无逗号 "1234.56" 值', r.value, 1234.56);
+
+r = parseNumericValue('.5');
+assert('无逗号 ".5"', r.status, 'valid');
+assert('无逗号 ".5" 值', r.value, 0.5);
+
+r = parseNumericValue('1e3');
+assert('无逗号 "1e3"', r.status, 'valid');
+assert('无逗号 "1e3" 值', r.value, 1000);
+
 // 测试 2：表头检测
 console.log('\n=== 测试 2：表头检测 ===\n');
 
@@ -957,7 +1074,7 @@ function parseTableText(text) {
     const commaCount = (line.match(/,/g) || []).length;
     if (commaCount >= 1) {
       const parts = line.split(',');
-      const textParts = parts.filter(p => isNaN(parseFloat(p.trim())) || p.trim() === '');
+      const textParts = parts.filter(p => isNaN(Number(p.trim())) || p.trim() === '');
       if (textParts.length > 0 || parts.length >= 2) return 'comma';
     }
     return 'multi-space';

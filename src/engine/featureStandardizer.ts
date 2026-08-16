@@ -9,6 +9,7 @@
  */
 
 import type { FeatureSchema, FeatureType, FeatureVector } from './types';
+import { parseNumericValue } from '../utils/tableParser/numericParser';
 
 // 标准化后的值类型
 export type StandardizedValue = 
@@ -84,28 +85,17 @@ export function standardizeValue(
  */
 function standardizeNumerical(
   str: string,
-  cfg: StandardizerConfig
+  _cfg: StandardizerConfig
 ): StandardizedValue {
-  let cleaned = str;
+  // 使用统一的数值解析器
+  const parsed = parseNumericValue(str);
   
-  // 移除千分位逗号
-  if (cfg.allowCommaSeparator) {
-    cleaned = cleaned.replace(/,/g, '');
-  }
-  
-  // 移除百分号（转换为小数）
-  if (cleaned.endsWith('%')) {
-    cleaned = cleaned.slice(0, -1);
-    const num = parseFloat(cleaned);
-    if (!isNaN(num) && isFinite(num)) {
-      return { type: 'numerical', value: num / 100, original: str };
+  if (parsed.status === 'valid') {
+    // 移除百分号（转换为小数）
+    if (str.trim().endsWith('%')) {
+      return { type: 'numerical', value: parsed.value / 100, original: str };
     }
-  }
-  
-  // 尝试解析
-  const num = parseFloat(cleaned);
-  if (!isNaN(num) && isFinite(num)) {
-    return { type: 'numerical', value: num, original: str };
+    return { type: 'numerical', value: parsed.value, original: str };
   }
   
   // 解析失败

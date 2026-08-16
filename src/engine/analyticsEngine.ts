@@ -24,6 +24,7 @@ import { DEFAULT_CONFIG } from './types';
 import { detectDatasetSchema } from './schemaDetector';
 import { standardizeDataset } from './featureStandardizer';
 import { analyzeNumericalFeature, detectOutliers } from './univariateAnalyzer';
+import { minMax } from '../utils/stats';
 
 /**
  * 分析数据集
@@ -135,22 +136,25 @@ export function analyzeDataset(
       }
       
       if (timestamps.length > 0) {
-        const minTime = Math.min(...timestamps);
-        const maxTime = Math.max(...timestamps);
-        const minDate = new Date(minTime).toISOString().split('T')[0];
-        const maxDate = new Date(maxTime).toISOString().split('T')[0];
-        
-        profile.push({
-          count: limitedVectors.length,
-          validCount: timestamps.length,
-          missingCount: limitedVectors.length - timestamps.length,
-          min: minTime,
-          max: maxTime,
-        });
-        
-        insights.push(
-          `字段 "${feature.fieldName}": 时间范围 ${minDate} 到 ${maxDate}`
-        );
+        const mm = minMax(timestamps);
+        if (mm) {
+          const minTime = mm.min;
+          const maxTime = mm.max;
+          const minDate = new Date(minTime).toISOString().split('T')[0];
+          const maxDate = new Date(maxTime).toISOString().split('T')[0];
+
+          profile.push({
+            count: limitedVectors.length,
+            validCount: timestamps.length,
+            missingCount: limitedVectors.length - timestamps.length,
+            min: minTime,
+            max: maxTime,
+          });
+
+          insights.push(
+            `字段 "${feature.fieldName}": 时间范围 ${minDate} 到 ${maxDate}`
+          );
+        }
       }
     }
   }

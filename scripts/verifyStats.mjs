@@ -61,13 +61,21 @@ function calculateStats(values, totalRows) {
   };
 }
 
-function calculatePosition(values, inputValue) {
+function calculatePosition(values, inputValue, direction = 'higher-is-better') {
   const cleanValues = values.filter(v => Number.isFinite(v));
   const total = cleanValues.length;
   const higherCount = cleanValues.filter(v => v > inputValue).length;
   const equalCount = cleanValues.filter(v => v === inputValue).length;
   const lowerCount = cleanValues.filter(v => v < inputValue).length;
-  const percentile = total === 0 ? 0 : (lowerCount / total) * 100;
+
+  let percentile;
+  if (direction === 'lower-is-better') {
+    // lower-is-better: 大于等于该值人数 / 有效人数 * 100
+    percentile = total === 0 ? 0 : ((higherCount + equalCount) / total) * 100;
+  } else {
+    // higher-is-better: 小于等于该值人数 / 有效人数 * 100
+    percentile = total === 0 ? 0 : ((lowerCount + equalCount) / total) * 100;
+  }
 
   return {
     total,
@@ -145,7 +153,7 @@ assert('equalCount', pos1.equalCount, 2);
 assert('higherCount', pos1.higherCount, 2);
 assert('bestRank', pos1.bestRank, 3);
 assert('worstRank', pos1.worstRank, 4);
-assert('percentile', pos1.percentile, 20);
+assert('percentile', pos1.percentile, 60);
 assert('existsInData', pos1.existsInData, true);
 assert('rankSum', pos1.higherCount + pos1.equalCount + pos1.lowerCount, pos1.total);
 

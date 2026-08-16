@@ -83,6 +83,19 @@ const INVALID_KEYWORDS = [
   '—', '–', '/', '\\', '|',
 ];
 
+function parseNumericStringStrict(str) {
+  if (str === '') return null;
+  if (str.includes(',')) {
+    const strictThousands = /^[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/;
+    if (!strictThousands.test(str)) return null;
+    const cleaned = str.replace(/,/g, '');
+    const num = Number(cleaned);
+    return Number.isFinite(num) ? num : null;
+  }
+  const num = Number(str);
+  return Number.isFinite(num) ? num : null;
+}
+
 function parseNumericValue(val) {
   if (val === null || val === undefined || val === '') return { status: 'empty' };
   if (typeof val === 'number') return Number.isFinite(val) ? { status: 'valid', value: val } : { status: 'invalid' };
@@ -93,15 +106,13 @@ function parseNumericValue(val) {
   if (str === '-' || str === '—' || str === '–' || str === '/' || str === '\\' || str === '|') return { status: 'empty' };
   if (str.endsWith('%')) {
     const numStr = str.slice(0, -1).trim();
-    const num = parseFloat(numStr);
-    if (!isNaN(num) && Number.isFinite(num)) return { status: 'valid', value: num };
+    const num = parseNumericStringStrict(numStr);
+    if (num !== null) return { status: 'valid', value: num };
     return { status: 'invalid' };
   }
-  const cleaned = str.replace(/,/g, '');
-  if (isInvalidKeyword(cleaned)) return { status: 'invalid' };
-  const num = parseFloat(cleaned);
-  if (!isNaN(num) && Number.isFinite(num)) return { status: 'valid', value: num };
-  if (/\d/.test(cleaned)) return { status: 'invalid' };
+  const num = parseNumericStringStrict(str);
+  if (num !== null) return { status: 'valid', value: num };
+  if (/\d/.test(str)) return { status: 'invalid' };
   return { status: 'invalid' };
 }
 

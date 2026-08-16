@@ -27,7 +27,7 @@ function assert(name, condition, expected, actual) {
 
 function readTSV(filePath) {
   const content = fs.readFileSync(filePath, 'utf-8');
-  const lines = content.split('\n').filter(line => line.trim() !== '');
+  const lines = content.replace(/\r/g, '').split('\n').filter(line => line.trim() !== '');
   return lines.map(line => line.split('\t'));
 }
 
@@ -43,7 +43,7 @@ function parseNumericValue(val) {
   }
   
   // 无效关键词
-  const invalidKeywords = ['缺考', '弃考', '转班', '转到', '无', '无成绩', '休学', '退学', '请假', '缓考', '—', '–', '/', '\\', '|'];
+  const invalidKeywords = ['缺考', '弃考', '转班', '转到', '无', '无成绩', '休学', '退学', '请假', '缓考'];
   const lower = str.toLowerCase();
   for (const kw of invalidKeywords) {
     if (lower.includes(kw.toLowerCase())) {
@@ -70,27 +70,49 @@ function parseNumericValue(val) {
   // 百分号
   if (str.endsWith('%')) {
     const numStr = str.slice(0, -1).trim();
-    const num = parseFloat(numStr);
-    if (!isNaN(num) && Number.isFinite(num)) {
+    const num = parseNumericStringStrict(numStr);
+    if (num !== null) {
       return { status: 'valid', value: num };
     }
     return { status: 'invalid' };
   }
   
-  // 去除千分位逗号
-  const cleaned = str.replace(/,/g, '');
-  
-  const num = parseFloat(cleaned);
-  if (!isNaN(num) && Number.isFinite(num)) {
+  // 使用严格解析
+  const num = parseNumericStringStrict(str);
+  if (num !== null) {
     return { status: 'valid', value: num };
   }
   
   // 包含数字但解析失败
-  if (/\d/.test(cleaned)) {
+  if (/\d/.test(str)) {
     return { status: 'invalid' };
   }
   
   return { status: 'invalid' };
+}
+
+// 严格数字解析（支持千分位）
+function parseNumericStringStrict(str) {
+  if (!str || typeof str !== 'string') return null;
+  
+  const trimmed = str.trim();
+  if (trimmed === '') return null;
+  
+  // 如果包含逗号，必须严格匹配千分位格式
+  if (trimmed.includes(',')) {
+    const thousandsRegex = /^[+-]?\d{1,3}(,\d{3})+(\.\d+)?$/;
+    if (!thousandsRegex.test(trimmed)) {
+      return null;
+    }
+    // 移除逗号后继续解析
+    const withoutCommas = trimmed.replace(/,/g, '');
+    const num = Number(withoutCommas);
+    return Number.isFinite(num) ? num : null;
+  }
+  
+  // 不包含逗号，直接解析
+  const num = Number(trimmed);
+  return Number.isFinite(num) ? num : null;
 }
 
 // 简化的行分类（内联核心逻辑）
@@ -420,8 +442,14 @@ function validateAbnormalLongTable() {
     { value: '', expectedStatus: 'empty' },
     { value: '--', expectedStatus: 'invalid', note: '双横线不在特殊符号列表中' },
     { value: '未参加', expectedStatus: 'invalid' },
-    { value: '78分', expectedStatus: 'valid', expectedValue: 78, note: 'parseFloat提取前缀数字' },
+    { value: '78分', expectedStatus: 'invalid', note: '整个字符串必须是合法数值，不能提取前缀数字' },
+    { value: '90分', expectedStatus: 'invalid', note: '整个字符串必须是合法数值，不能提取前缀数字' },
+    { value: '85pts', expectedStatus: 'invalid', note: '整个字符串必须是合法数值，不能提取前缀数字' },
+    { value: '100abc', expectedStatus: 'invalid', note: '整个字符串必须是合法数值，不能提取前缀数字' },
+    { value: '12元', expectedStatus: 'invalid', note: '整个字符串必须是合法数值，不能提取前缀数字' },
     { value: '85', expectedStatus: 'valid', expectedValue: 85 },
+    { value: '0', expectedStatus: 'valid', expectedValue: 0, note: '0 永远不能因为空值/符号规则被过滤' },
+    { value: '-1', expectedStatus: 'valid', expectedValue: -1 },
   ];
   
   for (const tc of testCases) {

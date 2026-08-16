@@ -31,6 +31,21 @@ function assertApprox(actual, expected, tolerance, message) {
 // 内联核心算法（与 src/engine/correlationAnalyzer.ts 一致）
 // ============================================================
 
+function parseNumericValueLegacy(val) {
+  if (val === null || val === undefined) return null;
+  const str = String(val).trim();
+  if (str === '') return null;
+  // 包含逗号时必须通过严格千分位校验
+  if (str.includes(',')) {
+    const strictThousands = /^[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/;
+    if (!strictThousands.test(str)) return null;
+  }
+  const cleaned = str.replace(/,/g, '');
+  const num = Number(cleaned);
+  if (isNaN(num) || !Number.isFinite(num)) return null;
+  return num;
+}
+
 function pearsonCorrelation(x, y) {
   const n = Math.min(x.length, y.length);
   if (n < 2) return { r: 0, n };
@@ -86,8 +101,8 @@ function extractColumnVectors(headers, rows, numericalFields) {
     columns[field] = rows.map(row => {
       const raw = row[field];
       if (raw === undefined || raw === null || raw.trim() === '') return null;
-      const num = parseFloat(raw.replace(/,/g, ''));
-      return isNaN(num) || !isFinite(num) ? null : num;
+      const num = parseNumericValueLegacy(raw);
+      return num === null ? null : num;
     });
   }
 
@@ -107,8 +122,8 @@ function analyzeCorrelationsSimple(headers, rows, config = {}) {
       const raw = row[header];
       if (raw === undefined || raw === null || raw.trim() === '') continue;
       total++;
-      const num = parseFloat(raw.replace(/,/g, ''));
-      if (!isNaN(num) && isFinite(num)) numCount++;
+      const num = parseNumericValueLegacy(raw);
+      if (num !== null) numCount++;
     }
     if (total > 0 && numCount / total >= 0.7) {
       numericalFields.push(header);

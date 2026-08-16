@@ -12,6 +12,7 @@ import { useExportActions } from '../hooks/useExportActions';
 import { formatNumber } from '../utils/stats';
 import { generateExplanation } from '../utils/analysisExplainer';
 import { safeFormatPercent } from '../utils/safeFormat';
+import { parseNumericValueLegacy } from '../utils/tableParser/numericParser';
 import { toHistogramProps, toBoxPlotProps, toCdfProps, toQuartilePieProps, toTimeSeriesProps } from '../engine/chartAdapter';
 import { preloadECharts } from '../utils/echartsSetup';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -319,8 +320,8 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
         .map(row => {
           const val = row[field];
           if (val === undefined || val === '' || val === null) return null;
-          const num = parseFloat(val);
-          return isNaN(num) ? null : num;
+          const num = parseNumericValueLegacy(val);
+          return num;
         })
         .filter((v): v is number => v !== null && Number.isFinite(v));
       if (values.length > 0) fieldData[field] = values;
@@ -331,18 +332,31 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
   }, [analysisExplanationRef, analysisDataset, metricDefs]);
 
   // ===== 计算值 =====
-  const inputNum = inputValue ? parseFloat(inputValue) : NaN;
+  const inputNum = inputValue ? (parseNumericValueLegacy(inputValue) ?? NaN) : NaN;
   const hasInputError = inputValue.trim() !== '' && isNaN(inputNum);
 
   const summaryText = useMemo(() => {
     // neutral/unspecified 指标不生成相对位置摘要
     if (!showPositionSection || !position || !stats || isNaN(inputNum)) return '';
     const numStr = formatNumber(inputNum);
-    if (position.existsInData) {
-      return `你的【${selectedField}】为 ${numStr}。当前数据共有 ${position.total} 条有效记录，其中高于该值的有 ${position.higherCount} 条，与该值相同的有 ${position.equalCount} 条。该值的相对位置区间为第 ${position.bestRank} 位至第 ${position.worstRank} 位，约高于 ${safeFormatPercent(position.percentile)} 的有效记录。`;
+    const direction = metricResult?.direction;
+    
+    // 根据字段方向生成不同的文案
+    let comparisonText: string;
+    if (direction === 'lower-is-better') {
+      comparisonText = `按"数值越低越优"口径，该值的相对表现优于或等于约 ${safeFormatPercent(position.percentile)} 的有效记录。`;
+    } else if (direction === 'neutral' || direction === 'unspecified') {
+      comparisonText = `该值位于约 ${safeFormatPercent(position.percentile)} 百分位。`;
+    } else {
+      // higher-is-better 或默认
+      comparisonText = `按"数值越高越优"口径，该值的相对表现优于或等于约 ${safeFormatPercent(position.percentile)} 的有效记录。`;
     }
-    return `当前数据中不存在该值。如果将该值加入当前数据，估算相对位置为第 ${position.estimatedRank} 位，约高于 ${safeFormatPercent(position.percentile)} 的有效记录。`;
-  }, [showPositionSection, position, stats, selectedField, inputNum]);
+    
+    if (position.existsInData) {
+      return `你的【${selectedField}】为 ${numStr}。当前数据共有 ${position.total} 条有效记录，其中高于该值的有 ${position.higherCount} 条，与该值相同的有 ${position.equalCount} 条。该值的相对位置区间为第 ${position.bestRank} 位至第 ${position.worstRank} 位。${comparisonText}`;
+    }
+    return `当前数据中不存在该值。如果将该值加入当前数据，估算相对位置为第 ${position.estimatedRank} 位。${comparisonText}`;
+  }, [showPositionSection, position, stats, selectedField, inputNum, metricResult?.direction]);
 
   // ===== 复制摘要 =====
   const fallbackCopy = useCallback((text: string, cb: (msg: string) => void) => {
@@ -400,10 +414,24 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
         lines.push(`估算相对位置：第 ${position.estimatedRank} 位`);
         lines.push('当前数据中不存在该值，相对位置为基于当前数据的估算。');
       }
-      lines.push(`百分位：约高于 ${safeFormatPercent(position.percentile)} 的有效记录`);
+      
+      // 根据字段方向生成百分位说明
+      const direction = metricResult?.direction;
+      if (direction === 'lower-is-better') {
+        lines.push(`百分位：约 ${safeFormatPercent(position.percentile)}（按"数值越低越优"口径）`);
+      } else {
+        lines.push(`百分位：约 ${safeFormatPercent(position.percentile)}（按"数值越高越优"口径）`);
+      }
+      
       lines.push('');
       lines.push('三、口径说明');
-      lines.push('百分位口径：低于该值的记录数 / 该字段有效记录数 × 100%。');
+      
+      // 根据字段方向生成百分位口径说明
+      if (direction === 'lower-is-better') {
+        lines.push('百分位口径：不低于该值的有效记录数 / 有效记录总数。');
+      } else {
+        lines.push('百分位口径：不高于该值的有效记录数 / 有效记录总数。');
+      }
       lines.push('存在相同数值时使用相对位置区间，不强行给出单一位置。');
     } else if (isNeutralOrUnspecified) {
       lines.push('');
@@ -660,7 +688,13 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
             <div style={styles.settingsRow}>
               <div style={styles.settingItem}>
                 <label style={styles.settingLabel}>分析字段</label>
-                <select style={styles.select} value={selectedField} onChange={e => setSelectedField(e.target.value)}>
+                <select style={styles.select} value={selectedField} onChange={e => {
+                  // 切换字段时清空用户输入值，避免旧值用于新字段分析
+                  if (e.target.value !== selectedField) {
+                    setInputValue('');
+                  }
+                  setSelectedField(e.target.value);
+                }}>
                   {showAllFields && groupedFields ? (
                     <>
                       {groupedFields.recommended?.length > 0 && (
@@ -857,10 +891,18 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
                 <div style={styles.positionHighlightValue}>约 {safeFormatPercent(position.percentile)}</div>
               </div>
 
-              <p style={styles.note}>百分位口径：低于该值的记录数 / 该字段有效记录数 × 100%。</p>
+              {metricResult?.direction === 'lower-is-better' ? (
+                <p style={styles.note}>百分位口径：不低于该值的有效记录数 / 有效记录总数。</p>
+              ) : (
+                <p style={styles.note}>百分位口径：不高于该值的有效记录数 / 有效记录总数。</p>
+              )}
 
-              {!position.existsInData && (
-                <p style={styles.warning}>你的数值超出当前字段数据范围，相对位置结果仅为基于当前数据的估算。</p>
+              {position.isOutOfRange && (
+                <p style={styles.warning}>
+                  {position.outOfRangeDirection === 'below' 
+                    ? '你的数值低于当前字段数据范围，相对位置结果仅为基于当前数据的估算。'
+                    : '你的数值高于当前字段数据范围，相对位置结果仅为基于当前数据的估算。'}
+                </p>
               )}
             </section>
             </ErrorBoundary>

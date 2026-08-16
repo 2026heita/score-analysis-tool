@@ -20,6 +20,22 @@ let failed = 0;
 const MAX_ROWS = 5000;
 const DEFAULT_TOP_N = 20;
 
+// 严格数字解析（支持千分位）
+function parseNumericStringStrict(str) {
+  if (!str || typeof str !== 'string') return null;
+  const trimmed = str.trim();
+  if (trimmed === '') return null;
+  if (trimmed.includes(',')) {
+    const thousandsRegex = /^[+-]?\d{1,3}(,\d{3})+(\.\d+)?$/;
+    if (!thousandsRegex.test(trimmed)) return null;
+    const withoutCommas = trimmed.replace(/,/g, '');
+    const num = Number(withoutCommas);
+    return Number.isFinite(num) ? num : null;
+  }
+  const num = Number(trimmed);
+  return Number.isFinite(num) ? num : null;
+}
+
 function calculateQuantile(values, q) {
   const cleanValues = values.filter(v => Number.isFinite(v)).sort((a, b) => a - b);
   if (cleanValues.length === 0) return 0;
@@ -77,8 +93,8 @@ function groupByDimension(rows, metricField, dimensionField) {
     if (metricRaw === undefined || metricRaw === null || metricRaw.trim() === '') {
       continue;
     }
-    const num = parseFloat(metricRaw);
-    if (!Number.isFinite(num)) {
+    const num = parseNumericStringStrict(metricRaw);
+    if (num === null) {
       continue;
     }
 

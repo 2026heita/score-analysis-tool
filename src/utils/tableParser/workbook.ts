@@ -262,15 +262,51 @@ export function parseRawRows(rawRows: unknown[][]): ParsedTableResult {
   const warnings: string[] = [];
   const headers = dedupeHeaders(detection.headers, warnings);
 
-  // 构建原始行对象
+  // 构建原始行对象（含行宽校验：禁止静默列错位）
   const rawRowsObj: Record<string, string>[] = [];
-  for (const row of trimmedDataRows) {
+  const headerCount = headers.length;
+  let malformedRowCount = 0;
+  let shortRowCount = 0;
+  for (let dataIdx = 0; dataIdx < trimmedDataRows.length; dataIdx++) {
+    const row = trimmedDataRows[dataIdx];
     if (!row || !Array.isArray(row)) continue;
+
+    const rowLen = row.length;
+    const isNonEmptyDataRow = row.some(cell => cell !== '' && cell !== null && cell !== undefined);
+    // 原始文件中的行号：表头行 headerRowIndex+1，数据行从 headerRowIndex+2 起
+    const originalLine = detection.headerRowIndex + 2 + dataIdx;
+
+    // 多列：可能因未加引号的逗号造成错位，判为 malformed，排除该行，不静默截断
+    if (rowLen > headerCount) {
+      const hasExtraNonEmpty = row.slice(headerCount).some(cell => cell !== '' && cell !== null && cell !== undefined);
+      if (hasExtraNonEmpty) {
+        malformedRowCount++;
+        warnings.push(
+          `第 ${originalLine} 行列数为 ${rowLen}，但表头为 ${headerCount} 列，该行可能包含未加引号的逗号（如 "1,234"），已跳过该行。请使用引号或改为 Tab 分隔。`
+        );
+        continue;
+      }
+    }
+
     const obj: Record<string, string> = {};
-    for (let i = 0; i < headers.length; i++) {
-      obj[headers[i]] = i < row.length ? String(row[i] ?? '').trim() : '';
+    for (let i = 0; i < headerCount; i++) {
+      obj[headers[i]] = i < rowLen ? String(row[i] ?? '').trim() : '';
+    }
+    // 少列：补空并记录 warning（明确规则，不允许静默丢弃）
+    if (isNonEmptyDataRow && rowLen < headerCount) {
+      shortRowCount++;
+      warnings.push(
+        `第 ${originalLine} 行列数为 ${rowLen}，少于表头 ${headerCount} 列，缺失的末尾列已补为空值。`
+      );
     }
     rawRowsObj.push(obj);
+  }
+
+  if (malformedRowCount > 0) {
+    warnings.push(`检测到 ${malformedRowCount} 行列数与表头不一致（多于表头），已从分析中排除。`);
+  }
+  if (shortRowCount > 0) {
+    warnings.push(`检测到 ${shortRowCount} 行数据少于表头列数，缺失列已补空。`);
   }
 
   if (rawRowsObj.length === 0) {

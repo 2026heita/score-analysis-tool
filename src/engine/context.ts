@@ -151,6 +151,8 @@ export interface MetricResult {
     estimatedRank: number;
     percentile: number;
     existsInData: boolean;
+    isOutOfRange: boolean;
+    outOfRangeDirection?: 'below' | 'above';
   };
   
   /** 用户输入值（可选） */

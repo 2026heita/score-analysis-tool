@@ -38,8 +38,25 @@ function assertTrue(name, value) {
 const INVALID_KEYWORDS = [
   '缺考', '弃考', '转班', '转到', '无', '无成绩',
   '休学', '退学', '请假', '缓考',
-  '—', '–', '/', '\\', '|',
 ];
+
+const EMPTY_PLACEHOLDERS = ['-', '—', '–', '/', '\\', '|'];
+
+// 严格数字解析（支持千分位）
+function parseNumericStringStrict(str) {
+  if (!str || typeof str !== 'string') return null;
+  const trimmed = str.trim();
+  if (trimmed === '') return null;
+  if (trimmed.includes(',')) {
+    const thousandsRegex = /^[+-]?\d{1,3}(,\d{3})+(\.\d+)?$/;
+    if (!thousandsRegex.test(trimmed)) return null;
+    const withoutCommas = trimmed.replace(/,/g, '');
+    const num = Number(withoutCommas);
+    return Number.isFinite(num) ? num : null;
+  }
+  const num = Number(trimmed);
+  return Number.isFinite(num) ? num : null;
+}
 
 function parseNumericValue(val) {
   if (val === null || val === undefined || val === '') return { status: 'empty' };
@@ -47,19 +64,17 @@ function parseNumericValue(val) {
   if (typeof val === 'boolean') return { status: 'invalid' };
   const str = String(val).trim();
   if (str === '') return { status: 'empty' };
+  if (EMPTY_PLACEHOLDERS.includes(str)) return { status: 'empty' };
   if (isInvalidKeyword(str)) return { status: 'invalid' };
-  if (str === '-' || str === '—' || str === '–' || str === '/' || str === '\\' || str === '|') return { status: 'empty' };
   if (str.endsWith('%')) {
     const numStr = str.slice(0, -1).trim();
-    const num = parseFloat(numStr);
-    if (!isNaN(num) && Number.isFinite(num)) return { status: 'valid', value: num };
+    const num = parseNumericStringStrict(numStr);
+    if (num !== null) return { status: 'valid', value: num };
     return { status: 'invalid' };
   }
-  const cleaned = str.replace(/,/g, '');
-  if (isInvalidKeyword(cleaned)) return { status: 'invalid' };
-  const num = parseFloat(cleaned);
-  if (!isNaN(num) && Number.isFinite(num)) return { status: 'valid', value: num };
-  if (/\d/.test(cleaned)) return { status: 'invalid' };
+  const num = parseNumericStringStrict(str);
+  if (num !== null) return { status: 'valid', value: num };
+  if (/\d/.test(str)) return { status: 'invalid' };
   return { status: 'invalid' };
 }
 

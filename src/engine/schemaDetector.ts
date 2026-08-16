@@ -5,6 +5,7 @@
  */
 
 import type { FeatureType, FeatureSchema } from './types';
+import { parseNumericValueLegacy } from '../utils/tableParser/numericParser';
 
 // 字段类型检测结果
 interface FieldDetection {
@@ -163,11 +164,10 @@ function checkNumerical(
     const str = String(v).trim();
     if (str === '') continue;
     
-    // 去除千分位逗号和百分号后再用 Number() 严格解析
-    // 避免 parseFloat('2024-01-15') = 2024 这种误匹配
-    const cleaned = str.replace(/,/g, '').replace(/%$/, '');
-    const num = Number(cleaned);
-    if (!isNaN(num) && isFinite(num)) {
+    // 使用统一解析器处理千分位逗号和百分号
+    // 避免 Number('2024-01-15') = 2024 这种误匹配
+    const parsed = parseNumericValueLegacy(str);
+    if (parsed !== null) {
       numericCount++;
     }
   }

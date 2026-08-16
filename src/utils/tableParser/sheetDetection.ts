@@ -5,6 +5,8 @@
 import type { SheetCandidate, WorkbookCandidate } from './types';
 import type { MergeRange } from './headerFlattener';
 import { detectHeaderRow } from './headerDetection';
+import { parseNumericValueLegacy } from './numericParser';
+import { minMax } from '../stats';
 
 // 主成绩表关键词（加分关键词，不硬编码具体表名）
 const MAIN_SHEET_KEYWORDS = [
@@ -76,7 +78,9 @@ export function detectMainWorksheet(
  */
 function evaluateSheetCandidate(name: string, data: unknown[][], merges: MergeRange[]): SheetCandidate {
   const rowCount = data.length;
-  const colCount = data.length > 0 ? Math.max(...data.map(r => Array.isArray(r) ? r.length : 1)) : 0;
+  const lengths = data.map(r => Array.isArray(r) ? r.length : 1);
+  const mm = minMax(lengths);
+  const colCount = data.length > 0 ? (mm ? mm.max : 0) : 0;
 
   let score = 0;
 
@@ -150,8 +154,7 @@ function evaluateSheetCandidate(name: string, data: unknown[][], merges: MergeRa
     const firstDataRow = data[Math.min(1, data.length - 1)];
     if (Array.isArray(firstDataRow)) {
       numericColCount = firstDataRow.filter(v => {
-        const n = parseFloat(String(v ?? '').trim());
-        return !isNaN(n) && Number.isFinite(n);
+        return parseNumericValueLegacy(String(v ?? '').trim()) !== null;
       }).length;
     }
   }

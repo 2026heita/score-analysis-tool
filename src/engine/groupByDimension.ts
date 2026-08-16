@@ -11,6 +11,7 @@
 
 import { calculateQuantile } from '../utils/stats';
 import type { FieldMeta } from '../utils/tableParser/types';
+import { parseNumericValueLegacy } from '../utils/tableParser/numericParser';
 
 /** 分组统计结果 */
 export interface GroupStats {
@@ -147,8 +148,8 @@ export function groupByDimension(
     if (metricRaw === undefined || metricRaw === null || metricRaw.trim() === '') {
       continue;
     }
-    const num = parseFloat(metricRaw);
-    if (!Number.isFinite(num)) {
+    const num = parseNumericValueLegacy(metricRaw);
+    if (num === null) {
       continue;
     }
 
