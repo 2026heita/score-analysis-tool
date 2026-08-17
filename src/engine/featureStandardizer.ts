@@ -88,16 +88,15 @@ function standardizeNumerical(
   _cfg: StandardizerConfig
 ): StandardizedValue {
   // 使用统一的数值解析器
+  // 百分号口径：numericParser 已按"百分数值"语义解析（85% → 85，1000% → 1000），
+  // 即用户表格中的百分号字段不使用 0~1 比例语义。
+  // 因此这里绝对不能再次因原始字符串带 "%" 而除以 100，否则会得到 0.85，与主分析不一致。
   const parsed = parseNumericValue(str);
-  
+
   if (parsed.status === 'valid') {
-    // 移除百分号（转换为小数）
-    if (str.trim().endsWith('%')) {
-      return { type: 'numerical', value: parsed.value / 100, original: str };
-    }
     return { type: 'numerical', value: parsed.value, original: str };
   }
-  
+
   // 解析失败
   return { type: 'invalid', value: null, original: str };
 }

@@ -18,7 +18,7 @@ function assert(name: string, condition: boolean, details?: string) {
 
 console.log('=== 真实源码测试：Stage 0A-1 DataVolumeState ===\n');
 
-// 测试 20001 行数据（应触发截断）
+// 测试 20001 行数据（应触发整份拒绝）
 console.log('测试 20001 行数据:');
 
 const headers = ['姓名', '成绩'];
@@ -27,15 +27,17 @@ for (let i = 0; i < 20001; i++) {
   rows.push([`学生${i}`, String(80 + (i % 20))]);
 }
 
-const result = parseRawRows(rows);
+let rejected = false;
+let rejectMsg = '';
+try {
+  parseRawRows(rows);
+} catch (e: any) {
+  rejected = e && e.name === 'ParseError';
+  rejectMsg = String(e && e.message);
+}
 
-assert('dataVolumeState 存在', result.dataVolumeState !== undefined);
-assert('isParseTruncated 为 true', result.dataVolumeState?.isParseTruncated === true);
-assert('physicalRowCount 为 20002', result.dataVolumeState?.physicalRowCount === 20002);
-assert('headerRowCount 为 1', result.dataVolumeState?.headerRowCount === 1);
-assert('rawRowCount 为 20001', result.dataVolumeState?.rawRowCount === 20001);
-assert('parsedRowCount 为 20000', result.dataVolumeState?.parsedRowCount === 20000);
-assert('parseTruncationWarning 存在', result.dataVolumeState?.parseTruncationWarning !== undefined);
+assert('20001 行整份拒绝（ParseError）', rejected);
+assert('拒绝提示包含上限与精简提示', rejectMsg.indexOf('20,000') >= 0 && rejectMsg.indexOf('精简') >= 0);
 
 // 测试 5000 行数据（不应截断）
 console.log('\n测试 5000 行数据:');

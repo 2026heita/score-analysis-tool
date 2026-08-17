@@ -11,7 +11,7 @@
  */
 
 import type { StatsResult, PositionResult } from '../types';
-import { calculateQuantile, minMax } from '../utils/stats';
+import { calculateQuantile, minMax, mean } from '../utils/stats';
 import { parseNumericValueLegacy } from '../utils/tableParser/numericParser';
 import type { DerivedDataContext, MetricResult } from './context';
 import type { MetricDefinition } from './metricLayer';
@@ -82,8 +82,8 @@ export function computeStats(
     return null;
   }
 
-  const sum = cleanValues.reduce((acc, v) => acc + v, 0);
-  const mean = sum / validCount;
+  // 数值稳定的均值：避免 1e308+1e308 → Infinity 的中间溢出
+  const meanValue = mean(cleanValues);
 
   return {
     count: validCount,
@@ -91,7 +91,7 @@ export function computeStats(
     invalidCount,
     max: cleanValues[validCount - 1],
     min: cleanValues[0],
-    mean,
+    mean: meanValue,
     median: calculateQuantile(cleanValues, 0.5),
     q25: calculateQuantile(cleanValues, 0.25),
     q75: calculateQuantile(cleanValues, 0.75),

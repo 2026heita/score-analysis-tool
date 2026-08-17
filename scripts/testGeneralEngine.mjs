@@ -167,15 +167,10 @@ function parseNumericValue(val) {
 
 // 标准化数值
 function standardizeNumerical(str) {
+  // 百分号口径：parseNumericValue 已按"百分数值"语义解析（85.5% → 85.5），
+  // 这里不再次除以 100（避免 0.855 与主分析不一致）。
   let cleaned = str.trim();
-  if (cleaned.endsWith('%')) {
-    cleaned = cleaned.slice(0, -1).trim();
-    const num = parseNumericStringStrict(cleaned);
-    if (num !== null) {
-      return { type: 'numerical', value: num / 100, original: str };
-    }
-  }
-  const num = parseNumericStringStrict(cleaned);
+  const num = parseNumericStringStrict(cleaned.endsWith('%') ? cleaned.slice(0, -1).trim() : cleaned);
   if (num !== null) {
     return { type: 'numerical', value: num, original: str };
   }
@@ -497,8 +492,8 @@ console.log('\n测试 15: 特征标准化');
   assert(Math.abs(commaResult.value - 1234.56) < 0.01, '千分位数值正确');
   
   const percentResult = standardizeNumerical('85.5%');
-  assert(percentResult.type === 'numerical', '百分号正确转换为小数');
-  assert(Math.abs(percentResult.value - 0.855) < 0.001, '百分号数值正确');
+  assert(percentResult.type === 'numerical', '百分号正确转换为数值');
+  assert(Math.abs(percentResult.value - 85.5) < 0.001, '百分号数值正确（85.5% → 85.5）');
   
   const invalidResult = standardizeNumerical('abc');
   assert(invalidResult.type === 'invalid', '非数值标记为 invalid');

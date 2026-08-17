@@ -14,14 +14,56 @@ import type { GroupStats } from './groupByDimension';
 import type { StatsResult, PositionResult } from '../types';
 import type { MetricResult } from './context';
 import type { SamplingInfo } from '../hooks/useAnalysisDataset';
+import { parseNumericValueLegacy } from '../utils/tableParser/numericParser';
+
+/**
+ * CSV 单元格公式注入防护（OWASP CSV Injection 推荐做法）。
+ *
+ * 规则：对【文本】单元格，若去掉前导空白/Tab 后以 `= + @` 开头，或已 `-` 开头但
+ * 不是合法数字（如 `-CMD`），则添加单引号前缀 `'`，使 Excel / LibreOffice 打开时
+ * 作为文本而不是公式执行。这是目前主流表格软件普遍接受的防注入做法。
+ *
+ * 区分点：
+ * - JS number：直接原样输出，绝不加前缀（-10 / 0 / 1e8 保持数字）。
+ * - 字符串合法数字（-10、-100.5、-1e3、-0.25）：经 parseNumericValueLegacy 判定为
+ *   数字 → 不加前缀，避免把正常负数改坏。
+ * - 真正的公式样文本（=1+1、+SUM、-CMD、@SUM）：加 `'` 前缀。
+ *
+ * 该防护发生在 CSV quoting 之前；随后 escapeCsvCell 仍正确做
+ * quoted comma / escaped quote / 换行支持，互不破坏。
+ */
+export function sanitizeSpreadsheetCell(value: string | number): string | number {
+  if (typeof value === 'number') {
+    return value; // 数字原样输出，不保护
+  }
+  const str = String(value ?? '');
+  const trimmed = str.trim();
+
+  if (trimmed === '') return str;
+
+  const first = trimmed[0];
+  if (first === '=' || first === '+' || first === '@') {
+    return `'${str}`;
+  }
+  if (first === '-') {
+    // 合法负数不是注入；非数字的 `-CMD` 才需要保护
+    if (parseNumericValueLegacy(trimmed) !== null) {
+      return str; // 合法数字（如 -10、-1e3）
+    }
+    return `'${str}`;
+  }
+  return str;
+}
 
 /**
  * CSV 单元格转义
+ * - 先做公式注入防护（sanitizeSpreadsheetCell）
  * - 包含逗号、双引号、换行符时用双引号包裹
  * - 内部双引号转义为两个双引号
  */
 function escapeCsvCell(value: string | number): string {
-  const str = String(value ?? '');
+  const safe = sanitizeSpreadsheetCell(value);
+  const str = String(safe ?? '');
   if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
     return `"${str.replace(/"/g, '""')}"`;
   }

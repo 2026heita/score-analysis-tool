@@ -9,7 +9,7 @@
  * 3. 不改变现有统计口径
  */
 
-import { calculateQuantile } from '../utils/stats';
+import { calculateQuantile, mean } from '../utils/stats';
 import type { FieldMeta } from '../utils/tableParser/types';
 import { parseNumericValueLegacy } from '../utils/tableParser/numericParser';
 
@@ -166,12 +166,11 @@ export function groupByDimension(
 
     const sorted = [...values].sort((a, b) => a - b);
     const len = sorted.length;
-    const sum = sorted.reduce((acc, v) => acc + v, 0);
 
     results.push({
       dimensionValue: dimValue,
       count: len,
-      mean: sum / len,
+      mean: mean(sorted),
       median: calculateQuantile(sorted, 0.5),
       min: sorted[0],
       max: sorted[len - 1],

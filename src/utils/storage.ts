@@ -66,13 +66,42 @@ export function safeJsonParse<T>(raw: string | null, fallback: T): T {
   }
 }
 
-export function saveState(state: SavedState): void {
+export function saveState(state: SavedState): boolean {
   try {
     const toSave = { ...state, version: CURRENT_VERSION };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+    return true;
   } catch {
-    // localStorage 不可用时静默失败
+    // 写入失败（QuotaExceededError / stringify 错误 / storage 不可用）返回 false
+    return false;
   }
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/**
+ * 最低限度结构校验：恢复前确认“所依赖的关键字段类型”符合预期，
+ * 避免仅因 JSON 能 parse 就将明显错误的状态塞入正式状态。
+ * 注意：这里不做规模化的 schema/version migration，只挡明显结构错误。
+ */
+export function isValidSavedState(candidate: unknown): candidate is SavedState {
+  if (!isPlainObject(candidate)) return false;
+  const s = candidate;
+  if (typeof s.rawText !== 'string') return false;
+  if (typeof s.selectedField !== 'string') return false;
+  if (typeof s.inputValue !== 'string') return false;
+  if (typeof s.showAllFields !== 'boolean') return false;
+  if (typeof s.activeChartTab !== 'string') return false;
+  if (s.originalFieldRadar !== undefined) {
+    const origin = s.originalFieldRadar;
+    if (!isPlainObject(origin)) return false;
+    if (!Array.isArray(origin.selections)) return false;
+    if (typeof origin.viewMode !== 'string') return false;
+  }
+  if (s.filterConditions !== undefined && !Array.isArray(s.filterConditions)) return false;
+  return true;
 }
 
 function migrateState(raw: Record<string, unknown>): SavedState {
@@ -95,7 +124,8 @@ export function loadSavedState(): SavedState {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return getDefaultState();
     const parsed = safeJsonParse<Record<string, unknown>>(raw, {});
-    if (typeof parsed !== 'object' || parsed === null) {
+    // 结构校验：非对象 / 字段类型不符 → 忽略并安全回到默认状态，避免坏数据导致启动崩溃
+    if (!isValidSavedState(parsed)) {
       localStorage.removeItem(STORAGE_KEY);
       return getDefaultState();
     }

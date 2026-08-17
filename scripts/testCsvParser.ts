@@ -103,10 +103,30 @@ console.log('\n6. 未闭合引号');
   const raw = parseCsvText('姓名,描述\n张三,"优秀,稳定', ',');
   const hasWarn = raw.warnings.some(w => w.includes('未闭合'));
   assert(hasWarn, 'parseCsvText 返回未闭合引号 warning', `warnings=${JSON.stringify(raw.warnings)}`);
-  // 整段 parseTableText 也应带出该 warning
-  const r = parseTableText('姓名,描述\n张三,"优秀,稳定');
+  // 残缺记录被标记为 malformed，不允许进入有效数据
+  assert(raw.malformedRowIndices.includes(1), '残缺记录标记为 malformed', `indices=${JSON.stringify(raw.malformedRowIndices)}`);
+
+  // 存在其他合法记录时：合法记录保留，残缺记录被排除，warning 透传
+  const r = parseTableText('姓名,描述\n李四,正常\n张三,"优秀,稳定');
+  assert(r.rows.length === 1, '仅保留合法记录(李四)', `rows=${r.rows.length}`);
+  assert(r.rows[0]['姓名'] === '李四', '保留的是李四', `rows=${JSON.stringify(r.rows)}`);
   const hasUnclosedWarn = (r.warnings || []).some(w => w.includes('未闭合'));
   assert(hasUnclosedWarn, 'parseTableText 透传未闭合引号 warning');
+  // 不允许"提示有问题，但仍拿这条错误数据计算"
+  assert(!r.rows.some(row => String(row['描述'] ?? '').includes('优秀,稳定')), '残缺记录未进入有效数据');
+}
+
+// ===== 6b. 全部记录都是未闭合引号时，禁止静默进入分析 =====
+console.log('\n6b. 全部未闭合引号');
+{
+  let threw: string | null = null;
+  try {
+    parseTableText('姓名,描述\n张三,"优秀,稳定');
+  } catch (e) {
+    threw = e instanceof Error ? e.message : String(e);
+  }
+  assert(threw !== null, '全部残缺时抛错而非给出错误数据', `threw=${threw}`);
+  assert(threw !== null && threw.includes('未闭合'), '错误信息包含未闭合引号 warning', `msg=${threw}`);
 }
 
 // ===== 7. CRLF =====

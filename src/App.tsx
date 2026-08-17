@@ -327,7 +327,7 @@ export default function App() {
   }, [handleParse]);
 
   const handleSave = useCallback(() => {
-    save({
+    const savedOk = save({
       rawText,
       selectedField,
       inputValue,
@@ -338,7 +338,8 @@ export default function App() {
       filterConditions,
       selectedDimension,
     });
-    setSaveMsg('已保存当前输入');
+    // 只有真正写入成功才提示成功；写入失败给出明确失败提示
+    setSaveMsg(savedOk ? '已保存当前输入' : '保存失败：本地存储不可用或空间不足。');
     setTimeout(() => setSaveMsg(null), 2000);
   }, [rawText, selectedField, inputValue, showAllFields, activeChartTab, originalFieldState, filterConditions, selectedDimension, save]);
 

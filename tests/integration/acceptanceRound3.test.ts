@@ -163,14 +163,21 @@ assert('20000行 validDataRows = 20000', result20000.summary?.validDataRows === 
 assert('20000行 isParseTruncated = false', result20000.dataVolumeState?.isParseTruncated === false,
   `实际: ${result20000.dataVolumeState?.isParseTruncated}`);
 
-// 20001 行
+// 20001 行（应整份拒绝）
 console.log('  20001 行三列销售表:');
 const sales20001 = generateSalesTable(20001, 3);
-const result20001 = parseTableText(sales20001);
-assert('20001行 parsedRowCount = 20000', result20001.dataVolumeState?.parsedRowCount === 20000,
-  `实际: ${result20001.dataVolumeState?.parsedRowCount}`);
-assert('20001行 isParseTruncated = true', result20001.dataVolumeState?.isParseTruncated === true,
-  `实际: ${result20001.dataVolumeState?.isParseTruncated}`);
+let rejected20001 = false;
+let rejectMsg20001 = '';
+try {
+  parseTableText(sales20001);
+} catch (e: any) {
+  rejected20001 = e && e.name === 'ParseError';
+  rejectMsg20001 = String(e && e.message);
+}
+assert('20001行 整份拒绝（ParseError）', rejected20001,
+  `实际: ${rejected20001}`);
+assert('20001行 拒绝提示含上限与精简', rejectMsg20001.indexOf('20,000') >= 0 && rejectMsg20001.indexOf('精简') >= 0,
+  `实际: ${rejectMsg20001}`);
 
 // ============================================================
 // 测试三：rank 误判修复（普通成绩60-100不为rank）

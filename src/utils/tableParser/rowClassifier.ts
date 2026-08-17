@@ -3,12 +3,13 @@
 // ============================================================
 
 import type { RowType } from './types';
+import { parseNumericValueLegacy } from './numericParser';
 
-// 统计行关键词
-const SUMMARY_KEYWORDS = [
-  '平均', '合计', '统计', '汇总', '总分平均', '年级平均',
-  '班级平均', '全校', '总计', '小计', '累计',
-  '最大值', '最小值', '平均分', '标准差',
+// 独立汇总标签：仅当单元格【整个值】精确等于这些标签时才视为汇总标签。
+// 不做子串匹配，避免"统计学教材/累计消费促销/统计部"这类正常文本被误伤。
+const SUMMARY_LABELS = [
+  '平均', '合计', '总计', '小计', '汇总', '累计', '最大值', '最小值',
+  '标准差', '平均分', '总分平均', '年级平均', '班级平均', '全校',
 ];
 
 // 状态值关键词
@@ -18,15 +19,29 @@ const STATUS_KEYWORDS = [
 ];
 
 /**
+ * 判断一个单元格是否是【完整的】汇总标签（精确匹配，非子串包含）
+ */
+function isExactSummaryLabel(value: string): boolean {
+  const t = value.trim();
+  return t !== '' && SUMMARY_LABELS.includes(t);
+}
+
+/**
  * 分类数据行
  * 
  * 分类规则（按优先级）：
  * 1. 全空行 → empty
- * 2. 包含明确汇总关键词 → summary
+ * 2. 汇总行：整行"看起来像一张统计记录" → summary
  * 3. 所有非空值都是状态关键词 → statusOnly
  * 4. 其他所有情况 → validData
  * 
- * 注意：不再依赖身份字段或数值字段的存在，支持通用业务表
+ * 汇总行判定（v2.2.x 收紧）：
+ * 不再使用"整行拼接文本包含某关键词"的模糊判断（那会把"统计学教材""累计消费促销"
+ * 等正常记录误伤为汇总行）。
+ * 改为：
+ *   a. 至少一个单元格精确等于汇总标签（如"平均分""合计""总计""最大值""最小值"）；
+ *   b. 该行其他非空字段大部分是数字（≥ 非空的一半），或除标签外无其他字段。
+ * 若无法可靠判定（如只命中标签但其余字段多为文本），宁可保留为普通数据。
  * 
  * @param row - 数据行（Record<string, string>）
  * @param headers - 表头数组
@@ -43,10 +58,25 @@ export function classifyDataRow(row: Record<string, string>, headers: string[]):
     return 'empty';
   }
 
-  // 2. 包含明确汇总关键词 → summary
-  const rowText = values.join(' ');
-  if (SUMMARY_KEYWORDS.some(kw => rowText.includes(kw))) {
-    return 'summary';
+  // 2. 汇总行：基于"精确标签 + 行数字结构"
+  const labelIndexes = values
+    .map((v, i) => (isExactSummaryLabel(v) ? i : -1))
+    .filter(i => i >= 0);
+
+  if (labelIndexes.length > 0) {
+    // 其余非空字段（去掉标签后）
+    const otherNonEmpty = values.filter((v, i) => v !== '' && !labelIndexes.includes(i));
+    let numericCount = 0;
+    for (const v of otherNonEmpty) {
+      if (parseNumericValueLegacy(v) !== null) numericCount++;
+    }
+    // 规则：无其他字段，或大部分其他字段是数字 → 汇总行
+    const isNumericDominated = otherNonEmpty.length === 0
+      || (otherNonEmpty.length > 0 && numericCount / otherNonEmpty.length >= 0.5);
+    if (isNumericDominated) {
+      return 'summary';
+    }
+    // 否则：命中标签但其余多为文本 → 无法可靠判定，保留为普通数据
   }
 
   // 3. 统计非空值和状态值
@@ -64,13 +94,11 @@ export function classifyDataRow(row: Record<string, string>, headers: string[]):
   }
 
   // 4. 所有非空值都是状态关键词 → statusOnly
-  // 只有当整行都是状态词时才判定为 statusOnly，避免误判混合数据行
   if (nonEmptyCount > 0 && statusCount === nonEmptyCount) {
     return 'statusOnly';
   }
 
   // 5. 其他所有情况 → validData
-  // 不再依赖身份字段或数值字段的存在，支持通用业务表
   return 'validData';
 }
 

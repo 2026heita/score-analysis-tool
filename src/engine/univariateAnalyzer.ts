@@ -12,6 +12,7 @@
 
 import type { FeatureStats, FeatureVector } from './types';
 import { extractNumericalValues } from './featureStandardizer';
+import { mean, stdDev } from '../utils/stats';
 
 // 分析配置
 interface UnivariateConfig {
@@ -57,14 +58,14 @@ export function analyzeNumericalFeature(
   // 基础统计量
   const min = sorted[0];
   const max = sorted[sorted.length - 1];
-  const sum = values.reduce((acc, v) => acc + v, 0);
-  const mean = sum / validCount;
-  
+  // 数值稳定的均值：避免 1e308+1e308 → Infinity
+  const meanValue = mean(values);
+
   // 中位数
   const median = calculateMedian(sorted);
-  
-  // 标准差
-  const std = calculateStd(values, mean);
+
+  // 数值稳定的总体标准差：避免平方/差值中间溢出
+  const stdValue = stdDev(values);
   
   // 四分位数
   const q1 = calculatePercentile(sorted, 25);
@@ -77,9 +78,9 @@ export function analyzeNumericalFeature(
     missingCount,
     min: roundTo(min, cfg.decimalPlaces!),
     max: roundTo(max, cfg.decimalPlaces!),
-    mean: roundTo(mean, cfg.decimalPlaces!),
+    mean: roundTo(meanValue, cfg.decimalPlaces!),
     median: roundTo(median, cfg.decimalPlaces!),
-    std: roundTo(std, cfg.decimalPlaces!),
+    std: roundTo(stdValue, cfg.decimalPlaces!),
     q1: roundTo(q1, cfg.decimalPlaces!),
     q3: roundTo(q3, cfg.decimalPlaces!),
     iqr: roundTo(iqr, cfg.decimalPlaces!),
@@ -98,17 +99,6 @@ function calculateMedian(sorted: number[]): number {
     return (sorted[mid - 1] + sorted[mid]) / 2;
   }
   return sorted[mid];
-}
-
-/**
- * 计算标准差
- */
-function calculateStd(values: number[], mean: number): number {
-  if (values.length === 0) return 0;
-  
-  const squaredDiffs = values.map(v => Math.pow(v - mean, 2));
-  const variance = squaredDiffs.reduce((acc, v) => acc + v, 0) / values.length;
-  return Math.sqrt(variance);
 }
 
 /**
@@ -149,12 +139,22 @@ export function detectOutliers(
   
   // 先计算统计量
   const stats = analyzeNumericalFeature(vectors, fieldName, cfg);
-  if (!stats.q1 || !stats.q3 || !stats.iqr || !stats.mean || !stats.std) {
+  const required = [stats.q1, stats.q3, stats.iqr, stats.mean, stats.std];
+  // 仅当关键统计量缺失或为非有限值时视为无法检测。
+  // 注意：0 是合法统计值（如 q1=0、iqr=0），不能按 falsy 判断，否则极端值（如 1000）无法被检测。
+  if (required.some(v => v === undefined || v === null || !Number.isFinite(v))) {
     return [];
   }
-  
-  const lowerBound = stats.q1 - cfg.outlierThreshold! * stats.iqr;
-  const upperBound = stats.q3 + cfg.outlierThreshold! * stats.iqr;
+
+  // 通过以上守卫后，保证以下统计量均为有限 number
+  const q1 = stats.q1 as number;
+  const q3 = stats.q3 as number;
+  const iqr = stats.iqr as number;
+  const mean = stats.mean as number;
+  const std = stats.std as number;
+
+  const lowerBound = q1 - cfg.outlierThreshold! * iqr;
+  const upperBound = q3 + cfg.outlierThreshold! * iqr;
   
   const outliers: Array<{ rowIndex: number; value: number; zScore: number }> = [];
   
@@ -163,7 +163,7 @@ export function detectOutliers(
     if (sv && sv.type === 'numerical' && sv.value !== null) {
       const value = sv.value;
       if (value < lowerBound || value > upperBound) {
-        const zScore = calculateZScore(value, stats.mean, stats.std);
+        const zScore = calculateZScore(value, mean, std);
         outliers.push({
           rowIndex: vector.rowIndex,
           value,
@@ -235,8 +235,13 @@ export function generateNumericalReport(
  * 四舍五入到指定小数位
  */
 function roundTo(value: number, decimalPlaces: number): number {
+  // 极大值保护：value*factor 可能溢出为 Infinity（如 1e308*10000）。
+  // 当放大后溢出时，该值远超需要的小数精度，直接返回原始值更合理，
+  // 避免"中间计算溢出"把有限结果（如 1e308）错误变成 Infinity。
   const factor = Math.pow(10, decimalPlaces);
-  return Math.round(value * factor) / factor;
+  const scaled = value * factor;
+  if (!Number.isFinite(scaled)) return value;
+  return Math.round(scaled) / factor;
 }
 
 /**
@@ -280,9 +285,11 @@ export function detectOutliersFromValues(
 ): Array<{ rowIndex: number; value: number; zScore: number }> {
   if (values.length < 4) return [];
   
+  // 必须构造符合标准化的向量结构（{ type: 'numerical', value }），
+  // 否则 extractNumericalValues 无法读取出数值，检测结果恒为空。
   const vectors: FeatureVector[] = values.map((v, i) => ({
     rowIndex: i,
-    values: { _val: v },
+    values: { _val: { type: 'numerical', value: v, original: String(v) } },
   }));
   
   return detectOutliers(vectors, '_val');

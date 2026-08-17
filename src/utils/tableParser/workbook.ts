@@ -9,7 +9,7 @@ import { detectMainWorksheet, getPrimarySheetName, getAvailableSheetNames } from
 import { detectHeaderRow, dedupeHeaders } from './headerDetection';
 import { classifyFields, recommendAnalysisField } from './fieldClassifier';
 import { classifyDataRows } from './rowClassifier';
-import { throwEmptyFile, throwNoHeader, throwNoData, throwNoSheet, throwNoDataInSheet } from './errors';
+import { throwEmptyFile, throwNoHeader, throwNoData, throwNoSheet, throwNoDataInSheet, throwRowLimitExceeded } from './errors';
 import { parseXlsxInWorker } from '../parseInWorker';
 
 // ============================================================
@@ -17,6 +17,14 @@ import { parseXlsxInWorker } from '../parseInWorker';
 // ============================================================
 const MAX_ROWS = 20000;
 const MAX_COLS = 200;
+
+/**
+ * SheetJS read 的 sheetRows 行数上限。
+ * 需略高于业务上限 MAX_ROWS，为标题行/说明行/多级表头/检测余量预留空间，
+ * 避免两层表头或说明行导致合法数据少读几行。仅作内存保护的资源限制，
+ * 不代表能完全阻止恶意压缩工作簿的所有解压/内存问题。
+ */
+const SHEET_ROWS_CAP = MAX_ROWS + 50;
 
 /**
  * 解析 Excel 工作簿（多 sheet 支持，支持多级表头和合并单元格）
@@ -32,7 +40,8 @@ export async function parseWorkbook(
   targetSheetName?: string,
 ): Promise<ParsedTableResult> {
   // v1.9: 使用 Worker 解析 xlsx（避免主线程阻塞）
-  const rawSheets = await parseXlsxInWorker(arrayBuffer);
+  // 传入 sheetRows 作为第二层资源保护（略高于业务上限，预留表头/说明/多级表头余量）
+  const rawSheets = await parseXlsxInWorker(arrayBuffer, { sheetRows: SHEET_ROWS_CAP });
 
   const sheetNames = rawSheets.map(s => s.name);
 
@@ -110,22 +119,24 @@ function parseSheetData(
     throwNoHeader();
   }
 
-  // 计算表头占用行数和原始数据行数
-  const headerRowCount = detection.headerRowIndex + 1;
-  const rawRowCount = physicalRowCount - headerRowCount;
+  // 计算表头占用行数和实际数据行数。
+  // 以表头检测得到的真实数据起始为准（detection.dataRows 已按表头深度正确切片），
+  // 避免多层表头时仅减第一层、把后续表头层算进数据行（第二十九阶段核查确认的问题）。
+  // 单层表头下该值与 headerRowIndex+1 完全等价，因此不改变单层行为。
+  const rawRowCount = detection.dataRows.length;
+  const headerRowCount = physicalRowCount - rawRowCount;
 
-  // 限制解析行数（20000）
-  const parsedRowCount = Math.min(rawRowCount, MAX_ROWS);
-  const isParseTruncated = rawRowCount > MAX_ROWS;
-
-  // 如果发生截断，生成警告
-  let parseTruncationWarning: string | undefined;
-  if (isParseTruncated) {
-    const unparsedRows = rawRowCount - parsedRowCount;
-    parseTruncationWarning = `原始文件包含 ${physicalRowCount} 行数据，当前解析上限为 20,000 行，尚有 ${unparsedRows} 行未解析。`;
+  // 真实数据行数超出上限：整份拒绝，不做截断后继续分析（第二十六阶段收口）
+  if (rawRowCount > MAX_ROWS) {
+    throwRowLimitExceeded(MAX_ROWS);
   }
 
-  // 限制数据行用于后续处理
+  // 未发生截断时，解析行数即全部数据行
+  const parsedRowCount = rawRowCount;
+  const isParseTruncated = false;
+  const parseTruncationWarning: string | undefined = undefined;
+
+  // 数据行用于后续处理
   const trimmedDataRows = detection.dataRows.slice(0, parsedRowCount);
 
   // 清洗表头
@@ -240,22 +251,22 @@ export function parseRawRows(rawRows: unknown[][]): ParsedTableResult {
     throwNoHeader();
   }
 
-  // 计算表头占用行数和原始数据行数
-  const headerRowCount = detection.headerRowIndex + 1;
-  const rawRowCount = physicalRowCount - headerRowCount;
+  // 计算表头占用行数和实际数据行数（与 parseSheetData 同源，口径一致：
+  // 以检测得到的真实数据起始为准；单层检测下与 headerRowIndex+1 等价）
+  const rawRowCount = detection.dataRows.length;
+  const headerRowCount = physicalRowCount - rawRowCount;
 
-  // 限制解析行数（20000）
-  const parsedRowCount = Math.min(rawRowCount, MAX_ROWS);
-  const isParseTruncated = rawRowCount > MAX_ROWS;
-
-  // 如果发生截断，生成警告
-  let parseTruncationWarning: string | undefined;
-  if (isParseTruncated) {
-    const unparsedRows = rawRowCount - parsedRowCount;
-    parseTruncationWarning = `原始数据包含 ${physicalRowCount} 行，当前解析上限为 20,000 行，尚有 ${unparsedRows} 行未解析。`;
+  // 真实数据行数超出上限：整份拒绝，不做截断后继续分析（第二十六阶段收口）
+  if (rawRowCount > MAX_ROWS) {
+    throwRowLimitExceeded(MAX_ROWS);
   }
 
-  // 限制数据行用于后续处理
+  // 未发生截断时，解析行数即全部数据行
+  const parsedRowCount = rawRowCount;
+  const isParseTruncated = false;
+  const parseTruncationWarning: string | undefined = undefined;
+
+  // 数据行用于后续处理
   const trimmedDataRows = detection.dataRows.slice(0, parsedRowCount);
 
   // 清洗表头

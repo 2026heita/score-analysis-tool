@@ -14,7 +14,6 @@ import { useState, useMemo } from 'react';
 import {
   detectOutliersFromValues,
   classifyOutlierStrategy,
-  computeMeanChange,
   ERROR_VALUE_THRESHOLD,
   type OutlierStrategy,
   type OutlierClass,
@@ -22,6 +21,7 @@ import {
 
 /** 异常值条目 */
 export interface OutlierEntry {
+  /** 真实行下标（指向分析数据集 analysisRows） */
   rowIndex: number;
   value: number;
   type: OutlierClass;
@@ -32,16 +32,22 @@ export interface OutlierEntry {
 
 interface OutlierPanelProps {
   selectedField: string;
+  /** 检测用完整数值（含未排除候选），由上游提供 */
   values: number[];
-  onExcludeChange?: (excludedIndices: Set<number>) => void;
+  /** 与 values 一一对应的真实行下标 */
+  rowIndices: number[];
+  /** 当前已排除的真实行下标（受控） */
+  excludedRowIndices: ReadonlySet<number>;
+  onExcludeChange?: (excludedRowIndices: Set<number>) => void;
 }
 
 export default function OutlierPanel({
   selectedField,
   values,
+  rowIndices,
+  excludedRowIndices,
   onExcludeChange,
 }: OutlierPanelProps) {
-  const [excludedIndices, setExcludedIndices] = useState<Set<number>>(new Set());
   const [collapsed, setCollapsed] = useState(false);
 
   const entries = useMemo((): OutlierEntry[] => {
@@ -49,43 +55,53 @@ export default function OutlierPanel({
     const rawOutliers = detectOutliersFromValues(values);
     return rawOutliers.map(o => {
       const { type, strategy } = classifyOutlierStrategy(o.value, o.zScore);
+      // 将检测结果的值下标映射为真实行下标
+      const realRow = rowIndices[o.rowIndex];
       return {
-        rowIndex: o.rowIndex,
+        rowIndex: realRow,
         value: o.value,
         type,
         severity: o.zScore,
-        excluded: strategy === 'auto-exclude' || excludedIndices.has(o.rowIndex),
+        excluded: strategy === 'auto-exclude' || excludedRowIndices.has(realRow),
         strategy,
       };
     });
-  }, [values, excludedIndices]);
+  }, [values, rowIndices, excludedRowIndices]);
 
-  const handleToggleExclude = (index: number) => {
-    const next = new Set(excludedIndices);
-    if (next.has(index)) {
-      next.delete(index);
+  const handleToggleExclude = (realRow: number) => {
+    const next = new Set(excludedRowIndices);
+    if (next.has(realRow)) {
+      next.delete(realRow);
     } else {
-      next.add(index);
+      next.add(realRow);
     }
-    setExcludedIndices(next);
     onExcludeChange?.(next);
   };
 
   const handleExcludeAll = () => {
     const all = new Set(entries.map(e => e.rowIndex));
-    setExcludedIndices(all);
     onExcludeChange?.(all);
   };
 
   const handleResetAll = () => {
-    setExcludedIndices(new Set());
     onExcludeChange?.(new Set());
   };
 
   if (entries.length === 0) return null;
 
   const autoExcluded = entries.filter(e => e.strategy === 'auto-exclude');
-  const meanChange = computeMeanChange(values, excludedIndices);
+  const excludedValueIndices = new Set<number>();
+  rowIndices.forEach((realRow, valueIdx) => {
+    if (excludedRowIndices.has(realRow)) excludedValueIndices.add(valueIdx);
+  });
+  const excludedCount = excludedValueIndices.size;
+  const remaining = values.filter((_, i) => !excludedValueIndices.has(i));
+  const hasExclusion = excludedCount > 0 && remaining.length > 0 && remaining.length !== values.length;
+  const oldMean = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+  const newMean = remaining.length ? remaining.reduce((a, b) => a + b, 0) / remaining.length : oldMean;
+  const meanChange = hasExclusion
+    ? `${(newMean - oldMean) >= 0 ? '+' : ''}${(newMean - oldMean).toFixed(2)}`
+    : '无变化';
 
   return (
     <div style={{ marginTop: 16, border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden' }}>
@@ -243,9 +259,9 @@ export default function OutlierPanel({
           </table>
 
           {/* 影响提示 */}
-          {entries.length > 0 && excludedIndices.size > 0 && (
+          {entries.length > 0 && excludedCount > 0 && (
             <div style={{ fontSize: 12, color: '#6b7280', marginTop: 10, padding: '8px 10px', background: '#f9fafb', borderRadius: 4 }}>
-              排除 {excludedIndices.size} 个异常值后均值变化：{meanChange}
+              排除 {excludedCount} 个异常值后均值变化：{meanChange}
             </div>
           )}
         </div>

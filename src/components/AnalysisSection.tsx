@@ -8,6 +8,7 @@
 import { useMemo, useCallback, useEffect, useState } from 'react';
 import { useAnalysisOrchestrator } from '../hooks/useAnalysisOrchestrator';
 import { useMetricResult } from '../hooks/useMetricResult';
+import { useOutlierExclusion } from '../hooks/useOutlierExclusion';
 import { useExportActions } from '../hooks/useExportActions';
 import { formatNumber } from '../utils/stats';
 import { generateExplanation } from '../utils/analysisExplainer';
@@ -204,13 +205,33 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
     };
   }, [analysisDataset, selectedField, selectedDirectionOverride]);
 
+  // ===== 异常值排除状态（按字段隔离，作用于当前分析行，不修改原始数据） =====
+  const outlierExclusion = useOutlierExclusion(
+    effectiveAnalysisDataset?.rows ?? null,
+    selectedField
+  );
+
+  // 构建"异常值排除后"的分析数据集：rows 替换为排除后的行
+  // （fields 等其余字段保持与 effectiveAnalysisDataset 一致，便于下游语义层复用）
+  const exclusionAppliedDataset = useMemo(() => {
+    if (!effectiveAnalysisDataset) return effectiveAnalysisDataset;
+    if (!selectedField) return effectiveAnalysisDataset;
+    if (outlierExclusion.analysisExcludedRowIndices.size === 0) {
+      return effectiveAnalysisDataset;
+    }
+    return {
+      ...effectiveAnalysisDataset,
+      rows: outlierExclusion.analysisRowsAfterExclusion,
+    };
+  }, [effectiveAnalysisDataset, selectedField, outlierExclusion.analysisExcludedRowIndices, outlierExclusion.analysisRowsAfterExclusion]);
+
   // ===== v1.5 Orchestration：统一调度层 =====
   const {
     core: { metricResult, correlationResult },
     derived: { derivedData },
     view: { viewContext },
     metricDefs,
-  } = useAnalysisOrchestrator(effectiveAnalysisDataset, parseSummary, selectedField, inputValue, selectedDimension);
+  } = useAnalysisOrchestrator(exclusionAppliedDataset, parseSummary, selectedField, inputValue, selectedDimension);
 
   const { stats, position, fieldValues } = useMetricResult(metricResult);
 
@@ -973,11 +994,14 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
                 </ErrorBoundary>
               )}
 
-              {selectedField && fieldValues && stats && fieldValues.length > 0 && (
+              {selectedField && outlierExclusion.detectionValues.length > 0 && stats && (
                 <ErrorBoundary>
                   <OutlierPanel
                     selectedField={selectedField}
-                    values={fieldValues}
+                    values={outlierExclusion.detectionValues}
+                    rowIndices={outlierExclusion.detectionRowIndices}
+                    excludedRowIndices={outlierExclusion.excludedRowIndices}
+                    onExcludeChange={outlierExclusion.setExcludedRowIndices}
                   />
                 </ErrorBoundary>
               )}

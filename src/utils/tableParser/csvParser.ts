@@ -14,6 +14,11 @@
 export interface CsvParseResult {
   rows: string[][];
   warnings: string[];
+  /**
+   * 未闭合引号的逻辑记录下标（对应 rows 中的下标）。
+   * 这类残缺记录不允许进入有效数据，由上层解析排除。
+   */
+  malformedRowIndices: number[];
 }
 
 /**
@@ -50,7 +55,8 @@ export function countUnquotedChar(text: string, char: string): number {
 export function parseCsvText(text: string, delimiter: string = ','): CsvParseResult {
   const warnings: string[] = [];
   const rows: string[][] = [];
-  if (!text) return { rows, warnings };
+  const malformedRowIndices: number[] = [];
+  if (!text) return { rows, warnings, malformedRowIndices };
 
   let row: string[] = [];
   let field = '';
@@ -134,7 +140,12 @@ export function parseCsvText(text: string, delimiter: string = ','): CsvParseRes
 
   // 收尾：最后一个字段或记录
   if (field !== '' || row.length > 0 || sawAnyContent) {
+    const rowIndex = rows.length;
     row.push(field);
+    if (inQuotes) {
+      // 未闭合引号：该逻辑记录残缺，标记为 malformed，不允许进入有效数据
+      malformedRowIndices.push(rowIndex);
+    }
     rows.push(row);
   }
 
@@ -142,7 +153,7 @@ export function parseCsvText(text: string, delimiter: string = ','): CsvParseRes
     warnings.push(`第 ${recordStartLine} 行检测到未闭合的引号，该记录可能不完整，请检查引号是否成对。`);
   }
 
-  return { rows, warnings };
+  return { rows, warnings, malformedRowIndices };
 }
 
 /**

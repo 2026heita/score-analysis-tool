@@ -13,6 +13,28 @@ const INVALID_KEYWORDS = [
 // 缺失值占位符（单独作为占位符，返回 empty）
 const EMPTY_PLACEHOLDERS = ['-', '—', '–', '/', '\\', '|'];
 
+/**
+ * 统一空值语义：判断一个原始单元格是否为缺失/空值。
+ *
+ * 这是项目权威的空值定义（来源：下述 parseNumericValue 的空值占位符规则），
+ * 供筛选等消费方复用，避免各处各自用 "trim() === ''" 判断导致口径不一致。
+ *
+ * 规则：
+ * - null / undefined → 空
+ * - 数字（含 0）→ 非空（0 绝不能因 falsy 被视为空）
+ * - 字符串 trim 后为 '' 或属于缺失占位符（"-","—","–","/","\\","|"）→ 空
+ * - 其余（状态词"缺考/弃考/未参加"、普通文本、无效数字串等）→ 非空
+ *
+ * 注意：invalid ≠ empty。无法解析为数字的 "abc"/"1,23"/"100abc" 及状态词不算空。
+ */
+export function isEmptyLike(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  if (typeof value === 'number') return false;
+  const str = String(value).trim();
+  if (str === '') return true;
+  return EMPTY_PLACEHOLDERS.includes(str);
+}
+
 // 日期格式正则（优先于数字解析）
 const DATE_PATTERNS = [
   /^\d{4}[-/]\d{1,2}[-/]\d{1,2}$/,           // 2024-01-01, 2024/01/01
@@ -81,14 +103,9 @@ export function parseNumericValue(val: unknown): ParsedNumber {
 
   // 4. 字符串处理
   const str = String(val).trim();
-  
-  // 4.1 空字符串
-  if (str === '') {
-    return { status: 'empty' };
-  }
 
-  // 4.2 特殊符号（缺失值占位符，返回 empty）
-  if (EMPTY_PLACEHOLDERS.includes(str)) {
+  // 4.1 空字符串 / 缺失值占位符（统一空值语义）
+  if (isEmptyLike(str)) {
     return { status: 'empty' };
   }
 

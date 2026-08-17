@@ -175,15 +175,10 @@ function parseNumericValue(val) {
 }
 
 function standardizeNumerical(str) {
+  // 百分号口径：parseNumericValue 已按"百分数值"语义解析（85.5% → 85.5），
+  // 这里不再次除以 100（避免 0.855 与主分析不一致）。
   let cleaned = str.trim();
-  if (cleaned.endsWith('%')) {
-    cleaned = cleaned.slice(0, -1).trim();
-    const num = parseNumericStringStrict(cleaned);
-    if (num !== null) {
-      return { type: 'numerical', value: num / 100, original: str };
-    }
-  }
-  const num = parseNumericStringStrict(cleaned);
+  const num = parseNumericStringStrict(cleaned.endsWith('%') ? cleaned.slice(0, -1).trim() : cleaned);
   if (num !== null) {
     return { type: 'numerical', value: num, original: str };
   }

@@ -11,7 +11,7 @@
  */
 
 import type { FieldMeta } from '../utils/tableParser/types';
-import { parseNumericValueLegacy } from '../utils/tableParser/numericParser';
+import { parseNumericValueLegacy, isEmptyLike } from '../utils/tableParser/numericParser';
 
 /** 文本字段操作符 */
 export type TextOperator = 'equals' | 'contains' | 'notContains' | 'isEmpty' | 'isNotEmpty';
@@ -44,11 +44,39 @@ export interface FilterSummary {
 /** 数值分析角色集合 */
 const NUMERIC_ROLES = new Set(['primaryTotal', 'rank', 'sectionTotal', 'courseScore', 'adjustment']);
 
+/** 内容证据：数值占比达到该阈值才视为"可数字筛选"（混合列允许少量非数值） */
+const NUMERIC_RATIO_THRESHOLD = 0.5;
+
 /**
- * 判断字段是否为数值类型
+ * 判断字段是否可进行数字条件筛选（等于/大于/小于/范围等）。
+ *
+ * 关键设计：把"能否数字筛选"与"是否为推荐分析指标"（analysisRole）解耦。
+ * - 语义明确为数值指标的字段（primaryTotal/rank/sectionTotal/courseScore/adjustment）→ 可数字筛选
+ * - 身份/编码类字段（学号、考号、身份证号、学校代码、商品编码、SKU、订单编号、手机号等）
+ *   即使字段名不含关键数字，也绝不能仅因"内容全是数字"就自动变成普通数值指标，
+ *   因此 analysisRole === 'identity' 或长数字唯一串保持排除。
+ * - 其他字段（如 Revenue/销售额/利润/成本/价格/库存等无传统成绩关键词，但内容数值占比高）
+ *   依据内容数值证据（contentFeature.numericRatio）决定是否可数字筛选，
+ *   而不是强行加成绩关键词或把分析角色改为 courseScore。
  */
 export function isNumericFilterField(meta: FieldMeta): boolean {
-  return NUMERIC_ROLES.has(meta.analysisRole);
+  // 1) 语义明确的数值指标 → 可数字筛选
+  if (NUMERIC_ROLES.has(meta.analysisRole)) return true;
+
+  // 2) 身份/编码字段 → 保护，不可数字筛选（不因内容数字而误判）
+  if (meta.analysisRole === 'identity' || meta.type === 'identity') {
+    return false;
+  }
+
+  // 3) 长数字唯一串（拟序号/编码，如 SKU、订单编号、手机号）→ 保护
+  const cf = meta.contentFeature;
+  if (cf && cf.valuePattern === 'longNumber' && cf.uniqueRatio > 0.8) {
+    return false;
+  }
+
+  // 4) 内容数值证据：数值占比达阈值即具备数字筛选能力
+  const ratio = cf?.numericRatio ?? (meta.validCount / Math.max(1, meta.textCount + meta.invalidCount + meta.validCount));
+  return ratio >= NUMERIC_RATIO_THRESHOLD;
 }
 
 /**
@@ -140,8 +168,8 @@ function evaluateNumericCondition(
   const operator = cond.operator as NumericOperator;
   const condValue = cond.value;
 
-  // 空值处理
-  const isEmpty = raw === undefined || raw === null || raw.trim() === '';
+  // 空值处理：与项目统一空值语义一致（""/空格/占位符 "-"…"/" 等均为空）
+  const isEmpty = isEmptyLike(raw);
   if (operator === 'isEmpty') return isEmpty;
   if (operator === 'isNotEmpty') return !isEmpty;
   if (isEmpty) return false; // 空值不满足其他数值条件
@@ -184,11 +212,12 @@ function evaluateNumericCondition(
  * 评估文本条件
  */
 function evaluateTextCondition(
-  raw: string,
+  raw: unknown,
   operator: TextOperator,
   condValue: string
 ): boolean {
-  const trimmed = raw.trim();
+  // 文本字面量比较使用去空格后的字符串；null/undefined 视为 ''
+  const trimmed = String(raw ?? '').trim();
 
   switch (operator) {
     case 'equals':
@@ -198,9 +227,10 @@ function evaluateTextCondition(
     case 'notContains':
       return !trimmed.includes(condValue.trim());
     case 'isEmpty':
-      return trimmed === '';
+      // 文本为空复用统一空值语义（""/空格/占位符 "-"…"/" 等）
+      return isEmptyLike(raw);
     case 'isNotEmpty':
-      return trimmed !== '';
+      return !isEmptyLike(raw);
     default:
       return true;
   }
@@ -242,7 +272,7 @@ export function filterRows(
       if (isNumeric) {
         return evaluateNumericCondition(rawValue, cond);
       } else {
-        return evaluateTextCondition(rawValue || '', cond.operator as TextOperator, cond.value);
+        return evaluateTextCondition(rawValue, cond.operator as TextOperator, cond.value);
       }
     });
   });

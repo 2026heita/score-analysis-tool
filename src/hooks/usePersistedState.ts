@@ -22,12 +22,13 @@ export function usePersistedState() {
 
   /**
    * 保存状态到 localStorage
+   * @returns true 写入成功；false 写入失败（QuotaExceeded / stringify / storage 不可用）
    */
-  const save = useCallback((state: SavedState): void => {
+  const save = useCallback((state: SavedState): boolean => {
     try {
-      saveState(state);
+      return saveState(state);
     } catch {
-      // 静默失败
+      return false;
     }
   }, []);
 

@@ -198,7 +198,12 @@ export function useParsedTable(): UseParsedTableReturn {
     try {
       const result = parseTableText(rawText);
       applyParseResult(result);
-    } catch { /* 忽略 */ }
+    } catch (e) {
+      // 新输入解析失败：清除上一份数据残留的分析结果并显示错误，
+      // 避免旧分析冒充当前输入；不影响用户继续修改输入文本。
+      clearParseState();
+      setParseError(e instanceof Error ? e.message : '解析失败');
+    }
   }, [rawText, applyParseResult, clearParseState]);
 
   // ===== 手动解析 =====
@@ -232,6 +237,13 @@ export function useParsedTable(): UseParsedTableReturn {
     safeSetState(setAvailableSheets, null);
     safeSetState(setSelectedSheet, null);
     safeSetState(setIsParsing, true);
+
+    // 新文件开始解析时，先清除上一份数据残留的分析结果，
+    // 避免异步解析期间旧结果短暂冒充当前上传文件。
+    safeSetState(setParseError, null);
+    safeSetState(setParsedData, null);
+    safeSetState(setParseWarnings, []);
+    safeSetState(setDataVolumeState, null);
 
     if (file.size > 5 * 1024 * 1024) {
       setTimeout(() => {

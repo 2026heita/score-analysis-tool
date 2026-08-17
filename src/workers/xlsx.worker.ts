@@ -8,10 +8,21 @@
 import { read, utils } from 'xlsx';
 
 self.onmessage = (e: MessageEvent) => {
-  const { id, arrayBuffer } = e.data;
+  const { id, arrayBuffer, sheetRows } = e.data;
 
   try {
-    const workbook = read(arrayBuffer, { type: 'array', cellFormula: false, cellHTML: false });
+    const readOpts: any = {
+      type: 'array',
+      cellFormula: false,
+      cellHTML: false,
+    };
+    // 第二层资源保护：sheetRows 限制每个 sheet 解析到前 N 行（近主线程业务上限，
+    // 并预留表头/说明/多级表头/检测余量），避免为大表构造完整 cell 对象。
+    if (typeof sheetRows === 'number' && sheetRows > 0) {
+      readOpts.sheetRows = sheetRows;
+    }
+
+    const workbook = read(arrayBuffer, readOpts);
     const sheetNames = workbook.SheetNames;
 
     const sheetsData: { name: string; data: unknown[][]; merges: { s: { r: number; c: number }; e: { r: number; c: number } }[] }[] = [];
@@ -28,6 +39,6 @@ self.onmessage = (e: MessageEvent) => {
 
     self.postMessage({ id, sheetsData });
   } catch (err: any) {
-    self.postMessage({ id, error: err.message || '文件解析失败' });
+    self.postMessage({ id, error: err.message || '文件解析失败，请确认文件为有效的 Excel 文件。' });
   }
 };

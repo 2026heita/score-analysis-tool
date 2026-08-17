@@ -36,3 +36,7 @@ export function throwInvalidFormat(): never {
 export function throwNoDataInSheet(): never {
   throw new ParseError('文件中没有数据。');
 }
+
+export function throwRowLimitExceeded(maxRows: number): never {
+  throw new ParseError(`数据超过 ${maxRows.toLocaleString()} 行，超出单次分析上限，无法完整解析。请精简数据后重新上传。`);
+}
