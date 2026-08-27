@@ -147,6 +147,16 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
   const [directionOverrides, setDirectionOverrides] = useState<Record<string, PositionDirectionOverride>>({});
   const selectedDirectionOverride = selectedField ? directionOverrides[selectedField] : undefined;
 
+  // ===== 移动端检测：缩小调试面板浮动按钮足迹，减少对正文的遮挡 =====
+  const [isNarrowScreen, setIsNarrowScreen] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 520px)');
+    const onChange = () => setIsNarrowScreen(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
   // 读取当前字段的默认方向定义
   const selectedFieldDefinition = useMemo(() => {
     if (!selectedField || !analysisDataset?.fields) {
@@ -1053,29 +1063,30 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
             onClick={() => setShowDebugPanel((prev: boolean) => !prev)}
             style={{
               position: 'fixed',
-              right: 16,
-              bottom: 16,
+              right: isNarrowScreen ? 8 : 16,
+              bottom: isNarrowScreen ? 8 : 16,
               zIndex: 9999,
-              padding: '8px 16px',
+              padding: isNarrowScreen ? '6px 10px' : '8px 16px',
               backgroundColor: showDebugPanel ? '#ef4444' : '#3b82f6',
               color: 'white',
               border: 'none',
               borderRadius: '6px',
               cursor: 'pointer',
-              fontSize: '14px',
+              fontSize: isNarrowScreen ? '12px' : '14px',
+              opacity: isNarrowScreen ? 0.78 : 1,
               boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
             }}
           >
-            {showDebugPanel ? '隐藏调试面板' : '显示调试面板'}
+            {isNarrowScreen ? '调试' : (showDebugPanel ? '隐藏调试面板' : '显示调试面板')}
           </button>
 
           {showDebugPanel && selectedField && metricResult && (
             <div style={{
               position: 'fixed',
-              right: 16,
-              bottom: 60,
+              right: isNarrowScreen ? 8 : 16,
+              bottom: isNarrowScreen ? 40 : 60,
               zIndex: 9998,
-              maxWidth: '400px',
+              maxWidth: isNarrowScreen ? 'calc(100% - 16px)' : '400px',
               maxHeight: '60vh',
               overflow: 'auto',
             }}>

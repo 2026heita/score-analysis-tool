@@ -3,6 +3,11 @@ import type { EChartsOption } from 'echarts';
 import { extractFieldValues, computeStats, computePercentile } from '../../engine/analysisEngine';
 import { parseNumericValue, parseNumericValueLegacy } from '../../utils/tableParser/numericParser';
 import { safeFormatPercent, extractNumericFromEChartsParam, isValidPercentile } from '../../utils/safeFormat';
+import { useElementWidth } from '../../hooks/useElementWidth';
+import {
+  wrapCategoryLabel,
+  estimateCategoryAxisHeight,
+} from '../../utils/chartLabel';
 import EChartsWrapper from './EChartsWrapper';
 import type { OriginalFieldRadarState } from '../../types';
 // @deprecated 教育/高考功能已收敛至 legacy 区
@@ -72,6 +77,23 @@ const ROLE_BADGE_MAP: Record<string, { label: string; color: string; bg: string 
 // 是否推荐分析
 const RECOMMENDED_ROLES = new Set(['primaryTotal', 'rank', 'sectionTotal', 'courseScore']);
 
+// 根据条形图容器宽度决定 Y 轴单行标签的“显示列数”预算。
+// 容器宽越高预算越大（标签可用 px 越多）；不同设备给不同预算，
+// 使长字段在 PC 大多一行、手机合理折 2~3 行，且不以缩小字号规避截断。
+function resolveFieldLabelBudget(containerWidth: number): number {
+  if (!containerWidth || containerWidth <= 0) return 8;   // 未测量时先按手机预算，避免初始溢出
+  if (containerWidth >= 900) return 20;                    // 桌面：标签区约 230px
+  if (containerWidth >= 700) return 16;                    // 桌面窄/平板横屏：约 180px
+  if (containerWidth >= 480) return 12;                    // 平板竖屏/手机横屏：约 140px
+  return 8;                                                // 手机：约 92px，让柱图区更宽
+}
+
+// 把“列数预算”换算成 axisLabel 的像素宽度，配合 overflow:'break' 兜底，
+// 确保 formatter 换行后任何单行都不会再次溢出被截断。
+function labelPxWidthForBudget(budget: number): number {
+  return Math.max(80, Math.round(budget * 11.5));
+}
+
 export default function OriginalFieldRadar({
   headers, rows, isNumericField, getFieldAnalysisRole, excludedKeywords,
   initialSelections, initialViewMode, onStateChange,
@@ -128,6 +150,12 @@ export default function OriginalFieldRadar({
   const [animationToken, setAnimationToken] = useState(0);
   // 已消费的 token，消费后 shouldAnimate 变为 false
   const consumedTokenRef = useRef<number | null>(null);
+
+  // 条形图容器宽度：据此决定每行标签最大列数。基于容器（ResizeObserver），非 window.innerWidth
+  const { ref: barContainerRef, width: barContainerWidth } = useElementWidth<HTMLDivElement>();
+  const fieldLabelBudget = resolveFieldLabelBudget(barContainerWidth);
+  // 手机窄容器：tooltip 压缩内容 + confine（不溢出图表外），避免覆盖过多图表本体。
+  const compactTooltip = barContainerWidth > 0 && barContainerWidth < 480;
 
   // 首次渲染时标记为已消费，避免首次加载时播放动画
   useEffect(() => {
@@ -711,6 +739,18 @@ export default function OriginalFieldRadar({
     isValidPercentile(s.percentile)
   ), [radarStats]);
 
+  // 条形图高度：按当前容器宽度下每个字段实际换行行数累加。
+  // 浏览器宽度变化后 fieldLabelBudget 一起变，高度随之自适应，
+  // PC 标签大多一行不会留大空白，手机多行时图表自动增高。
+  const barChartHeight = useMemo(
+    () => estimateCategoryAxisHeight(
+      validStats.map(s => s.field),
+      fieldLabelBudget,
+      { perLine: 24, lineGap: 8, base: 360, headerReserve: 120 }
+    ),
+    [validStats, fieldLabelBudget]
+  );
+
   // 条形图
   const barOption: EChartsOption | null = useMemo(() => {
     if (validStats.length === 0) return null;
@@ -734,6 +774,9 @@ export default function OriginalFieldRadar({
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
+        confine: true,
+        padding: compactTooltip ? [6, 10] : undefined,
+        textStyle: { fontSize: compactTooltip ? 11 : 13 },
         formatter: (params: any) => {
           const idx = reversed.length - 1 - params[0].dataIndex;
           const s = validStats[idx];
@@ -748,7 +791,12 @@ export default function OriginalFieldRadar({
       },
       yAxis: {
         type: 'category', data: fields,
-        axisLabel: { fontSize: 11, width: 120, overflow: 'truncate' },
+        axisLabel: {
+          fontSize: 11,
+          overflow: 'break',
+          width: labelPxWidthForBudget(fieldLabelBudget),
+          formatter: (value: string) => wrapCategoryLabel(value, fieldLabelBudget),
+        },
       },
       series: [{
         type: 'bar',
@@ -769,16 +817,19 @@ export default function OriginalFieldRadar({
         barMaxWidth: 28,
       }],
     } as EChartsOption;
-  }, [validStats, viewMode, animationToken]);
+  }, [validStats, viewMode, animationToken, fieldLabelBudget, compactTooltip]);
 
   // 雷达图
   const radarOption: EChartsOption | null = useMemo(() => {
     if (validRadarStats.length < 2) return null;
     const indicator = validRadarStats.map(s => ({ name: s.field, max: 100 }));
     const data = validRadarStats.map(s => s.percentile);
-    const allFieldInfo = validRadarStats
-      .map(s => `${s.field}: ${s.userValue} → ${safeFormatPercent(s.percentile)}`)
-      .join('<br/>');
+    // 完整字段清单仅在 PC/宽容器展示；手机 tooltip 只显示悬停字段，避免覆盖图表本体
+    const allFieldInfo = compactTooltip
+      ? ''
+      : validRadarStats
+        .map(s => `${s.field}: ${s.userValue} → ${safeFormatPercent(s.percentile)}`)
+        .join('<br/>');
 
     // 只有当 token 未被消费时才播放动画
     const shouldAnimate = consumedTokenRef.current !== animationToken;
@@ -794,10 +845,15 @@ export default function OriginalFieldRadar({
       },
       tooltip: {
         trigger: 'item',
+        confine: true,
+        padding: compactTooltip ? [6, 10] : undefined,
+        textStyle: { fontSize: compactTooltip ? 11 : 13 },
         formatter: (params: any) => {
           const idx = params.dataIndex;
           const hovered = validRadarStats[idx];
-          return `当前悬停字段：${hovered.field}<br/>你的输入值：${hovered.userValue}<br/>百分位：${safeFormatPercent(hovered.percentile)}<br/><br/>该图同时包含其他字段，见下方字段列表。<br/>──────────────<br/>${allFieldInfo}`;
+          const base = `当前悬停字段：${hovered.field}<br/>你的输入值：${hovered.userValue}<br/>百分位：${safeFormatPercent(hovered.percentile)}`;
+          if (compactTooltip) return base;
+          return `${base}<br/><br/>该图同时包含其他字段，见下方字段列表。<br/>──────────────<br/>${allFieldInfo}`;
         },
       },
       radar: { indicator, radius: '65%', axisName: { fontSize: 11 } },
@@ -811,7 +867,7 @@ export default function OriginalFieldRadar({
         }],
       }],
     } as EChartsOption;
-  }, [validRadarStats, viewMode, animationToken]);
+  }, [validRadarStats, viewMode, animationToken, compactTooltip]);
 
   // 图表渲染后消费 token，阻止后续重复动画
   useEffect(() => {
@@ -937,8 +993,8 @@ export default function OriginalFieldRadar({
       {/* 字段选择列表 */}
       <div style={styles.fieldList}>
         {selections.map((sel, index) => (
-          <div key={index} style={styles.fieldItem}>
-            <div style={styles.fieldName}>{sel.field}</div>
+          <div key={index} style={styles.fieldItem} className="ofa-field-item">
+            <div style={styles.fieldName} className="ofa-field-name">{sel.field}</div>
             <div style={styles.fieldInputWrap}>
               <label style={styles.fieldInputLabel}>
                 <span style={styles.fieldLabel}>你的数值</span>
@@ -1069,12 +1125,12 @@ export default function OriginalFieldRadar({
 
       {/* 图表 */}
       {viewMode === 'bar' && barOption && (
-        <div style={{ minHeight: '320px', width: '100%' }}>
-          <EChartsWrapper option={barOption} chartTypes={['bar', 'radar']} style={{ height: Math.max(320, validStats.length * 40 + 80), width: '100%' }} />
+        <div ref={barContainerRef} style={{ minHeight: '320px', width: '100%' }}>
+          <EChartsWrapper option={barOption} chartTypes={['bar', 'radar']} style={{ height: barChartHeight, width: '100%' }} />
         </div>
       )}
       {viewMode === 'radar' && radarOption && (
-        <div style={{ minHeight: '320px', width: '100%' }}>
+        <div ref={barContainerRef} style={{ minHeight: '320px', width: '100%' }}>
           <EChartsWrapper option={radarOption} chartTypes={['bar', 'radar']} style={{ height: '400px', width: '100%' }} />
         </div>
       )}
@@ -1452,16 +1508,21 @@ const styles: Record<string, React.CSSProperties> = {
   fieldItem: {
     display: 'flex',
     alignItems: 'center',
+    flexWrap: 'wrap' as const,
     gap: '12px',
     padding: '8px 12px',
     background: '#f8fafc',
     borderRadius: '8px',
   },
   fieldName: {
-    flex: '0 0 140px',
+    // flex/min-width 由 .ofa-field-name 控制：桌面限宽 140px 可压缩，
+    // 移动端(<=520px)自动占满整行换行，避免长字段被挤成"一两个字符一行"的竖排。
     fontSize: '14px',
     fontWeight: 500,
     color: '#334155',
+    lineHeight: 1.5,
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word',
   },
   fieldInputWrap: {
     flex: 1,
@@ -2089,9 +2150,10 @@ const bs: Record<string, React.CSSProperties> = {
     fontSize: '13px',
     color: '#1e293b',
     fontWeight: 500,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
+    lineHeight: 1.4,
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word',
+    whiteSpace: 'normal',
   },
   fieldBadges: {
     display: 'flex',

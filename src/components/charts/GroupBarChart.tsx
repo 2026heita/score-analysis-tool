@@ -15,6 +15,7 @@ import type { EChartsOption } from 'echarts';
 import { topN, DEFAULT_TOP_N } from '../../engine/groupByDimension';
 import type { GroupStats } from '../../engine/groupByDimension';
 import EChartsWrapper from './EChartsWrapper';
+import { wrapCategoryLabel, estimateCategoryAxisHeight } from '../../utils/chartLabel';
 
 interface GroupBarChartProps {
   /** 分组统计结果 */
@@ -25,42 +26,9 @@ interface GroupBarChartProps {
   dimensionField: string;
 }
 
-// 分类标签格式化：根据长度自动换行
+// 分组名标签格式化：统一走公共换行工具
 function formatCategoryLabel(value: string): string {
-  // 短文本直接显示
-  if (value.length <= 15) return value;
-
-  // 检查是否包含空格（英文等）
-  const hasSpace = value.includes(' ');
-
-  if (hasSpace) {
-    // 按单词换行
-    const words = value.split(' ');
-    const lines: string[] = [];
-    let currentLine = '';
-
-    for (const word of words) {
-      if (currentLine.length === 0) {
-        currentLine = word;
-      } else if (currentLine.length + word.length + 1 <= 15) {
-        currentLine += ' ' + word;
-      } else {
-        lines.push(currentLine);
-        currentLine = word;
-      }
-    }
-    if (currentLine) lines.push(currentLine);
-
-    return lines.join('\n');
-  } else {
-    // 中文等连续文本按字符换行
-    const maxLen = 15;
-    const lines: string[] = [];
-    for (let i = 0; i < value.length; i += maxLen) {
-      lines.push(value.slice(i, i + maxLen));
-    }
-    return lines.join('\n');
-  }
+  return wrapCategoryLabel(value, 15);
 }
 
 export default function GroupBarChart({ groupStats, metricField, dimensionField }: GroupBarChartProps) {
@@ -147,5 +115,5 @@ export default function GroupBarChart({ groupStats, metricField, dimensionField 
     return null;
   }
 
-  return <EChartsWrapper option={option} chartTypes={['bar']} style={{ height: `${Math.max(300, displayed.length * 24)}px`, width: '100%' }} />;
+  return <EChartsWrapper option={option} chartTypes={['bar']} style={{ height: `${estimateCategoryAxisHeight(displayed.map(g => g.dimensionValue), 15)}px`, width: '100%' }} />;
 }

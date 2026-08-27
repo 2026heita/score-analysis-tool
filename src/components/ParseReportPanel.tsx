@@ -85,11 +85,11 @@ export default function ParseReportPanel({ report }: ParseReportPanelProps) {
             </div>
             <div style={styles.fieldTable}>
               <div style={styles.fieldHeader}>
-                <div style={styles.fieldHeaderCell}>字段名</div>
-                <div style={styles.fieldHeaderCell}>类型</div>
-                <div style={styles.fieldHeaderCell}>置信度</div>
-                <div style={styles.fieldHeaderCell}>推荐</div>
-                <div style={styles.fieldHeaderCell}>隐藏原因</div>
+                <div style={styles.fieldHeaderCell} className="prp-c-name">字段名</div>
+                <div style={styles.fieldHeaderCell} className="prp-c-type">类型</div>
+                <div style={styles.fieldHeaderCell} className="prp-c-conf">置信度</div>
+                <div style={styles.fieldHeaderCell} className="prp-c-rec">推荐</div>
+                <div style={styles.fieldHeaderCell} className="prp-c-hidden">隐藏原因</div>
               </div>
               {displayFields.length === 0 ? (
                 <div style={styles.emptyHint}>
@@ -104,13 +104,13 @@ export default function ParseReportPanel({ report }: ParseReportPanelProps) {
                       ...(index % 2 === 0 ? {} : styles.fieldRowAlt),
                     }}
                   >
-                    <div style={styles.fieldCell}>
+                    <div style={styles.fieldCell} className="prp-c-name">
                       <span style={styles.fieldName}>{field.name}</span>
                     </div>
-                    <div style={styles.fieldCell}>
+                    <div style={styles.fieldCell} className="prp-c-type">
                       <span style={styles.typeBadge}>{field.analysisRole}</span>
                     </div>
-                    <div style={styles.fieldCell}>
+                    <div style={styles.fieldCell} className="prp-c-conf">
                       <span
                         style={{
                           ...styles.confidenceBadge,
@@ -124,14 +124,14 @@ export default function ParseReportPanel({ report }: ParseReportPanelProps) {
                         {(field.confidence * 100).toFixed(0)}%
                       </span>
                     </div>
-                    <div style={styles.fieldCell}>
+                    <div style={styles.fieldCell} className="prp-c-rec">
                       {field.recommended ? (
                         <span style={styles.recommendedYes}>✓</span>
                       ) : (
                         <span style={styles.recommendedNo}>-</span>
                       )}
                     </div>
-                    <div style={styles.fieldCell}>
+                    <div style={styles.fieldCell} className="prp-c-hidden">
                       <span style={styles.hiddenReason}>
                         {field.hiddenByDefault ? field.hiddenReason : '-'}
                       </span>
@@ -264,13 +264,19 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '13px',
     border: '1px solid #e2e8f0',
     borderRadius: '6px',
-    overflow: 'hidden',
+    // 表体内部横向滚动：手机端宁可左右滑也不把列压成竖排
+    overflowX: 'auto' as const,
+    overflowY: 'hidden' as const,
+    WebkitOverflowScrolling: 'touch' as const,
   },
   fieldHeader: {
     display: 'flex',
     background: '#f1f5f9',
     borderBottom: '1px solid #e2e8f0',
     fontWeight: 600,
+    // 手机端行宽不低于内容所需，触发容器横向滚动
+    minWidth: '800px',
+    width: '100%' as const,
   },
   fieldHeaderCell: {
     padding: '8px 12px',
@@ -279,6 +285,8 @@ const styles: Record<string, React.CSSProperties> = {
   fieldRow: {
     display: 'flex',
     borderBottom: '1px solid #e2e8f0',
+    minWidth: '800px',
+    width: '100%' as const,
   },
   fieldRowAlt: {
     background: '#f8fafc',
@@ -287,11 +295,15 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '8px 12px',
     flex: '1',
     display: 'flex',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    lineHeight: 1.5,
   },
   fieldName: {
     fontWeight: 500,
     color: '#1e293b',
+    whiteSpace: 'normal' as const,
+    overflowWrap: 'anywhere' as const,
+    wordBreak: 'break-word' as const,
   },
   typeBadge: {
     fontSize: '11px',
@@ -331,6 +343,10 @@ const styles: Record<string, React.CSSProperties> = {
   hiddenReason: {
     fontSize: '12px',
     color: '#64748b',
+    whiteSpace: 'normal' as const,
+    overflowWrap: 'anywhere' as const,
+    wordBreak: 'break-word' as const,
+    lineHeight: '1.5',
   },
   reasonList: {
     display: 'flex',

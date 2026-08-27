@@ -13,6 +13,7 @@
     "test:parseReport": "node scripts/testParseReport.mjs",
     "test:analysis-explainer": "node scripts/testAnalysisExplainer.mjs",
     "test:mobile-compatibility": "node scripts/testMobileCompatibility.mjs",
+    "test:text-truncation": "node --experimental-strip-types scripts/testTextTruncation.mjs",
     "test:general-engine": "node scripts/testGeneralEngine.mjs",
     "test:general-overview": "node scripts/testGeneralOverview.mjs",
     "test:correlation": "node scripts/testCorrelationAnalyzer.mjs",

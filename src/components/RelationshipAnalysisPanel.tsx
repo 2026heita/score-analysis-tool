@@ -116,10 +116,10 @@ export default function RelationshipAnalysisPanel({ correlationResult }: Relatio
                 最高正相关字段对
               </div>
               <div style={styles.tableWrapper}>
-                <table style={styles.table}>
+                <table style={styles.table} className="data-table">
                   <thead>
                     <tr>
-                      <th style={styles.th}>字段 A</th>
+                      <th style={styles.th} className="data-name-col">字段 A</th>
                       <th style={styles.th}>字段 B</th>
                       <th style={styles.thNum}>相关系数</th>
                       <th style={styles.thNum}>有效样本</th>
@@ -143,10 +143,10 @@ export default function RelationshipAnalysisPanel({ correlationResult }: Relatio
                 最高负相关字段对
               </div>
               <div style={styles.tableWrapper}>
-                <table style={styles.table}>
+                <table style={styles.table} className="data-table">
                   <thead>
                     <tr>
-                      <th style={styles.th}>字段 A</th>
+                      <th style={styles.th} className="data-name-col">字段 A</th>
                       <th style={styles.th}>字段 B</th>
                       <th style={styles.thNum}>相关系数</th>
                       <th style={styles.thNum}>有效样本</th>
@@ -170,10 +170,10 @@ export default function RelationshipAnalysisPanel({ correlationResult }: Relatio
                 低相关字段对（几乎无关）
               </div>
               <div style={styles.tableWrapper}>
-                <table style={styles.table}>
+                <table style={styles.table} className="data-table">
                   <thead>
                     <tr>
-                      <th style={styles.th}>字段 A</th>
+                      <th style={styles.th} className="data-name-col">字段 A</th>
                       <th style={styles.th}>字段 B</th>
                       <th style={styles.thNum}>相关系数</th>
                       <th style={styles.thNum}>有效样本</th>
@@ -197,13 +197,13 @@ export default function RelationshipAnalysisPanel({ correlationResult }: Relatio
                 相关性矩阵
               </div>
               <div style={styles.tableWrapper}>
-                <table style={styles.table}>
+                <table style={styles.table} className="data-table">
                   <thead>
                     <tr>
                       <th style={styles.th}>字段</th>
                       {numericalFields.map(field => (
-                        <th key={field} style={styles.thNum} title={field}>
-                          {field.length > 8 ? field.slice(0, 8) + '…' : field}
+                        <th key={field} style={{ ...styles.thNum, whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere', lineHeight: 1.2, fontSize: 12, maxWidth: 110, minWidth: 70 }} title={field}>
+                          {field}
                         </th>
                       ))}
                     </tr>
@@ -211,8 +211,8 @@ export default function RelationshipAnalysisPanel({ correlationResult }: Relatio
                   <tbody>
                     {numericalFields.map(fieldA => (
                       <tr key={fieldA}>
-                        <td style={styles.tdField} title={fieldA}>
-                          {fieldA.length > 12 ? fieldA.slice(0, 12) + '…' : fieldA}
+                        <td style={styles.tdField} className="data-name-cell" title={fieldA}>
+                          {fieldA}
                         </td>
                         {numericalFields.map(fieldB => {
                           const r = matrix[fieldA]?.[fieldB] ?? 0;
@@ -242,11 +242,11 @@ function CorrelationRow({ pair }: { pair: CorrelationPair }) {
   const strengthColor = getStrengthColor(pair.pearson);
   return (
     <tr>
-      <td style={styles.tdField} title={pair.fieldA}>
-        {pair.fieldA.length > 15 ? pair.fieldA.slice(0, 15) + '…' : pair.fieldA}
+      <td style={styles.tdField} className="data-name-cell" title={pair.fieldA}>
+        {pair.fieldA}
       </td>
-      <td style={styles.tdField} title={pair.fieldB}>
-        {pair.fieldB.length > 15 ? pair.fieldB.slice(0, 15) + '…' : pair.fieldB}
+      <td style={styles.tdField} className="data-name-cell" title={pair.fieldB}>
+        {pair.fieldB}
       </td>
       <td style={{ ...styles.tdNum, color: strengthColor, fontWeight: 600 }}>
         {pair.pearson.toFixed(3)}
@@ -443,10 +443,6 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '8px 12px',
     borderBottom: '1px solid #f1f5f9',
     color: '#334155',
-    maxWidth: '150px',
-    overflow: 'hidden' as const,
-    textOverflow: 'ellipsis' as const,
-    whiteSpace: 'nowrap' as const,
     fontWeight: 500,
   },
   tdNum: {

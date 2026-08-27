@@ -680,3 +680,86 @@ body::before {
     animation-play-state: paused !important;
   }
 }
+
+/* ============================================================
+   数据表格：字段名完整显示 + sticky 首列
+   用于 GeneralDataOverview 与 RelationshipAnalysisPanel。
+   - 首列字段名允许换行，不再依赖 ellipsis + title
+   - 首列 sticky(-left)，横向滚动时字段名仍然可见
+   - 表头 sticky(-top) 层级高于普通单元格，避免数字透出
+   ============================================================ */
+.data-table {
+  border-collapse: collapse;
+}
+
+/* 表头列吸顶，层级高于普通单元格 */
+.data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/* 首列表头：同时吸顶 + 吸左，并用右边界区分固定列与滚动区 */
+.data-table thead th.data-name-col {
+  position: sticky;
+  left: 0;
+  top: 0;
+  z-index: 3;
+  border-right: 1px solid #e2e8f0;
+}
+
+/* 字段名称单元格：允许换行、完整显示 */
+.data-name-cell {
+  min-width: 200px;
+  max-width: 260px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+/* 首列数据单元格：吸左固定 + 不透明白底，横向滚动时数字不透过 */
+.data-table tbody td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: #ffffff;
+  border-right: 1px solid #e2e8f0;
+}
+
+/* 手机：适当收窄首列，但仍保证字段名完整可读 */
+@media (max-width: 520px) {
+  .data-name-cell {
+    min-width: 150px;
+    max-width: 180px;
+  }
+}
+
+/* ============================================================
+   OriginalFieldRadar 字段选择列表
+   防止长字段名在移动端被 Flex 挤压成"一两个字符一行"的竖排：
+   桌面字段名限宽 140px 可压缩换行；移动端占满整行（1 行字段名 + 1 行输入区/删除键）
+   ============================================================ */
+.ofa-field-name {
+  flex: 0 1 140px;
+  min-width: 140px;
+  white-space: normal;
+}
+
+@media (max-width: 520px) {
+  .ofa-field-name {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+}
+
+/* ============================================================
+   字段识别详情表（ParseReportPanel，flex 行结构）
+   每列给可读最小宽度，flex:1 只能撑满、不允许压缩到几十 px；
+   行加 min-width 触发表体容器内部横向滚动，页面本身不滚动。
+   ============================================================ */
+.prp-c-name { min-width: 140px; }
+.prp-c-type { min-width: 100px; }
+.prp-c-conf { min-width: 90px; }
+.prp-c-rec  { min-width: 70px; }
+.prp-c-hidden { min-width: 220px; }

@@ -215,10 +215,10 @@ export default function GeneralDataOverview({ headers, rows }: GeneralDataOvervi
             <div style={styles.tableSection}>
               <div style={styles.tableTitle}>数值字段基础统计</div>
               <div style={styles.tableWrapper}>
-                <table style={styles.table}>
+                <table style={styles.table} className="data-table">
                   <thead>
                     <tr>
-                      <th style={styles.th}>字段名</th>
+                      <th style={styles.th} className="data-name-col">字段名</th>
                       <th style={styles.thNum}>有效值</th>
                       <th style={styles.thNum}>缺失值</th>
                       <th style={styles.thNum}>平均值</th>
@@ -232,7 +232,7 @@ export default function GeneralDataOverview({ headers, rows }: GeneralDataOvervi
                   <tbody>
                     {overview.numericalStats.map(ns => (
                       <tr key={ns.fieldName}>
-                        <td style={styles.tdName} title={ns.fieldName}>{ns.fieldName}</td>
+                        <td style={styles.tdName} className="data-name-cell" title={ns.fieldName}>{ns.fieldName}</td>
                         <td style={styles.tdNum}>{ns.stats.validCount}</td>
                         <td style={styles.tdNum}>{ns.stats.missingCount}</td>
                         <td style={styles.tdNum}>{formatNum(ns.stats.mean)}</td>
@@ -414,10 +414,6 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '8px 12px',
     borderBottom: '1px solid #f1f5f9',
     color: '#334155',
-    maxWidth: '150px',
-    overflow: 'hidden' as const,
-    textOverflow: 'ellipsis' as const,
-    whiteSpace: 'nowrap' as const,
     fontWeight: 500,
   },
   tdNum: {

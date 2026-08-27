@@ -21,6 +21,8 @@ interface EChartsWrapperProps {
 export default function EChartsWrapper({ option, style, chartTypes }: EChartsWrapperProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<any>(null);
+  const resizeRafRef = useRef<number>(0);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const [ready, setReady] = useState(() => isEChartsReady(chartTypes));
 
   // v1.9.1: requestIdleCallback 预加载 — 组件挂载时后台预加载
@@ -60,18 +62,48 @@ export default function EChartsWrapper({ option, style, chartTypes }: EChartsWra
     }
 
     const handleResize = () => {
-      chartRef.current?.resize();
+      if (resizeRafRef.current) {
+        cancelAnimationFrame(resizeRafRef.current);
+      }
+      resizeRafRef.current = requestAnimationFrame(() => {
+        resizeRafRef.current = 0;
+        chartRef.current?.resize();
+      });
     };
     window.addEventListener('resize', handleResize);
 
+    // v2.3.0: ResizeObserver 监听实际图表容器尺寸变化（非 window 事件），
+    // 覆盖图表容器因布局/折叠/宽度变化而调整尺寸的场景。rAF 合并连续触发。
+    resizeObserverRef.current = null;
+    if (typeof ResizeObserver !== 'undefined' && dom) {
+      resizeObserverRef.current = new ResizeObserver(handleResize);
+      resizeObserverRef.current.observe(dom);
+    }
+
     return () => {
       window.removeEventListener('resize', handleResize);
+      if (resizeObserverRef.current) {
+        resizeObserverRef.current.disconnect();
+        resizeObserverRef.current = null;
+      }
+      if (resizeRafRef.current) {
+        cancelAnimationFrame(resizeRafRef.current);
+        resizeRafRef.current = 0;
+      }
     };
   }, [ready, option]);
 
   // 清理
   useEffect(() => {
     return () => {
+      if (resizeRafRef.current) {
+        cancelAnimationFrame(resizeRafRef.current);
+        resizeRafRef.current = 0;
+      }
+      if (resizeObserverRef.current) {
+        resizeObserverRef.current.disconnect();
+        resizeObserverRef.current = null;
+      }
       if (chartRef.current) {
         chartRef.current.dispose();
         chartRef.current = null;
