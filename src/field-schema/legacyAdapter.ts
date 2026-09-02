@@ -1,11 +1,16 @@
 /**
- * Stage 1A-1: 旧模型兼容适配层
+ * Stage 1A-1: 旧模型兼容适配层 【legacy-only 单向兼容边界】
  * 
- * 职责：将旧的 FieldType 和 AnalysisRole 映射到新的通用字段模式
+ * 职责：仅允许"旧教育 FieldType / AnalysisRole" → "新通用 FieldSchema"这一条单向映射。
+ * 用于把历史 localStorage / 旧 tableParser 产出的教育字段元数据翻译成新通用 schema，
+ * 属于历史数据兼容，不参与通用主链路（App / components / engine）的字段角色决策。
+ * 
  * 设计原则：
  * 1. 集中管理所有映射逻辑，禁止在多个组件中重复写映射判断
  * 2. 不确定或存在多种解释的旧类型使用 unknown / unspecified
  * 3. 映射结果标注来源为 'legacy'
+ * 4. 禁止"新 → 旧"反向映射：lower_is_better 不一定是 rank，metric 不一定是 courseScore
+ * @deprecated 仅用于教育 legacy 数据兼容，通用主链路不得依赖
  */
 
 import type {
@@ -221,85 +226,4 @@ function computeStatistics(columnValues: string[]): {
   };
 }
 
-// ============================================================
-// 批量映射
-// ============================================================
 
-/**
- * 将旧 FieldMeta 数组映射到新 FieldSchema 数组
- */
-export function mapLegacyFieldMetasToSchemas(
-  fieldMetas: FieldMeta[],
-  rows?: Record<string, string>[]
-): FieldSchema[] {
-  return fieldMetas.map(meta => {
-    const columnValues = rows ? rows.map(row => row[meta.header] ?? '') : undefined;
-    return mapLegacyFieldMetaToSchema(meta, columnValues);
-  });
-}
-
-// ============================================================
-// 反向映射（新 → 旧，用于兼容旧组件）
-// ============================================================
-
-/**
- * 将新 FieldDataType 映射回旧 FieldType（用于兼容旧组件）
- */
-export function mapNewDataTypeToLegacyFieldType(dataType: FieldDataType): FieldType {
-  switch (dataType) {
-    case 'number':
-      return 'score'; // 默认映射为 score，实际需要根据上下文判断
-    
-    case 'category':
-      return 'category';
-    
-    case 'datetime':
-      return 'text'; // 旧系统没有 datetime，映射为 text
-    
-    case 'boolean':
-      return 'text'; // 旧系统没有 boolean，映射为 text
-    
-    case 'text':
-      return 'text';
-    
-    case 'identifier':
-      return 'identity';
-    
-    case 'unknown':
-      return 'unknown';
-    
-    default:
-      return 'unknown';
-  }
-}
-
-/**
- * 将新 FieldAnalysisRole 映射回旧 AnalysisRole（用于兼容旧组件）
- */
-export function mapNewRoleToLegacyAnalysisRole(role: FieldAnalysisRole): AnalysisRole {
-  switch (role) {
-    case 'metric':
-      return 'courseScore'; // 默认映射为 courseScore
-    
-    case 'dimension':
-      return 'textMeta'; // 默认映射为 textMeta
-    
-    case 'identifier':
-      return 'identity';
-    
-    case 'time':
-      return 'textMeta';
-    
-    case 'description':
-      return 'textMeta';
-    
-    case 'ignored':
-      return 'invalid';
-    
-    case 'unspecified':
-      return 'unknown';
-    
-    default:
-      return 'unknown';
-  }
-}

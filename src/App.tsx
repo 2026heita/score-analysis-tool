@@ -3,8 +3,8 @@ import { usePersistedState } from './hooks/usePersistedState';
 import { useParsedTable } from './hooks/useParsedTable';
 import { latestAppVersion } from './data/updateLogs';
 import { APP_NAME } from './config/app';
-import type { ChartTab, OriginalFieldRadarState, ParsedTable } from './types';
-import type { SalesAnomalyVO, SalesOverviewVO, SalesOverviewComparisonVO } from './types/retailBi';
+import type { ChartTab, DataSourceState, OriginalFieldRadarState, ParsedTable } from './types';
+import type { RetailBiConnectionConfig, SalesAnomalyVO, SalesOverviewVO, SalesOverviewComparisonVO } from './types/retailBi';
 import UsageGuide from './components/UsageGuide';
 import UpdateNotice from './components/UpdateNotice';
 import { clearOriginalFieldRadarCache } from './components/charts/OriginalFieldRadar';
@@ -15,6 +15,8 @@ import { useFilterState } from './hooks/useFilterState';
 import { normalizeFilterConditions } from './engine/filterRows';
 import { useGroupAnalysis } from './hooks/useGroupAnalysis';
 import { useAnalysisDataset } from './hooks/useAnalysisDataset';
+import type { FieldAnalysisRole, FieldMetricDirection } from './field-schema/types';
+import { mapLegacyAnalysisRoleToRole, mapLegacyAnalysisRoleToDirection } from './field-schema/legacyAdapter';
 import { calculateFieldAnalyticScore } from './utils/tableParser/fieldClassifier';
 import { createHeroDataFlowSelection } from './data/heroDataFlowPool';
 import { RetailBiConnectionForm } from './components/RetailBiConnectionForm';
@@ -31,6 +33,11 @@ export default function App() {
   const [retailBiOverview, setRetailBiOverview] = useState<SalesOverviewVO | null>(null);
   const [retailBiComparison, setRetailBiComparison] = useState<SalesOverviewComparisonVO | null>(null);
   const [retailBiAnomalies, setRetailBiAnomalies] = useState<SalesAnomalyVO[] | null>(null);
+
+  // 当前数据来源（轻量元数据，用于识别 ParsedTable 来源并决定保存/清空语义）
+  const [dataSource, setDataSource] = useState<DataSourceState>({ type: 'manual' });
+  // 触发 RetailBiConnectionForm 同步清空连接配置的自增信号
+  const [retailBiClearSignal, setRetailBiClearSignal] = useState(0);
 
   // ===== 注入全局动画样式 =====
   useEffect(() => {
@@ -170,11 +177,20 @@ export default function App() {
       showAllFields,
       activeChartTab,
       originalFieldRadar: originalFieldState,
-      analysisMode: 'scoreRate',
       filterConditions,
       selectedDimension,
+      dataSource,
     });
-  }, [rawText, selectedField, inputValue, showAllFields, activeChartTab, originalFieldState, filterConditions, selectedDimension, save]);
+  }, [rawText, selectedField, inputValue, showAllFields, activeChartTab, originalFieldState, filterConditions, selectedDimension, dataSource, save]);
+
+  // 用户重新手动输入（rawText 非空）时，来源回退为 manual，确保保存/提示语义与当前数据一致。
+  // 例外：加载示例数据会显式设置 dataSource={type:'sample', sampleId}，且会向 textarea 填充示例文本，
+  // 此时不应被回退覆盖；retail-bi 走 applyExternalParsedTable（rawText 置空），不进入此分支。
+  useEffect(() => {
+    if (rawText.trim() && dataSource.type !== 'manual' && dataSource.type !== 'sample') {
+      setDataSource({ type: 'manual' });
+    }
+  }, [rawText, dataSource]);
 
   // ===== 页面加载后恢复保存状态 =====
   useEffect(() => {
@@ -219,35 +235,31 @@ export default function App() {
     return !score.isAnalyzable;
   }, [parseSummary, analysisDataset]);
 
-  const getFieldAnalysisRole = useCallback((header: string): string => {
-    // Stage 1A-1: 优先使用 analysisDataset.fields
+  // 返回某字段的通用分析角色（metric/dimension/identifier/time/description/ignored/unspecified）。
+  // 新通用 schema 直接返回 analysisRole；旧教育字段元数据仅作为 legacy 兼容单向映射为通用角色。
+  const getFieldAnalysisRole = useCallback((header: string): FieldAnalysisRole => {
     if (analysisDataset?.fields && analysisDataset.fields.length > 0) {
       const schema = analysisDataset.fields.find(f => f.fieldId === header);
-      if (!schema) return 'unknown';
-      // 映射 ResolvedFieldSchema.analysisRole 到旧角色名称（兼容 UI）
-      switch (schema.analysisRole) {
-        case 'metric':
-          // 根据 metricDirection 判断具体类型
-          if (schema.metricDirection === 'lower_is_better') return 'rank';
-          return 'courseScore'; // 默认映射为 courseScore
-        case 'dimension':
-          return 'identity'; // 维度字段映射为 identity
-        case 'identifier':
-          return 'identity';
-        case 'time':
-          return 'textMeta';
-        case 'description':
-          return 'textMeta';
-        case 'ignored':
-          return 'invalid';
-        default:
-          return 'unknown';
-      }
+      return schema?.analysisRole ?? 'unspecified';
     }
-    // Fallback: 使用旧逻辑
-    if (!parseSummary?.fieldTypes) return 'unknown';
+    // Fallback: 旧逻辑（仅当 analysisDataset 为空时的 legacy 兼容，单向映射）
+    if (!parseSummary?.fieldTypes) return 'unspecified';
     const meta = parseSummary.fieldTypes.find(f => f.header === header);
-    return meta?.analysisRole || 'unknown';
+    if (!meta) return 'unspecified';
+    return mapLegacyAnalysisRoleToRole(meta.analysisRole);
+  }, [parseSummary, analysisDataset]);
+
+  // 返回某字段的指标方向（higher_is_better / lower_is_better / neutral / unspecified）。
+  // 新通用 schema 直接返回 metricDirection；旧教育字段元数据仅作为 legacy 兼容单向映射。
+  const getFieldMetricDirection = useCallback((header: string): FieldMetricDirection => {
+    if (analysisDataset?.fields && analysisDataset.fields.length > 0) {
+      const schema = analysisDataset.fields.find(f => f.fieldId === header);
+      return schema?.metricDirection ?? 'unspecified';
+    }
+    if (!parseSummary?.fieldTypes) return 'unspecified';
+    const meta = parseSummary.fieldTypes.find(f => f.header === header);
+    if (!meta) return 'unspecified';
+    return mapLegacyAnalysisRoleToDirection(meta.analysisRole);
   }, [parseSummary, analysisDataset]);
 
   const isRecommendedField = useCallback((header: string): boolean => {
@@ -258,9 +270,9 @@ export default function App() {
       // metric 类型的字段推荐
       return schema.analysisRole === 'metric';
     }
-    // Fallback: 使用旧逻辑
+    // Fallback: 使用旧逻辑（metric 即推荐）
     const role = getFieldAnalysisRole(header);
-    return role === 'primaryTotal' || role === 'rank' || role === 'sectionTotal' || role === 'courseScore';
+    return role === 'metric';
   }, [getFieldAnalysisRole, analysisDataset]);
 
   const availableFields = useMemo(() => {
@@ -273,7 +285,7 @@ export default function App() {
     if (recommended.length === 0 && parsedData.headers.length > 0) {
       const numericCandidates = parsedData.headers.filter(h => {
         const role = getFieldAnalysisRole(h);
-        if (role === 'identity' || role === 'textMeta' || role === 'invalid' || role === 'adjustment') {
+        if (role === 'identifier' || role === 'time' || role === 'description' || role === 'ignored' || role === 'unspecified') {
           return false;
         }
         return isNumericField(h) && !shouldExclude(h);
@@ -296,28 +308,31 @@ export default function App() {
   const groupedFields = useMemo(() => {
     if (!parsedData || !showAllFields) return null;
 
-    const recommended: string[] = [];
-    const adjustment: string[] = [];
-    const identity: string[] = [];
-    const textMeta: string[] = [];
+    const metrics: string[] = [];
+    const dimensions: string[] = [];
+    const identifiers: string[] = [];
+    const timeFields: string[] = [];
+    const descriptions: string[] = [];
     const others: string[] = [];
 
     for (const header of parsedData.headers) {
       const role = getFieldAnalysisRole(header);
-      if (role === 'primaryTotal' || role === 'rank' || role === 'sectionTotal' || role === 'courseScore') {
-        recommended.push(header);
-      } else if (role === 'adjustment') {
-        adjustment.push(header);
-      } else if (role === 'identity') {
-        identity.push(header);
-      } else if (role === 'textMeta') {
-        textMeta.push(header);
+      if (role === 'metric') {
+        metrics.push(header);
+      } else if (role === 'dimension') {
+        dimensions.push(header);
+      } else if (role === 'identifier') {
+        identifiers.push(header);
+      } else if (role === 'time') {
+        timeFields.push(header);
+      } else if (role === 'description') {
+        descriptions.push(header);
       } else {
-        others.push(header);
+        others.push(header); // ignored / unspecified
       }
     }
 
-    return { recommended, adjustment, identity, textMeta, others };
+    return { metrics, dimensions, identifiers, timeFields, descriptions, others };
   }, [parsedData, showAllFields, getFieldAnalysisRole]);
 
   // ===== 事件处理 =====
@@ -334,14 +349,22 @@ export default function App() {
       showAllFields,
       activeChartTab,
       originalFieldRadar: originalFieldState,
-      analysisMode: 'scoreRate',
       filterConditions,
       selectedDimension,
+      dataSource,
     });
-    // 只有真正写入成功才提示成功；写入失败给出明确失败提示
-    setSaveMsg(savedOk ? '已保存当前输入' : '保存失败：本地存储不可用或空间不足。');
+    // 仅真正写入成功才提示成功；写入失败给出明确失败提示
+    const failMsg = '保存失败：本地存储不可用或空间不足。';
+    if (!savedOk) {
+      setSaveMsg(failMsg);
+    } else if (dataSource.type === 'retail-bi') {
+      // 外部数据不落完整数据集，仅保存来源类型与恢复查询所需的小型配置
+      setSaveMsg('已保存当前数据源配置，外部数据可按保存的查询条件重新加载。');
+    } else {
+      setSaveMsg('已保存当前输入');
+    }
     setTimeout(() => setSaveMsg(null), 2000);
-  }, [rawText, selectedField, inputValue, showAllFields, activeChartTab, originalFieldState, filterConditions, selectedDimension, save]);
+  }, [rawText, selectedField, inputValue, showAllFields, activeChartTab, originalFieldState, filterConditions, selectedDimension, dataSource, save]);
 
   const handleReset = useCallback(() => {
     const def = getDefault();
@@ -353,6 +376,8 @@ export default function App() {
     resetGroupAnalysis();
     resetFilter();
     setOriginalFieldState(def.originalFieldRadar);
+    // 恢复默认仅恢复普通系统默认 UI / 输入状态，不当作清除外部数据源
+    setDataSource({ type: 'manual' });
     save(def);
     setSaveMsg('已恢复默认设置');
     setTimeout(() => setSaveMsg(null), 2000);
@@ -360,6 +385,7 @@ export default function App() {
   }, [getDefault, save, setRawText, textareaRef, resetFilter, resetGroupAnalysis]);
 
   const handleClear = useCallback(() => {
+    // 统一清空所有当前数据与外部数据源状态
     clear();
     clearOriginalFieldRadarCache();
     clearParsedTable();
@@ -368,16 +394,32 @@ export default function App() {
     resetFilter();
     setActiveChartTab('histogram');
     setOriginalFieldState({ selections: [], viewMode: 'bar' });
+    // 明确清空零售 BI 概览 / 环比 / 异常
+    setRetailBiOverview(null);
+    setRetailBiComparison(null);
+    setRetailBiAnomalies(null);
+    // 数据来源回退为 manual
+    setDataSource({ type: 'manual' });
+    // 触发 RetailBiConnectionForm 立即同步清空连接配置并删除其独立存储
+    setRetailBiClearSignal(n => n + 1);
     setSaveMsg('已清空数据');
     setTimeout(() => setSaveMsg(null), 2000);
   }, [clear, clearParsedTable, resetFilter, resetGroupAnalysis]);
 
   // ===== 零售 BI 数据加载回调 =====
   const handleRetailBiDataLoaded = useCallback(
-    (table: ParsedTable) => {
+    (table: ParsedTable, config: RetailBiConnectionConfig) => {
       // 使用 applyExternalParsedTable 安全注入数据
       // 该方法内部处理：版本控制、rawText 清空、skipNextRawTextEffect 标志、所有状态注入
       applyExternalParsedTable(table);
+
+      // 记录当前数据来源为 retail-bi（含恢复查询所需的小型配置）
+      setDataSource({
+        type: 'retail-bi',
+        baseUrl: config.baseUrl,
+        startDate: config.startDate,
+        endDate: config.endDate,
+      });
 
       // 重置用户交互状态
       setSelectedField('');
@@ -424,8 +466,10 @@ export default function App() {
     setActiveChartTab('histogram');
 
     loadSampleDataset(dataset.headers, dataset.rows);
+    // 记录当前数据来源为 sample（含 sampleId），切换/保存/清空语义与当前数据一致
+    setDataSource({ type: 'sample', sampleId: dataset.id });
     setTimeout(() => { textareaRef.current?.scrollTo({ top: 0 }); }, 0);
-  }, [rawText, textareaRef, resetFilter, resetGroupAnalysis, loadSampleDataset]);
+  }, [rawText, textareaRef, resetFilter, resetGroupAnalysis, loadSampleDataset, setDataSource]);
 
   const handleFileUploadWithReset = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     clearOriginalFieldRadarCache();
@@ -529,6 +573,7 @@ export default function App() {
               onOverviewLoaded={handleRetailBiOverviewLoaded}
               onComparisonLoaded={handleRetailBiComparisonLoaded}
               onAnomaliesLoaded={handleRetailBiAnomaliesLoaded}
+              clearSignal={retailBiClearSignal}
               onReloadStart={() => {
                 setRetailBiOverview(null);
                 setRetailBiComparison(null);
@@ -624,6 +669,7 @@ export default function App() {
               handleSheetChange={handleSheetChangeWithReset}
               isNumericField={isNumericField}
               getFieldAnalysisRole={getFieldAnalysisRole}
+              getFieldMetricDirection={getFieldMetricDirection}
               availableFields={availableFields}
               isFallbackFieldMode={isFallbackFieldMode}
               groupedFields={groupedFields}

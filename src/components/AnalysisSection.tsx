@@ -110,6 +110,7 @@ export interface AnalysisSectionProps {
   // ─── 字段工具 ───
   isNumericField: (header: string) => boolean;
   getFieldAnalysisRole: (header: string) => string;
+  getFieldMetricDirection: (header: string) => string;
 
   // ─── 计算值 ───
   availableFields: string[];
@@ -137,7 +138,7 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
     showAllFields, setShowAllFields, activeChartTab, setActiveChartTab,
     originalFieldState, setOriginalFieldState,
     availableSheets, selectedSheet, handleSheetChange,
-    isNumericField, getFieldAnalysisRole,
+    isNumericField, getFieldAnalysisRole, getFieldMetricDirection,
     availableFields, isFallbackFieldMode, groupedFields,
     analysisExplanationRef,
     showDebugPanel, setShowDebugPanel,
@@ -630,6 +631,7 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
             <GeneralDataOverview 
               headers={analysisDataset?.headers ?? parsedData.headers} 
               rows={analysisDataset?.rows ?? parsedData.rows} 
+              schemas={analysisDataset?.fields}
             />
           </section>
           </ErrorBoundary>
@@ -728,30 +730,37 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
                 }}>
                   {showAllFields && groupedFields ? (
                     <>
-                      {groupedFields.recommended?.length > 0 && (
-                        <optgroup label="推荐分析字段">
-                          {groupedFields.recommended.map(header => (
+                      {groupedFields.metrics?.length > 0 && (
+                        <optgroup label="推荐指标">
+                          {groupedFields.metrics.map(header => (
                             <option key={header} value={header}>{header}</option>
                           ))}
                         </optgroup>
                       )}
-                      {groupedFields.adjustment?.length > 0 && (
-                        <optgroup label="加扣分/调整项">
-                          {groupedFields.adjustment.map(header => (
+                      {groupedFields.dimensions?.length > 0 && (
+                        <optgroup label="维度字段">
+                          {groupedFields.dimensions.map(header => (
                             <option key={header} value={header}>{header}</option>
                           ))}
                         </optgroup>
                       )}
-                      {groupedFields.identity?.length > 0 && (
-                        <optgroup label="身份信息">
-                          {groupedFields.identity.map(header => (
+                      {groupedFields.identifiers?.length > 0 && (
+                        <optgroup label="标识字段">
+                          {groupedFields.identifiers.map(header => (
                             <option key={header} value={header}>{header}</option>
                           ))}
                         </optgroup>
                       )}
-                      {groupedFields.textMeta?.length > 0 && (
-                        <optgroup label="文本/备注字段">
-                          {groupedFields.textMeta.map(header => (
+                      {groupedFields.timeFields?.length > 0 && (
+                        <optgroup label="时间字段">
+                          {groupedFields.timeFields.map(header => (
+                            <option key={header} value={header}>{header}</option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {groupedFields.descriptions?.length > 0 && (
+                        <optgroup label="描述字段">
+                          {groupedFields.descriptions.map(header => (
                             <option key={header} value={header}>{header}</option>
                           ))}
                         </optgroup>
@@ -993,6 +1002,7 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
                   rows={analysisDataset?.rows ?? parsedData.rows}
                   isNumericField={isNumericField}
                   getFieldAnalysisRole={getFieldAnalysisRole}
+                  getFieldMetricDirection={getFieldMetricDirection}
                   originalFieldState={originalFieldState}
                   onOriginalFieldChange={setOriginalFieldState}
                 />
@@ -1012,6 +1022,9 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
                     rowIndices={outlierExclusion.detectionRowIndices}
                     excludedRowIndices={outlierExclusion.excludedRowIndices}
                     onExcludeChange={outlierExclusion.setExcludedRowIndices}
+                    filteredRowCount={effectiveAnalysisDataset?.rows.length ?? 0}
+                    contextRows={effectiveAnalysisDataset?.rows}
+                    schemas={effectiveAnalysisDataset?.fields}
                   />
                 </ErrorBoundary>
               )}

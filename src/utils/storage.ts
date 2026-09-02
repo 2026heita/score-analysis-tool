@@ -1,7 +1,10 @@
-import type { SavedState } from '../types';
+import type { DataSourceState, SavedState } from '../types';
 
 const STORAGE_KEY = 'score_analyzer_state';
-const CURRENT_VERSION = 3;
+const CURRENT_VERSION = 4;
+
+/** 默认数据来源：普通手动输入 */
+export const DEFAULT_DATA_SOURCE: DataSourceState = { type: 'manual' };
 
 /** @deprecated 教育/高考功能已收敛至 legacy 区 */
 export const DEFAULT_TRADITIONAL_ENTRIES = [
@@ -34,9 +37,9 @@ export function getSystemDefaultState(): SavedState {
     showAllFields: false,
     activeChartTab: 'histogram',
     originalFieldRadar: { selections: [], viewMode: 'bar' },
-    analysisMode: 'scoreRate',
     filterConditions: [],
     selectedDimension: '',
+    dataSource: { type: 'manual' },
   };
 }
 
@@ -50,9 +53,9 @@ export function getDefaultState(): SavedState {
     showAllFields: false,
     activeChartTab: 'histogram',
     originalFieldRadar: { selections: [], viewMode: 'bar' },
-    analysisMode: 'scoreRate',
     filterConditions: [],
     selectedDimension: '',
+    dataSource: { type: 'manual' },
   };
 }
 
@@ -101,6 +104,10 @@ export function isValidSavedState(candidate: unknown): candidate is SavedState {
     if (typeof origin.viewMode !== 'string') return false;
   }
   if (s.filterConditions !== undefined && !Array.isArray(s.filterConditions)) return false;
+  if (s.dataSource !== undefined) {
+    const ds = s.dataSource;
+    if (!isPlainObject(ds) || typeof ds.type !== 'string') return false;
+  }
   return true;
 }
 
@@ -113,6 +120,11 @@ function migrateState(raw: Record<string, unknown>): SavedState {
   }
   if (migrated.selectedDimension === undefined) {
     migrated.selectedDimension = '';
+  }
+
+  // v3 → v4: 新增 dataSource（轻量来源元数据），旧数据默认手动来源
+  if (migrated.dataSource === undefined) {
+    migrated.dataSource = { type: 'manual' };
   }
 
   migrated.version = CURRENT_VERSION;

@@ -1,6 +1,15 @@
 // ============================================================
-// 成绩表智能解析器 - 字段分类（关键词 + 内容特征 + 置信度）
+// 字段分类器（关键词 + 内容特征 + 置信度）
 // ============================================================
+//
+// @deprecated 本文件是旧版（legacy）教育感知分类器，保留用于历史数据兼容：
+//   - 仅通过"教育关键词表"命中时才产出 education 角色（score/courseScore/rank/
+//     primaryTotal/sectionTotal/adjustment 等）；
+//   - 对未命中任何教育关键词的普通业务字段（销售额/库存/客单价…），
+//     一律按结构与数值比例判为 unknown / category / identity 等通用类型，
+//     绝不因"0~150 范围"或"中文+数值"推断为成绩。
+//   - 通用主链路（field-schema / generic 模式）不消费这些教育角色，
+//     相关推导由 field-schema 层负责（本文件结果仅作 legacy 兜底）。
 
 import type { FieldMeta, FieldType, AnalysisRole, ContentFeature } from './types';
 import { parseNumericValue, parseNumericValueLegacy } from './numericParser';
@@ -16,6 +25,10 @@ const IDENTITY_KEYWORDS = [
   '院系', '专业', '行政班', '教学班',
 ];
 
+// legacy 教育成绩关键词表（仅用于旧版教育成绩数据的字段分类）。
+// 这些词限定了字段的业务语义 = 单科成绩，属于教育领域专用词；
+// 不进入通用 schema 推断层（generic 模式用纯结构推断，不依赖这些词）。
+// 普通业务数值字段（销售额/曝光量/GMV…）不在此表内，不会被判为成绩。
 const SCORE_KEYWORDS = [
   '总分', '语文', '数学', '英语', '外语', '物理', '化学', '生物',
   '政治', '历史', '地理', '成绩', '分数', '得分',
@@ -24,6 +37,10 @@ const SCORE_KEYWORDS = [
   // 新增关键词
   '高考成绩', '综合成绩', '赋分后成绩', '赋分前成绩', '语数英总',
   '等级分', '标准分', '原始分', '转换分',
+  // 其他单科科目（曾经依赖"0~150 内容范围→score"启发式识别，
+  // 该启发式已去领域化；这里显式补全科目关键词，保留 legacy 教育识别能力）
+  '体育', '音乐', '美术', '信息技术', '通用技术',
+  '心理健康', '劳动技术', '研究性学习', '社会实践',
 ];
 
 const RANK_KEYWORDS = [
@@ -253,70 +270,34 @@ function classifyFieldByContent(
       };
     }
 
-    // 2b. 内容像学号/考号（长数字串、高唯一率）
+    // 2b. 内容像长数字标识（订单号/工号/流水号等通用概念）
     if (
       feature.valuePattern === 'longNumber' &&
       feature.uniqueRatio > 0.8
     ) {
       return {
         type: 'identity',
-        reason: `内容为长数字串且唯一率高(${(feature.uniqueRatio * 100).toFixed(0)}%)，疑似学号/考号`,
+        reason: `内容为长数字串且唯一率高(${(feature.uniqueRatio * 100).toFixed(0)}%)，疑似标识/编码字段`,
         confidence: 0.8,
       };
     }
 
-    // 2c. 内容像班级标签
-    if (feature.valuePattern === 'classLabel') {
+    // 2c. 内容为低基数类别（少量取值重复的文本/短标签）→ 类别字段
+    //     （不因"包含班级/年级等字样"就判为教育字段，只按结构判断）
+    if (feature.valuePattern === 'classLabel' || feature.uniqueRatio < 0.2) {
       return {
-        type: 'identity',
-        reason: `内容包含班级相关关键词，疑似班级/分组字段`,
-        confidence: 0.85,
-      };
-    }
-
-    // 2d. 内容像分数（数值在合理分数范围内）
-    if (
-      feature.valuePattern === 'scoreLike' &&
-      feature.numericRatio > 0.7
-    ) {
-      // 检查字段名是否包含中文字符（课程名通常有中文）
-      if (/[\u4e00-\u9fa5]/.test(headerLower)) {
-        return {
-          type: 'score',
-          reason: `字段名含中文且数值比例高(${(feature.numericRatio * 100).toFixed(0)}%)，范围${feature.min ?? '?'}~${feature.max ?? '?'}，符合成绩特征`,
-          confidence: 0.8,
-        };
-      }
-      // 即使字段名没有中文，如果数值特征明显，也可能是成绩
-      return {
-        type: 'score',
-        reason: `数值比例高(${(feature.numericRatio * 100).toFixed(0)}%)，范围${feature.min ?? '?'}~${feature.max ?? '?'}，符合成绩特征`,
-        confidence: 0.65,
-      };
-    }
-
-    // 2e. 字段名包含中文字符，且大部分是数值 → 可能是课程成绩
-    if (/[\u4e00-\u9fa5]/.test(headerLower)) {
-      return {
-        type: 'score',
-        reason: `字段名含中文，数值比例高(${(feature.numericRatio * 100).toFixed(0)}%)`,
-        confidence: 0.75,
-      };
-    }
-
-    // 2f. 字段名数字比例过高 → 可能是编码
-    const digitCount = (headerLower.match(/\d/g) || []).length;
-    if (headerLower.length > 0 && digitCount / headerLower.length > 0.5) {
-      return {
-        type: 'unknown',
-        reason: `字段名数字比例过高，疑似编码字段`,
+        type: 'category',
+        reason: `取值重复度高(${(feature.uniqueRatio * 100).toFixed(0)}%)，疑似类别/分组字段`,
         confidence: 0.7,
       };
     }
 
+    // 2d. 其余高数值内容：无法仅凭内容推断业务语义。
+    //     通用模式下不再把"0~150 范围"或"中文+数值"推断为成绩/courseScore。
+    //     数值角色由上层通用 schema 推断（metric/dimension/identifier）决定。
     return {
       type: 'unknown',
-      reason: `数值比例高但无法确定具体类型`,
+      reason: `数值比例高(${(feature.numericRatio * 100).toFixed(0)}%)，业务角色由通用 schema 推断`,
       confidence: 0.5,
     };
   }
@@ -324,21 +305,13 @@ function classifyFieldByContent(
   // 3. 大部分是文本
   const textCount = total - feature.numericRatio * total;
   if (total > 0 && textCount / total > 0.6) {
-    // 检查是否为中文姓名
-    if (feature.valuePattern === 'chineseName') {
+    // 3a. 低基数类别：大量重复取值 → 类别/分组字段
+    //     （内容特征不承载业务语义，2~4 个中文字符不代表"学生"，多重名不代表"班级"）
+    if (feature.uniqueRatio < 0.2) {
       return {
-        type: 'identity',
-        reason: `内容多为2-4个中文字符，疑似姓名字段`,
-        confidence: 0.8,
-      };
-    }
-
-    // 检查是否为班级标签
-    if (feature.valuePattern === 'classLabel') {
-      return {
-        type: 'identity',
-        reason: `内容包含班级相关关键词`,
-        confidence: 0.85,
+        type: 'category',
+        reason: `文本取值重复度高(${(feature.uniqueRatio * 100).toFixed(0)}%)，疑似类别/分组字段`,
+        confidence: 0.7,
       };
     }
 

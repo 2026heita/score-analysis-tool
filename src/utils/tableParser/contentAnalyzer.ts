@@ -1,6 +1,21 @@
 // ============================================================
-// 成绩表智能解析器 - 内容特征分析
+// 表格解析器 - 内容特征分析
 // ============================================================
+//
+// @deprecated contentAnalyzer 是旧版（legacy）字段分类器 fieldClassifier
+//   的内部支撑，仅描述"数据长什么样"（数值/整数/长短文本/唯一率/值域...），
+//   其输出不直接驱动通用 schema 推断层。
+//   通用主链路（field-schema / generic 模式）用纯结构推断，
+//   不再依赖本文件中的 valuePattern 业务猜测（见"设计边界"说明）。
+//
+// 设计边界：
+// - 这里的 valuePattern（chineseName / classLabel / rankLike / scoreLike 等）
+//   是旧版遗留的"内容特征命名"，带一定教育领域色彩；
+//   它们只参与 legacy 分类器对历史上已经命中的教育关键词字段的置信度辅助，
+//   generic 模式不据其判定业务角色。
+// - 数值范围（如 0~1000 → scoreLike）不代表"成绩"，
+//   0~150 范围也不再单独触发 score 判定（已去领域化），
+//   业务含义一律交给 schema 推断层综合字段名决定。
 
 import type { ContentFeature } from './types';
 import { parseNumericValue } from './numericParser';

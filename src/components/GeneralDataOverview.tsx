@@ -4,15 +4,35 @@
  * 默认折叠，不影响现有表格数据分析功能
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { detectDatasetSchema } from '../engine/schemaDetector';
 import { standardizeDataset } from '../engine/featureStandardizer';
-import { analyzeNumericalFeature, detectOutliers } from '../engine/univariateAnalyzer';
+import { analyzeNumericalFeature } from '../engine/univariateAnalyzer';
+import { detectFieldOutliers } from '../engine/outlierDetection';
+import type { OutlierDetectionResult } from '../engine/outlierDetection';
+import { extractFieldNumericValues } from '../engine/outlierExclusion';
+import { outlierCellFor } from '../utils/outlierUx';
+import OutlierDetailsDialog from './OutlierDetailsDialog';
+import type { ResolvedFieldSchema } from '../field-schema';
 import type { FeatureSchema, FeatureType, FeatureStats } from '../engine/types';
 
 interface GeneralDataOverviewProps {
   headers: string[];
   rows: Record<string, string>[];
+  /** 字段模式定义（用于详情弹窗动态选择上下文字段） */
+  schemas?: ResolvedFieldSchema[];
+}
+
+interface NumericalStatEntry {
+  fieldName: string;
+  stats: FeatureStats;
+  outlierCount: number;
+  /** 权威异常检测结果（IQR），可直接交给 OutlierDetailsDialog */
+  detection: OutlierDetectionResult | null;
+  /** 与 detection.records[].rowIndex 对齐的行上下文（真实分析行） */
+  contextRows: Record<string, string>[];
+  /** 与 detection.records[].rowIndex 对齐的展示行号（1 基） */
+  displayRowNumbers: number[];
 }
 
 interface OverviewSummary {
@@ -21,11 +41,7 @@ interface OverviewSummary {
   typeCounts: Record<FeatureType, number>;
   highMissingFields: string[];
   highOutlierFields: Array<{ field: string; count: number }>;
-  numericalStats: Array<{
-    fieldName: string;
-    stats: FeatureStats;
-    outlierCount: number;
-  }>;
+  numericalStats: NumericalStatEntry[];
   warnings: string[];
 }
 
@@ -59,14 +75,19 @@ function computeOverview(headers: string[], rows: Record<string, string>[]): Ove
   for (const f of features) {
     if (f.featureType !== 'numerical') continue;
     const stats = analyzeNumericalFeature(vectors, f.fieldName);
-    const outliers = detectOutliers(vectors, f.fieldName);
+    // 权威异常检测（带误判防护）：复用 OutlierPanel / 详情弹窗同一套 IQR 结果
+    const { values, rowIndices } = extractFieldNumericValues(rows, f.fieldName);
+    const detection = detectFieldOutliers(values, { field: f.fieldName, minSampleSize: 8 });
     numericalStats.push({
       fieldName: f.fieldName,
       stats,
-      outlierCount: outliers.length,
+      outlierCount: detection?.outlierCount ?? 0,
+      detection,
+      contextRows: rowIndices.map(i => rows[i]),
+      displayRowNumbers: rowIndices.map(i => i + 1),
     });
-    if (outliers.length > 0) {
-      highOutlierFields.push({ field: f.fieldName, count: outliers.length });
+    if ((detection?.outlierCount ?? 0) > 0) {
+      highOutlierFields.push({ field: f.fieldName, count: detection!.outlierCount });
     }
   }
 
@@ -112,19 +133,70 @@ function formatNum(n: number | undefined): string {
   return n.toFixed(2);
 }
 
-export default function GeneralDataOverview({ headers, rows }: GeneralDataOverviewProps) {
+/** 移动端检测（与详情弹窗一致，≤640px 视为窄屏） */
+function useIsMobile(): boolean {
+  const [mobile, setMobile] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)');
+    const onChange = () => setMobile(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return mobile;
+}
+
+export default function GeneralDataOverview({ headers, rows, schemas }: GeneralDataOverviewProps) {
   const [expanded, setExpanded] = useState(false);
+  const [detailField, setDetailField] = useState<string | null>(null);
+  const isMobile = useIsMobile();
 
   const overview = useMemo(() => {
     if (!headers.length || !rows.length) return null;
     return computeOverview(headers, rows);
   }, [headers, rows]);
 
+  const detailEntry =
+    detailField && overview ? overview.numericalStats.find(n => n.fieldName === detailField) : undefined;
+
+  // 异常值单元格：按检测状态渲染不同入口（纯 UI，不改算法/数量/阈值）
+  const renderOutlierCell = (ns: NumericalStatEntry) => {
+    if (!ns.detection) return <span style={styles.mutedText}>—</span>;
+    const view = outlierCellFor(
+      ns.detection.status,
+      ns.detection.outlierCount,
+      ns.fieldName,
+      ns.detection.sampleSize,
+      isMobile
+    );
+    if (view.kind === 'button') {
+      return (
+        <button
+          type="button"
+          style={styles.outlierBtn}
+          aria-label={view.ariaLabel}
+          title={view.ariaLabel}
+          onClick={(e) => {
+            e.stopPropagation();
+            setDetailField(ns.fieldName);
+          }}
+        >
+          <span style={styles.outlierWarnIcon}>⚠</span>
+          <span style={styles.outlierText}>{view.text}</span>
+          {/* 桌面端保留箭头，移动端缩短为 ⚠ N · 解析 */}
+          {!isMobile && <span style={styles.outlierChevron}>›</span>}
+        </button>
+      );
+    }
+    return <span style={styles.mutedText} title={view.title}>{view.text}</span>;
+  };
+
   if (!overview) return null;
 
   const { typeCounts } = overview;
 
   return (
+    <>
     <div style={styles.container}>
       <button
         style={styles.header}
@@ -240,9 +312,7 @@ export default function GeneralDataOverview({ headers, rows }: GeneralDataOvervi
                         <td style={styles.tdNum}>{formatNum(ns.stats.min)}</td>
                         <td style={styles.tdNum}>{formatNum(ns.stats.max)}</td>
                         <td style={styles.tdNum}>{formatNum(ns.stats.std)}</td>
-                        <td style={{ ...styles.tdNum, color: ns.outlierCount > 0 ? '#e67700' : undefined }}>
-                          {ns.outlierCount}
-                        </td>
+                        <td style={styles.tdOutlier}>{renderOutlierCell(ns)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -253,6 +323,22 @@ export default function GeneralDataOverview({ headers, rows }: GeneralDataOvervi
         </div>
       )}
     </div>
+
+    {detailEntry && detailEntry.detection && (
+      <OutlierDetailsDialog
+        open={true}
+        onOpenChange={(v) => {
+          if (!v) setDetailField(null);
+        }}
+        result={detailEntry.detection}
+        field={detailEntry.fieldName}
+        contextRows={detailEntry.contextRows}
+        filteredRowCount={rows.length}
+        schemas={schemas}
+        displayRowNumbers={detailEntry.displayRowNumbers}
+      />
+    )}
+    </>
   );
 }
 
@@ -423,5 +509,34 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#475569',
     whiteSpace: 'nowrap' as const,
     fontVariantNumeric: 'tabular-nums',
+  },
+  tdOutlier: {
+    padding: '8px 12px',
+    borderBottom: '1px solid #f1f5f9',
+    textAlign: 'left' as const,
+    whiteSpace: 'nowrap' as const,
+  },
+  outlierBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    fontSize: '13px',
+    fontWeight: 600,
+    padding: '6px 12px',
+    border: '1px solid #fcd34d',
+    borderRadius: '8px',
+    background: '#fffbeb',
+    color: '#b45309',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap' as const,
+    boxShadow: '0 1px 2px rgba(217,119,6,0.12)',
+    transition: 'background 0.15s, border-color 0.15s, box-shadow 0.15s',
+  },
+  outlierWarnIcon: { fontSize: '14px', lineHeight: 1 },
+  outlierText: { lineHeight: 1, display: 'inline-flex', alignItems: 'center' },
+  outlierChevron: { fontSize: '16px', color: '#d97706', fontWeight: 700, paddingLeft: '2px', lineHeight: 1 },
+  mutedText: {
+    fontSize: '13px',
+    color: '#94a3b8',
   },
 };

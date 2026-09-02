@@ -16,29 +16,33 @@ import type {
   FieldInference,
   FieldStatistics,
 } from './types';
-import type { ContentFeature } from '../utils/tableParser/types';
 import { parseNumericValueLegacy } from '../utils/tableParser/numericParser';
 
 // ============================================================
 // 通用字段名规则（不包含教育特定关键词）
 // ============================================================
 
-/** 标识符字段关键词 */
+/**
+ * 标识符字段关键词（仅通用业务概念）。
+ * 教育领域专用词（如"学号"）不放在通用规则里，由 legacy education 兼容层处理。
+ */
 const IDENTIFIER_KEYWORDS = [
-  'id', '编号', '代码', '编码', '账号', '学号', '工号', '订单号',
+  'id', '编号', '代码', '编码', '账号', '工号', '订单号', 'sku', '货号', '条码',
   '手机号', '电话', '身份证', '护照', '卡号',
 ];
 
-/** 时间字段关键词 */
-const DATETIME_KEYWORDS = [
-  '时间', '日期', 'date', 'time', 'datetime', 'timestamp',
-  '创建时间', '更新时间', '开始时间', '结束时间',
+/** 时间字段中文关键词（英文部分交给 matchesDatetimeName 做词边界判断，
+ *  避免 'responseTimeMs'/'loadTime' 等毫秒/耗时字段被误判为时间） */
+const DATETIME_CHINESE_KEYWORDS = [
+  '时间', '日期', '创建时间', '更新时间', '开始时间', '结束时间',
 ];
 
-/** 类别字段关键词 */
+/** 类别字段关键词（仅通用业务概念）。
+ *  "专业/班级"等教育领域多义词不硬编码为通用维度，交给 legacy education 兼容层。
+ *  门店/仓库/渠道等是通用业务分组概念，不属于教育领域。 */
 const CATEGORY_KEYWORDS = [
   '类型', '类别', '分类', '状态', '级别', '等级', '部门', '地区',
-  '省份', '城市', '性别', '民族', '专业', '班级',
+  '省份', '城市', '性别', '民族', '门店', '店铺', '仓库', '渠道', '站点',
 ];
 
 /** 描述字段关键词 */
@@ -60,21 +64,19 @@ const BOOLEAN_KEYWORDS = [
  * 
  * @param header 字段名
  * @param columnValues 该列的所有值
- * @param contentFeature 内容特征（可选）
  * @returns 推断的字段模式
  */
 export function inferGenericFieldSchema(
   header: string,
   columnValues: string[],
-  contentFeature?: ContentFeature
 ): FieldSchema {
   const headerLower = header.toLowerCase().trim();
   
   // 计算统计信息
   const statistics = computeFieldStatistics(columnValues);
   
-  // 如果没有提供 contentFeature，则基于 columnValues 计算
-  const feature = contentFeature || computeContentFeature(columnValues);
+  // 计算通用结构特征（仅描述"数据长什么样"，不含业务语义）
+  const feature = computeStructureFeature(columnValues);
   
   // 第一步：基于字段名规则推断
   const nameResult = inferByFieldName(headerLower);
@@ -142,16 +144,14 @@ function inferByFieldName(headerLower: string): NameInferResult | null {
     }
   }
   
-  // 2. 时间字段
-  for (const kw of DATETIME_KEYWORDS) {
-    if (headerLower.includes(kw.toLowerCase())) {
-      return {
-        dataType: 'datetime',
-        analysisRole: 'time',
-        metricDirection: 'neutral',
-        reason: `字段名包含"${kw}"`,
-      };
-    }
+  // 2. 时间字段（词边界感知，避免 'responseTimeMs' 等毫秒/耗时字段误判）
+  if (matchesDatetimeName(headerLower)) {
+    return {
+      dataType: 'datetime',
+      analysisRole: 'time',
+      metricDirection: 'neutral',
+      reason: `字段名符合时间特征`,
+    };
   }
   
   // 3. 类别字段
@@ -193,9 +193,51 @@ function inferByFieldName(headerLower: string): NameInferResult | null {
   return null;
 }
 
+/**
+ * 判断字段名是否符合"时间"特征（词边界感知）。
+ *
+ * 设计原则：
+ * - 中文时间词（时间/日期/创建时间等）按子串匹配；
+ * - 英文 'time'/'date' 必须出现在词边界（前后缀/独立），
+ *   避免 'responseTimeMs'、'loadTime'、'timeout'、'meantime' 等
+ *   毫秒/耗时字段被误判为日期时间；
+ * - 'datetime'/'timestamp' 为专有名，按子串匹配。
+ */
+function matchesDatetimeName(headerLower: string): boolean {
+  // 中文时间关键词
+  for (const kw of DATETIME_CHINESE_KEYWORDS) {
+    if (headerLower.includes(kw)) return true;
+  }
+  // 专有英文时间词
+  if (headerLower.includes('datetime')) return true;
+  if (headerLower.includes('timestamp')) return true;
+  // 词边界感知的 date/time 前缀或后缀
+  if (/(^|[_-\s/])(time|date)/.test(headerLower)) return true; // 前缀 date: 2026... / date_xxx
+  if (/[_-\s](time|date)$/.test(headerLower)) return true;     // 后缀 create_time / end_date
+  return false;
+}
+
 // ============================================================
 // 基于内容特征推断
 // ============================================================
+
+/**
+ * 通用内容结构特征。
+ * 只描述"数据长什么样"（结构），不描述"业务上是什么"。
+ * 业务含义由 schema 推断再结合字段名决定，绝不根据 0~150 范围或中文字段名推断"成绩"、
+ * 也绝不把小整数序列推断为"排名"。
+ */
+interface StructureFeature {
+  numericRatio: number;      // 可解析为数值的比例 (0-1)
+  integerRatio: number;      // 有效数值中整数比例 (0-1)
+  uniqueRatio: number;       // 唯一值比例 (0-1)
+  longDigitRatio: number;    // 纯数字且长度>=6 的比例 (0-1)
+  avgStringLength: number;   // 平均字符串长度
+  smallIntRatio: number;     // 有效数值中 1..N 小整数比例 (0-1)
+  min: number | null;
+  max: number | null;
+  mean: number | null;
+}
 
 interface StructureInferResult {
   dataType: FieldDataType;
@@ -206,7 +248,7 @@ interface StructureInferResult {
 }
 
 function inferByContentFeature(
-  feature: ContentFeature
+  feature: StructureFeature
 ): StructureInferResult {
   const reasons: string[] = [];
   
@@ -214,9 +256,9 @@ function inferByContentFeature(
   if (feature.numericRatio > 0.8) {
     reasons.push(`数值比例高(${(feature.numericRatio * 100).toFixed(0)}%)`);
     
-    // 1a. 高唯一率 + 长数字串 → 标识符
-    if (feature.uniqueRatio > 0.9 && feature.valuePattern === 'longNumber') {
-      reasons.push('唯一率高且为长数字串');
+    // 1a. 高唯一率 + 长数字串 → 标识符（如工号/订单号/流水号）
+    if (feature.uniqueRatio > 0.9 && feature.longDigitRatio > 0.5) {
+      reasons.push('唯一率高且多为长数字串');
       return {
         dataType: 'identifier',
         analysisRole: 'identifier',
@@ -226,14 +268,14 @@ function inferByContentFeature(
       };
     }
     
-    // 1b. 小整数 + 高唯一率 → 可能是排名（但不确定方向）
+    // 1b. 小整数 + 高唯一率：可能是序号/优先级/量级/编号等。
+    // 仅作为结构特征，绝不赋予"排名"业务语义。
     if (
       feature.integerRatio > 0.9 &&
-      feature.valuePattern === 'rankLike' &&
+      feature.smallIntRatio > 0.7 &&
       feature.uniqueRatio > 0.5
     ) {
-      reasons.push('内容为小整数，符合排名特征');
-      // 通用模式不强制方向，设为 unspecified
+      reasons.push('内容为连续小整数（可能是序号/优先级/编号，非业务结论）');
       return {
         dataType: 'number',
         analysisRole: 'metric',
@@ -281,7 +323,7 @@ function inferByContentFeature(
   
   // 3. 低数值比例 → 文本或类别
   if (feature.numericRatio < 0.3) {
-    // 3a. 高唯一率 + 长文本 → 标识符或描述
+    // 3a. 高唯一率 + 长文本 → 描述
     if (feature.uniqueRatio > 0.8 && feature.avgStringLength > 10) {
       reasons.push('唯一率高且平均字符串长度长');
       return {
@@ -293,7 +335,7 @@ function inferByContentFeature(
       };
     }
     
-    // 3b. 低唯一率 → 类别
+    // 3b. 低唯一率 → 类别（有限取值，如状态/地区/类别）
     if (feature.uniqueRatio < 0.3) {
       reasons.push('唯一率低');
       return {
@@ -305,19 +347,7 @@ function inferByContentFeature(
       };
     }
     
-    // 3c. 中文姓名模式
-    if (feature.valuePattern === 'chineseName') {
-      reasons.push('内容符合中文姓名模式');
-      return {
-        dataType: 'text',
-        analysisRole: 'identifier',
-        metricDirection: 'neutral',
-        confidence: 'medium',
-        reasons,
-      };
-    }
-    
-    // 3d. 普通文本
+    // 3c. 普通文本
     reasons.push('大部分为文本');
     return {
       dataType: 'text',
@@ -336,6 +366,76 @@ function inferByContentFeature(
     metricDirection: 'unspecified',
     confidence: 'unknown',
     reasons,
+  };
+}
+
+function computeStructureFeature(columnValues: string[]): StructureFeature {
+  const total = columnValues.length;
+
+  if (total === 0) {
+    return {
+      numericRatio: 0,
+      integerRatio: 0,
+      uniqueRatio: 0,
+      longDigitRatio: 0,
+      avgStringLength: 0,
+      smallIntRatio: 0,
+      min: null,
+      max: null,
+      mean: null,
+    };
+  }
+
+  let validCount = 0;
+  let integerCount = 0;
+  let smallIntCount = 0;
+  let longDigit = 0;
+  let min: number | null = null;
+  let max: number | null = null;
+  let sum = 0;
+
+  const uniqueValues = new Set<string>();
+  let totalLength = 0;
+
+  for (const val of columnValues) {
+    uniqueValues.add(val);
+    totalLength += val.length;
+
+    const trimmed = val.trim();
+    if (!trimmed) continue;
+
+    // 长数字串（>=6 位纯数字）
+    if (/^\d{6,}$/.test(trimmed)) {
+      longDigit++;
+    }
+
+    const num = parseNumericValueLegacy(trimmed);
+    if (num !== null) {
+      validCount++;
+      sum += num;
+
+      if (min === null || num < min) min = num;
+      if (max === null || num > max) max = num;
+
+      if (Number.isInteger(num)) {
+        integerCount++;
+        if (num >= 1 && num <= total * 2) {
+          smallIntCount++;
+        }
+      }
+    }
+  }
+
+  return {
+    numericRatio: validCount / total,
+    integerRatio: validCount > 0 ? integerCount / validCount : 0,
+    uniqueRatio: uniqueValues.size / total,
+    longDigitRatio: longDigit / total,
+    avgStringLength: totalLength / total,
+    smallIntRatio: validCount > 0 ? smallIntCount / validCount : 0,
+    min,
+    max,
+    mean: validCount > 0 ? sum / validCount : null,
   };
 }
 
@@ -377,105 +477,5 @@ function computeFieldStatistics(columnValues: string[]): FieldStatistics {
     missingCount,
     uniqueCount: uniqueValues.size,
     sampleValues,
-  };
-}
-
-/**
- * 计算内容特征（简化版，用于没有提供 contentFeature 的情况）
- */
-function computeContentFeature(columnValues: string[]): ContentFeature {
-  const total = columnValues.length;
-  
-  if (total === 0) {
-    return {
-      numericRatio: 0,
-      integerRatio: 0,
-      decimalRatio: 0,
-      uniqueRatio: 0,
-      min: null,
-      max: null,
-      mean: null,
-      avgStringLength: 0,
-      valuePattern: 'unknown',
-    };
-  }
-  
-  let validCount = 0;
-  let integerCount = 0;
-  let decimalCount = 0;
-  let min: number | null = null;
-  let max: number | null = null;
-  let sum = 0;
-  
-  const uniqueValues = new Set<string>();
-  let totalLength = 0;
-  
-  let chineseNameCount = 0;
-  let longNumberCount = 0;
-  let rankLikeCount = 0;
-  
-  for (const val of columnValues) {
-    uniqueValues.add(val);
-    totalLength += val.length;
-    
-    const trimmed = val.trim();
-    if (!trimmed) continue;
-    
-    const num = parseNumericValueLegacy(trimmed);
-    if (num !== null) {
-      validCount++;
-      sum += num;
-      
-      if (min === null || num < min) min = num;
-      if (max === null || num > max) max = num;
-      
-      if (Number.isInteger(num)) {
-        integerCount++;
-      } else {
-        decimalCount++;
-      }
-      
-      if (Number.isInteger(num) && num >= 1 && num <= total * 2) {
-        rankLikeCount++;
-      }
-    }
-    
-    // 中文姓名模式
-    if (/^[\u4e00-\u9fa5]{2,4}$/.test(trimmed)) {
-      chineseNameCount++;
-    }
-    
-    // 长数字串模式
-    if (/^\d{6,}$/.test(trimmed)) {
-      longNumberCount++;
-    }
-  }
-  
-  const numericRatio = validCount / total;
-  const integerRatio = validCount > 0 ? integerCount / validCount : 0;
-  const decimalRatio = validCount > 0 ? decimalCount / validCount : 0;
-  const uniqueRatio = uniqueValues.size / total;
-  const mean = validCount > 0 ? sum / validCount : null;
-  const avgStringLength = totalLength / total;
-  
-  let valuePattern: ContentFeature['valuePattern'] = 'unknown';
-  if (chineseNameCount / total > 0.5) {
-    valuePattern = 'chineseName';
-  } else if (longNumberCount / total > 0.5) {
-    valuePattern = 'longNumber';
-  } else if (numericRatio > 0.5 && rankLikeCount / validCount > 0.7) {
-    valuePattern = 'rankLike';
-  }
-  
-  return {
-    numericRatio,
-    integerRatio,
-    decimalRatio,
-    uniqueRatio,
-    min,
-    max,
-    mean,
-    avgStringLength,
-    valuePattern,
   };
 }

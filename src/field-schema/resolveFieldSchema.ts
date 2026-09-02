@@ -24,7 +24,6 @@ import { inferGenericFieldSchema } from './inferGenericSchema';
 import { applyEducationTemplate } from './templates/education';
 import { mapLegacyFieldMetaToSchema } from './legacyAdapter';
 import type { FieldMeta } from '../utils/tableParser/types';
-import type { ContentFeature } from '../utils/tableParser/types';
 
 // ============================================================
 // 解析配置
@@ -37,9 +36,6 @@ export interface ResolveConfig {
   
   /** 旧字段元数据（可选，用于兼容） */
   legacyFieldMeta?: FieldMeta;
-  
-  /** 内容特征（可选） */
-  contentFeature?: ContentFeature;
   
   /** 列值（可选，用于统计） */
   columnValues?: string[];
@@ -62,7 +58,7 @@ export function resolveFieldSchema(
   schema: FieldSchema | null,
   config: ResolveConfig
 ): ResolvedFieldSchema {
-  const { mode, legacyFieldMeta, contentFeature, columnValues } = config;
+  const { mode, legacyFieldMeta, columnValues } = config;
   
   // 优先级 1：用户明确配置
   if (schema?.userOverride) {
@@ -88,7 +84,7 @@ export function resolveFieldSchema(
     }
     // 2c: 内容推断上尝试模板
     if (columnValues) {
-      const inferredSchema = inferGenericFieldSchema(header, columnValues, contentFeature);
+      const inferredSchema = inferGenericFieldSchema(header, columnValues);
       const templateResult = applyEducationTemplate(header, inferredSchema);
       if (templateResult) {
         return extractResolvedSchema(templateResult);
@@ -98,7 +94,7 @@ export function resolveFieldSchema(
   
   // 优先级 3：通用自动推断（generic 模式优先使用内容推断）
   if (columnValues) {
-    const inferredSchema = inferGenericFieldSchema(header, columnValues, contentFeature);
+    const inferredSchema = inferGenericFieldSchema(header, columnValues);
     // 如果通用推断得到有意义的结果，直接使用
     if (inferredSchema.dataType !== 'unknown' || inferredSchema.analysisRole !== 'unspecified') {
       return extractResolvedSchema(inferredSchema);

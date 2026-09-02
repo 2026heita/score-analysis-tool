@@ -61,6 +61,28 @@ export interface TraditionalSubjectRadarState {
   entries: TraditionalSubjectEntry[];
 }
 
+/*
+ * 当前数据来源（轻量元数据）。
+ *
+ * 用途：让主应用知道当前 ParsedTable 来自哪里。
+ * 仅保存恢复/识别所需的小型字段，绝不序列化完整数据集（外部数据可能很大，
+ * 写入 localStorage 会触发 quota 问题）。
+ * - manual：普通粘贴 / 文本编辑；
+ * - file：CSV / Excel 文件上传；
+ * - sample：示例数据；
+ * - retail-bi：外部零售 BI 数据源，附带恢复查询所需的最小配置。
+ */
+export type DataSourceState =
+  | { type: 'manual' }
+  | { type: 'file'; fileName?: string }
+  | { type: 'sample'; sampleId?: string }
+  | {
+      type: 'retail-bi';
+      baseUrl: string;
+      startDate: string;
+      endDate: string;
+    };
+
 export interface SavedState {
   /** 持久化版本号，由 saveState() 统一注入，调用方无需手动设置 */
   version?: number;
@@ -72,11 +94,17 @@ export interface SavedState {
   originalFieldRadar: OriginalFieldRadarState;
   /** @deprecated 教育/高考功能已收敛至 legacy 区，仅保留旧数据兼容读取 */
   traditionalSubjectRadar?: TraditionalSubjectRadarState;
-  analysisMode: AnalysisMode;
+  /** @deprecated 历史遗留：主链路不再使用，仅保留旧数据读取兼容，新版本不再写入 */
+  analysisMode?: AnalysisMode;
   /** v1.3 新增：筛选条件 */
   filterConditions?: FilterCondition[];
   /** v1.3 新增：分组维度 */
   selectedDimension?: string;
+  /**
+   * 当前数据来源（轻量元数据）。
+   * 仅保存来源类型与恢复查询所需的小型配置，不包含完整外部数据集。
+   */
+  dataSource?: DataSourceState;
 }
 
 // 分析解释类型定义
@@ -120,7 +148,7 @@ export interface AnalysisExplanation {
  * 4. parsedRowCount    - 解析器实际处理的数据行数（≤ 20000，受解析上限截断）
  * 5. validRowCount     - 解析后有效数据行数（排除空行、状态行、汇总行、无效行）
  * 6. emptyRowCount     - 空行数（由行分类器统计）
- * 7. statusRowCount    - 仅状态行数（如"缺考"、"弃考"等，由行分类器统计）
+ * 7. statusRowCount    - 仅状态行数（整行只含非数值状态类内容，由行分类器统计）
  * 8. summaryRowCount   - 汇总行数（由行分类器统计）
  * 9. invalidRowCount   - 无效行数（由行分类器统计）
  * 
@@ -148,7 +176,7 @@ export interface DataVolumeState {
   /** 6. 空行数（由行分类器统计） */
   emptyRowCount: number;
 
-  /** 7. 仅状态行数（如"缺考"、"弃考"等，由行分类器统计） */
+  /** 7. 仅状态行数（整行只含非数值状态类内容，由行分类器统计） */
   statusRowCount: number;
 
   /** 8. 汇总行数（由行分类器统计） */

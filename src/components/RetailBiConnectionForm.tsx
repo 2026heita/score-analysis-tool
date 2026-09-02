@@ -15,7 +15,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import type { ParsedTable } from '../types';
-import type { SalesAnomalyVO, SalesOverviewVO, SalesOverviewComparisonVO } from '../types/retailBi';
+import type { RetailBiConnectionConfig, SalesAnomalyVO, SalesOverviewVO, SalesOverviewComparisonVO } from '../types/retailBi';
 import {
   getDefaultRetailBiBaseUrl,
   fetchSalesTrend,
@@ -30,11 +30,19 @@ import { convertSalesDataToParsedTable } from '../services/retailBiAdapter';
  * 组件 Props。
  */
 export interface RetailBiConnectionFormProps {
-  onDataLoaded: (table: ParsedTable) => void;
+  /**
+   * 外部数据加载成功回调。
+   * @param table    转换后的 ParsedTable（进入主分析链路）
+   * @param config   当前查询所用的小型配置（baseUrl / startDate / endDate），
+   *                 用于告诉主应用当前数据来源，并作为恢复查询条件的元数据。
+   */
+  onDataLoaded: (table: ParsedTable, config: RetailBiConnectionConfig) => void;
   onOverviewLoaded?: (overview: SalesOverviewVO) => void;
   onComparisonLoaded?: (comparison: SalesOverviewComparisonVO) => void;
   onAnomaliesLoaded?: (anomalies: SalesAnomalyVO[]) => void;
   onReloadStart?: () => void;
+  /** 父组件触发“清空所有数据”时的自增信号；值变化时同步清空本组件连接配置并删除独立存储 */
+  clearSignal?: number;
 }
 
 /**
@@ -152,6 +160,7 @@ export function RetailBiConnectionForm({
   onComparisonLoaded,
   onAnomaliesLoaded,
   onReloadStart,
+  clearSignal,
 }: RetailBiConnectionFormProps) {
   // 初始化表单状态
   const [baseUrl, setBaseUrl] = useState('');
@@ -208,6 +217,26 @@ export function RetailBiConnectionForm({
       endDate: trimmedEndDate,
     });
   }, [isHydrated, baseUrl, startDate, endDate]);
+
+  // 父组件“清空所有数据”信号：值变化时立即同步清空连接配置（并删除独立存储），
+  // 避免仅清空主 state 后本组件仍显示旧值
+  const prevClearSignal = useRef(clearSignal ?? 0);
+  useEffect(() => {
+    if (clearSignal === undefined) return;
+    if (clearSignal === prevClearSignal.current) return;
+    prevClearSignal.current = clearSignal;
+
+    setBaseUrl('');
+    setStartDate('');
+    setEndDate('');
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // 忽略存储失败
+    }
+  }, [clearSignal]);
 
   // 同步 details 元素的 open 属性与 React 状态
   useEffect(() => {
@@ -283,8 +312,15 @@ export function RetailBiConnectionForm({
         endDate: endDate.trim(),
       });
 
-      // 通知父组件
-      onDataLoaded(parsedTable);
+      // 通知父组件：ParsedTable + 当前查询配置（来源元数据）
+      onDataLoaded(
+        parsedTable,
+        {
+          baseUrl: baseUrl.trim(),
+          startDate: startDate.trim(),
+          endDate: endDate.trim(),
+        }
+      );
 
       // 如果提供了概览回调，加载单日概览数据
       if (onOverviewLoaded) {

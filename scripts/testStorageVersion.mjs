@@ -69,7 +69,6 @@ saveState({
   showAllFields: false,
   activeChartTab: 'histogram',
   originalFieldRadar: { selections: [], viewMode: 'bar' },
-  analysisMode: 'scoreRate',
 });
 
 const saved = loadSavedState();
@@ -80,7 +79,8 @@ assert(saved.selectedField === '分数', 'selectedField 正确保存');
 assert(saved.inputValue === '90', 'inputValue 正确保存');
 assert(saved.activeChartTab === 'histogram', 'activeChartTab 正确保存');
 assert(saved.showAllFields === false, 'showAllFields 正确保存');
-assert(saved.analysisMode === 'scoreRate', 'analysisMode 正确保存');
+// 新版本不再写入已废弃的 analysisMode（scoreRate 为主链路历史遗留，保留旧数据读取兼容）
+assert(saved.analysisMode === undefined, '新版本不再写入废弃的 analysisMode');
 assert(saved.originalFieldRadar.selections.length === 0, 'originalFieldRadar 正确保存');
 
 console.log('=== 测试 2: 即使调用方传入 version: 1，saveState 仍覆盖为 CURRENT_VERSION ===');
@@ -94,7 +94,6 @@ saveState({
   showAllFields: false,
   activeChartTab: 'histogram',
   originalFieldRadar: { selections: [], viewMode: 'bar' },
-  analysisMode: 'scoreRate',
 });
 
 const saved2 = loadSavedState();

@@ -18,6 +18,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { parseTableText } from '../utils/parseTable';
 import { parseTableFile, type ParsedFileResult } from '../utils/fileImport';
 import { buildParseReport } from '../utils/tableParser';
+import { calculateFieldAnalyticScore } from '../utils/tableParser/fieldClassifier';
 import { 
   createVersionControlState, 
   incrementVersion, 
@@ -117,11 +118,11 @@ export function useParsedTable(): UseParsedTableReturn {
   // ===== 解析报告派生 =====
   const parseReport = useMemo(() => {
     if (!parsedData || !parseSummary?.fieldTypes) return null;
+    // 推荐字段基于通用可分析性评分（domain-agnostic），而非教育领域角色。
+    // 复用 calculateFieldAnalyticScore（数值比例/方差/唯一率/单调性/名称强度的通用评分），
+    // 避免在此主链路硬编码 primaryTotal / rank / courseScore 等旧教育角色。
     const recommendedFields = parseSummary.fieldTypes
-      .filter(meta => {
-        const role = meta.analysisRole;
-        return role === 'primaryTotal' || role === 'rank' || role === 'sectionTotal' || role === 'courseScore';
-      })
+      .filter(meta => calculateFieldAnalyticScore(meta).isAnalyzable)
       .map(meta => meta.header);
     return buildParseReport(
       parsedData.headers,

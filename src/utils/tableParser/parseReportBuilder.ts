@@ -47,7 +47,9 @@ export function buildParseReport(
   }
   
   if (summary.primaryTotalCount === 0 && summary.courseScoreCount > 0) {
-    warnings.push('未找到总分字段，但发现课程成绩字段');
+    // legacy education 特异性提示：单科成绩存在但未识别出总成绩字段。
+    // 仅用于旧版教育字段元数据兼容；通用模式不会进入此分支。
+    warnings.push('未识别到汇总/总成绩类字段，但存在单科成绩类字段（教育数据兼容）');
   }
   
   return { summary, fields, warnings };
@@ -161,12 +163,12 @@ function determineHiddenStatus(
     return { hiddenByDefault: false, hiddenReason: '' };
   }
   
-  // 根据 analysisRole 确定隐藏原因
+  // 根据 analysisRole 确定隐藏原因（对旧版教育角色采用通用展示文案）
   switch (meta.analysisRole) {
     case 'identity':
-      return { hiddenByDefault: true, hiddenReason: '身份标识字段，不参与数值分析' };
+      return { hiddenByDefault: true, hiddenReason: '标识/身份字段，不参与数值分析' };
     case 'adjustment':
-      return { hiddenByDefault: true, hiddenReason: '加扣分调整项，默认不参与排名分析' };
+      return { hiddenByDefault: true, hiddenReason: '调整性字段（加分/扣分），默认不参与数值分析' };
     case 'textMeta':
       return { hiddenByDefault: true, hiddenReason: '文本/元数据字段，不适合数值统计' };
     case 'invalid':

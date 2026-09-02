@@ -23,6 +23,7 @@ interface OriginalFieldRadarProps {
   rows: Record<string, string>[];
   isNumericField: (header: string) => boolean;
   getFieldAnalysisRole?: (header: string) => string;
+  getFieldMetricDirection?: (header: string) => string;
   excludedKeywords?: string[];
   initialSelections?: FieldSelection[];
   initialViewMode?: 'bar' | 'radar';
@@ -30,7 +31,7 @@ interface OriginalFieldRadarProps {
 }
 
 type ViewMode = 'bar' | 'radar';
-type QuickMode = 'recommended' | 'totalRank' | 'sectionTotal' | 'courseScore' | null;
+type QuickMode = 'recommended' | 'others' | null;
 
 const EXCLUDED_DEFAULT = ['名次', '排名', '序号', '编号'];
 
@@ -50,32 +51,30 @@ export function clearOriginalFieldRadarCache(): void {
   _cachedViewMode = null;
 }
 
-// 字段分组配置：每个字段只属于一个分组
+// 字段分组配置：每个字段只属于一个分组（基于通用分析角色）
 const FIELD_GROUP_CONFIG = [
-  { key: 'totalRank', label: '总分 / 排名', roles: ['primaryTotal', 'rank'], defaultExpanded: true },
-  { key: 'sectionTotal', label: '模块合计', roles: ['sectionTotal'], defaultExpanded: true },
-  { key: 'courseScore', label: '数值字段', roles: ['courseScore'], defaultExpanded: true },
-  { key: 'adjustment', label: '加扣分 / 调整项', roles: ['adjustment'], defaultExpanded: false },
-  { key: 'identity', label: '身份信息', roles: ['identity'], defaultExpanded: false },
-  { key: 'other', label: '其他字段', roles: ['textMeta', 'unknown'], defaultExpanded: false },
-  { key: 'invalid', label: '无效 / 未命名字段', roles: ['invalid'], defaultExpanded: false },
+  { key: 'metrics', label: '推荐指标', roles: ['metric'], defaultExpanded: true },
+  { key: 'dimensions', label: '维度字段', roles: ['dimension'], defaultExpanded: false },
+  { key: 'identifiers', label: '标识字段', roles: ['identifier'], defaultExpanded: false },
+  { key: 'times', label: '时间字段', roles: ['time'], defaultExpanded: false },
+  { key: 'descriptions', label: '描述字段', roles: ['description'], defaultExpanded: false },
+  { key: 'others', label: '其他字段', roles: ['ignored', 'unspecified', 'unknown'], defaultExpanded: false },
 ];
 
-// 字段类型标签映射
+// 字段类型标签映射（通用 role → 展示文案与配色）
 const ROLE_BADGE_MAP: Record<string, { label: string; color: string; bg: string }> = {
-  primaryTotal: { label: '总分', color: '#059669', bg: '#d1fae5' },
-  rank: { label: '排名', color: '#7c3aed', bg: '#ede9fe' },
-  sectionTotal: { label: '合计', color: '#0891b2', bg: '#cffafe' },
-  courseScore: { label: '课程', color: '#2563eb', bg: '#dbeafe' },
-  adjustment: { label: '调整项', color: '#d97706', bg: '#fef3c7' },
-  identity: { label: '身份', color: '#64748b', bg: '#f1f5f9' },
-  textMeta: { label: '其他', color: '#64748b', bg: '#f1f5f9' },
+  metric: { label: '指标', color: '#059669', bg: '#d1fae5' },
+  dimension: { label: '维度', color: '#0891b2', bg: '#cffafe' },
+  identifier: { label: '标识', color: '#64748b', bg: '#f1f5f9' },
+  time: { label: '时间', color: '#7c3aed', bg: '#ede9fe' },
+  description: { label: '描述', color: '#2563eb', bg: '#dbeafe' },
+  ignored: { label: '忽略', color: '#94a3b8', bg: '#f8fafc' },
+  unspecified: { label: '未指定', color: '#d97706', bg: '#fef3c7' },
   unknown: { label: '其他', color: '#64748b', bg: '#f1f5f9' },
-  invalid: { label: '无效', color: '#dc2626', bg: '#fee2e2' },
 };
 
-// 是否推荐分析
-const RECOMMENDED_ROLES = new Set(['primaryTotal', 'rank', 'sectionTotal', 'courseScore']);
+// 是否推荐分析（仅 metric 角色）
+const RECOMMENDED_ROLES = new Set(['metric']);
 
 // 根据条形图容器宽度决定 Y 轴单行标签的“显示列数”预算。
 // 容器宽越高预算越大（标签可用 px 越多）；不同设备给不同预算，
@@ -95,7 +94,7 @@ function labelPxWidthForBudget(budget: number): number {
 }
 
 export default function OriginalFieldRadar({
-  headers, rows, isNumericField, getFieldAnalysisRole, excludedKeywords,
+  headers, rows, isNumericField, getFieldAnalysisRole, getFieldMetricDirection, excludedKeywords,
   initialSelections, initialViewMode, onStateChange,
 }: OriginalFieldRadarProps) {
   // 缓存清理：当 headers 变化时（说明切换了文件或重新解析），清空缓存
@@ -211,9 +210,9 @@ export default function OriginalFieldRadar({
   const [showPasteModal, setShowPasteModal] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const [pasteErrors, setPasteErrors] = useState<string[]>([]);
-  const [studentSearchQuery, setStudentSearchQuery] = useState('');
-  const [matchedStudents, setMatchedStudents] = useState<Record<string, string>[]>([]);
-  const [showStudentPicker, setShowStudentPicker] = useState(false);
+  const [rowSearchQuery, setRowSearchQuery] = useState('');
+  const [matchedRows, setMatchedRows] = useState<Record<string, string>[]>([]);
+  const [showRowPicker, setShowRowPicker] = useState(false);
 
   // 组合 selections 用于渲染
   const selections = useMemo(() => {
@@ -246,13 +245,21 @@ export default function OriginalFieldRadar({
     return headers.filter(h => isNumericField(h) && !excluded.some(kw => h.includes(kw)));
   }, [headers, isNumericField, excluded]);
 
-  // 获取字段角色的辅助函数（仅使用 parseSummary 传入的分类，不做本地推断）
+  // 获取字段角色的辅助函数（仅使用传入的分类，不做本地推断）
   const getFieldRole = useCallback((header: string): string => {
     if (getFieldAnalysisRole) {
       return getFieldAnalysisRole(header);
     }
     return 'unknown';
   }, [getFieldAnalysisRole]);
+
+  // 获取字段指标方向（higher_is_better / lower_is_better / neutral），用于百分位方向判断
+  const getMetricDirection = useCallback((header: string): string => {
+    if (getFieldMetricDirection) {
+      return getFieldMetricDirection(header);
+    }
+    return 'unspecified';
+  }, [getFieldMetricDirection]);
 
   // 按 analysisRole 分组字段，每个字段只属于一个分组
   const groupedFields = useMemo(() => {
@@ -272,10 +279,10 @@ export default function OriginalFieldRadar({
     return groups;
   }, [numericFields, getFieldRole]);
 
-  // 默认推荐字段（最多 12 个高优先级字段）
+  // 默认推荐字段（最多 12 个高优先级字段：metric 角色）
   const defaultRecommendedFields = useMemo(() => {
     const result: string[] = [];
-    const priorityOrder = ['primaryTotal', 'rank', 'sectionTotal', 'courseScore'];
+    const priorityOrder = ['metric'];
     for (const role of priorityOrder) {
       for (const field of numericFields) {
         if (result.length >= 12) break;
@@ -383,43 +390,18 @@ export default function OriginalFieldRadar({
     }
     setTempSelections(new Set(fields));
     setActiveQuickMode('recommended');
-    showToast(`已选择 ${fields.length} 个推荐字段`);
+    showToast(`已选择 ${fields.length} 个推荐指标`);
   }, [defaultRecommendedFields, showToast]);
 
-  const quickSelectTotalAndRank = useCallback(() => {
-    const fields = numericFields.filter(f => {
-      const role = getFieldRole(f);
-      return role === 'primaryTotal' || role === 'rank';
-    });
+  const quickSelectOthers = useCallback(() => {
+    const fields = (groupedFields['others'] || []);
     if (fields.length === 0) {
-      showToast('当前表格没有匹配的总分/排名字段');
+      showToast('当前表格没有匹配的其他字段');
       return;
     }
     setTempSelections(new Set(fields));
-    setActiveQuickMode('totalRank');
-    showToast(`已选择 ${fields.length} 个总分/排名字段`);
-  }, [numericFields, getFieldRole, showToast]);
-
-  const quickSelectSectionTotal = useCallback(() => {
-    const fields = groupedFields['sectionTotal'] || [];
-    if (fields.length === 0) {
-      showToast('当前表格没有匹配的模块合计字段');
-      return;
-    }
-    setTempSelections(new Set(fields));
-    setActiveQuickMode('sectionTotal');
-    showToast(`已选择 ${fields.length} 个模块合计字段`);
-  }, [groupedFields, showToast]);
-
-  const quickSelectCourseScore = useCallback(() => {
-    const fields = groupedFields['courseScore'] || [];
-    if (fields.length === 0) {
-      showToast('当前表格没有匹配的数值字段');
-      return;
-    }
-    setTempSelections(new Set(fields));
-    setActiveQuickMode('courseScore');
-    showToast(`已选择 ${fields.length} 个数值字段`);
+    setActiveQuickMode('others');
+    showToast(`已选择 ${fields.length} 个其他字段`);
   }, [groupedFields, showToast]);
 
   const quickClearAll = useCallback(() => {
@@ -430,10 +412,8 @@ export default function OriginalFieldRadar({
 
   // 快捷模式标签
   const quickModeLabel: Record<string, string> = {
-    recommended: '推荐字段',
-    totalRank: '总分 + 排名',
-    sectionTotal: '模块合计',
-    courseScore: '数值字段',
+    recommended: '推荐指标',
+    others: '其他字段',
   };
 
   // 打开粘贴弹窗
@@ -513,95 +493,97 @@ export default function OriginalFieldRadar({
   const [lookupMessage, setLookupMessage] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null);
   const [emptyFields, setEmptyFields] = useState<string[]>([]);
 
-  // 查找并填充学生数据（点击按钮或回车触发）
-  const performStudentLookup = useCallback(() => {
-    const query = studentSearchQuery.trim();
+  // 查找并填充某行数据（点击按钮或回车触发）。按"名称/标识"通用字段精确或模糊匹配。
+  const performRowLookup = useCallback(() => {
+    const query = rowSearchQuery.trim();
     if (!query) {
-      setLookupMessage({ type: 'warning', text: '请输入姓名或学号' });
+      setLookupMessage({ type: 'warning', text: '请输入名称或标识' });
       return;
     }
 
-    // 查找姓名和学号字段
+    // 查找名称字段和标识字段（通用业务词为主；教育词作为合法数据列名兼容保留）
     const nameField = headers.find(h => {
       const lower = h.toLowerCase();
-      return lower.includes('姓名') || lower.includes('学生姓名');
+      return lower.includes('姓名') || lower.includes('名称') || lower.includes('学生姓名') || lower === 'name';
     });
-    const studentIdField = headers.find(h => {
+    const idField = headers.find(h => {
       const lower = h.toLowerCase();
-      return lower.includes('学号') || lower.includes('考生号') || lower.includes('考号') || lower.includes('准考证号');
+      return lower.includes('编号') || lower.includes('代号') || lower.includes('编码') || lower.includes('工号')
+        || lower.includes('订单号') || lower.includes('账号') || lower.includes('id')
+        || lower.includes('学号') || lower.includes('考生号') || lower.includes('考号') || lower.includes('准考证号');
     });
 
-    if (!nameField && !studentIdField) {
-      setLookupMessage({ type: 'error', text: '未找到姓名或学号字段' });
+    if (!nameField && !idField) {
+      setLookupMessage({ type: 'error', text: '未找到名称或标识字段' });
       return;
     }
 
     const queryLower = query.toLowerCase();
 
-    // 优先级1：学号精确匹配
-    if (studentIdField) {
+    // 优先级1：标识精确匹配
+    if (idField) {
       const exactIdMatch = rows.filter(row => {
-        const id = (row[studentIdField] || '').trim();
+        const id = (row[idField] || '').trim();
         return id.toLowerCase() === queryLower;
       });
       if (exactIdMatch.length === 1) {
-        fillStudentData(exactIdMatch[0]);
+        fillRowData(exactIdMatch[0]);
         return;
       } else if (exactIdMatch.length > 1) {
-        setMatchedStudents(exactIdMatch);
-        setShowStudentPicker(true);
-        setLookupMessage({ type: 'warning', text: `找到 ${exactIdMatch.length} 个相同学号的学生，请选择` });
+        setMatchedRows(exactIdMatch);
+        setShowRowPicker(true);
+        setLookupMessage({ type: 'warning', text: `找到 ${exactIdMatch.length} 条相同标识的记录，请选择` });
         return;
       }
     }
 
-    // 优先级2：姓名精确匹配
+    // 优先级2：名称精确匹配
     if (nameField) {
       const exactNameMatch = rows.filter(row => {
         const name = (row[nameField] || '').trim();
         return name.toLowerCase() === queryLower;
       });
       if (exactNameMatch.length === 1) {
-        fillStudentData(exactNameMatch[0]);
+        fillRowData(exactNameMatch[0]);
         return;
       } else if (exactNameMatch.length > 1) {
-        setMatchedStudents(exactNameMatch);
-        setShowStudentPicker(true);
-        setLookupMessage({ type: 'warning', text: `找到 ${exactNameMatch.length} 个同名学生，请选择` });
+        setMatchedRows(exactNameMatch);
+        setShowRowPicker(true);
+        setLookupMessage({ type: 'warning', text: `找到 ${exactNameMatch.length} 条相同名称的记录，请选择` });
         return;
       }
     }
 
-    // 优先级3：姓名模糊匹配
+    // 优先级3：名称模糊匹配
     if (nameField) {
       const fuzzyNameMatch = rows.filter(row => {
         const name = (row[nameField] || '').trim().toLowerCase();
         return name.includes(queryLower);
       });
       if (fuzzyNameMatch.length === 1) {
-        fillStudentData(fuzzyNameMatch[0]);
+        fillRowData(fuzzyNameMatch[0]);
         return;
       } else if (fuzzyNameMatch.length > 1) {
-        setMatchedStudents(fuzzyNameMatch);
-        setShowStudentPicker(true);
-        setLookupMessage({ type: 'warning', text: `找到 ${fuzzyNameMatch.length} 个匹配学生，请选择` });
+        setMatchedRows(fuzzyNameMatch);
+        setShowRowPicker(true);
+        setLookupMessage({ type: 'warning', text: `找到 ${fuzzyNameMatch.length} 条匹配记录，请选择` });
         return;
       }
     }
 
     // 未找到
-    setLookupMessage({ type: 'error', text: '未找到匹配学生，请检查姓名或学号。' });
-    setMatchedStudents([]);
-    setShowStudentPicker(false);
-  }, [studentSearchQuery, headers, rows]);
+    setLookupMessage({ type: 'error', text: '未找到匹配记录，请检查名称或标识。' });
+    setMatchedRows([]);
+    setShowRowPicker(false);
+  }, [rowSearchQuery, headers, rows]);
 
-  // 填充学生数据（只更新 fieldValues，不修改 selectedFields）
-  const fillStudentData = useCallback((studentRow: Record<string, string>) => {
+  // 填充行数据（只更新 fieldValues，不修改 selectedFields）
+  const fillRowData = useCallback((row: Record<string, string>) => {
     const updates: Record<string, number> = {};
     const emptyFieldsList: string[] = [];
 
     for (const field of selectedFields) {
-      const rawValue = studentRow[field];
+      const rawValue = row[field];
       if (rawValue !== undefined && rawValue !== null && rawValue !== '') {
         const parsed = parseNumericValue(rawValue);
         if (parsed.status === 'valid') {
@@ -623,30 +605,36 @@ export default function OriginalFieldRadar({
     setEmptyFields(emptyFieldsList);
 
     // 显示反馈消息
-    const nameField = headers.find(h => h.toLowerCase().includes('姓名'));
-    const studentIdField = headers.find(h => h.toLowerCase().includes('学号') || h.toLowerCase().includes('考号'));
-    const studentName = nameField ? studentRow[nameField] : '';
-    const studentId = studentIdField ? studentRow[studentIdField] : '';
-    const displayName = studentName || studentId || '学生';
+    const nameField = headers.find(h => {
+      const lower = h.toLowerCase();
+      return lower.includes('姓名') || lower.includes('名称') || lower === 'name';
+    });
+    const idField = headers.find(h => {
+      const lower = h.toLowerCase();
+      return lower.includes('编号') || lower.includes('编码') || lower.includes('id') || lower.includes('学号') || lower.includes('考号');
+    });
+    const rowName = nameField ? row[nameField] : '';
+    const rowId = idField ? row[idField] : '';
+    const displayName = rowName || rowId || '记录';
 
     if (filledCount > 0) {
       setLookupMessage({ 
         type: 'success', 
-        text: `已找到：${displayName}${studentId ? ` / ${studentId}` : ''}，已填充 ${filledCount} 个字段。` 
+        text: `已找到：${displayName}${rowId ? ` / ${rowId}` : ''}，已填充 ${filledCount} 个字段。` 
       });
     } else {
-      setLookupMessage({ type: 'warning', text: `已找到：${displayName}，但该学生所有字段均无数据。` });
+      setLookupMessage({ type: 'warning', text: `已找到：${displayName}，但该记录所有字段均无数据。` });
     }
 
     // 清空选择器
-    setMatchedStudents([]);
-    setShowStudentPicker(false);
+    setMatchedRows([]);
+    setShowRowPicker(false);
   }, [selectedFields, headers]);
 
-  // 选择学生（从候选列表中选择）
-  const selectStudent = useCallback((student: Record<string, string>) => {
-    fillStudentData(student);
-  }, [fillStudentData]);
+  // 选择行（从候选列表中选择）
+  const selectRow = useCallback((row: Record<string, string>) => {
+    fillRowData(row);
+  }, [fillRowData]);
 
   // 字段管理
   const addField = useCallback(() => {
@@ -705,13 +693,14 @@ export default function OriginalFieldRadar({
         return { field: s.field, userValue: s.userValue, percentile: 0, max: 0, min: 0, mean: 0, median: 0, count: 0 };
       }
 
-      // 使用 parseSummary 的 analysisRole 判断是否为排名字段
-      const isRank = getFieldRole(s.field) === 'rank';
-      const percentile = computePercentile(result.values, s.userValue, isRank);
+      // 百分位方向由字段的 metricDirection 决定（lower_is_better 时取低位百分位更优），
+      // 不再通过旧 role 名（rank）推断。
+      const isLowerBetter = getMetricDirection(s.field) === 'lower_is_better';
+      const percentile = computePercentile(result.values, s.userValue, isLowerBetter);
 
       return { field: s.field, userValue: s.userValue, percentile, max: stats.max, min: stats.min, mean: stats.mean, median: stats.median, count: stats.count };
     });
-  }, [selections, rows, getFieldRole]);
+  }, [selections, rows, getMetricDirection]);
 
   const sortedStats = useMemo(() => {
     return [...rawStats].sort((a, b) => b.percentile - a.percentile);
@@ -897,31 +886,31 @@ export default function OriginalFieldRadar({
 
   return (
     <div>
-      {/* 学生搜索框 */}
+      {/* 查找某一行的数据并自动填充：按名称或标识列匹配 */}
       {rows.length > 0 && (
-        <div style={styles.studentSearchContainer}>
-          <div style={styles.studentSearchRow}>
-            <div style={styles.studentSearchWrap}>
-              <svg style={styles.studentSearchIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <div style={styles.rowSearchContainer}>
+          <div style={styles.rowSearchRow}>
+            <div style={styles.rowSearchWrap}>
+              <svg style={styles.rowSearchIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="11" cy="11" r="8" />
                 <path d="M21 21l-4.35-4.35" />
               </svg>
               <input
                 type="text"
-                placeholder="输入姓名或学号查找并自动填充"
-                value={studentSearchQuery}
-                onChange={e => setStudentSearchQuery(e.target.value)}
+                placeholder="输入名称或标识查找并自动填充"
+                value={rowSearchQuery}
+                onChange={e => setRowSearchQuery(e.target.value)}
                 onKeyDown={e => {
                   if (e.key === 'Enter') {
-                    performStudentLookup();
+                    performRowLookup();
                   }
                 }}
-                style={styles.studentSearchInput}
+                style={styles.rowSearchInput}
               />
             </div>
             <button 
-              style={styles.studentSearchButton}
-              onClick={performStudentLookup}
+              style={styles.rowSearchButton}
+              onClick={performRowLookup}
             >
               查找并填充
             </button>
@@ -942,45 +931,55 @@ export default function OriginalFieldRadar({
           {/* 空字段弱提示 */}
           {emptyFields.length > 0 && (
             <div style={styles.emptyFieldsHint}>
-              以下字段在该学生中无数据：{emptyFields.join('、')}
+              以下字段在该记录中无数据：{emptyFields.join('、')}
             </div>
           )}
 
-          {/* 学生选择器 */}
-          {showStudentPicker && matchedStudents.length > 1 && (
-            <div style={styles.studentPicker}>
-              <div style={styles.studentPickerHeader}>
-                <span>找到 {matchedStudents.length} 个匹配学生，请选择：</span>
+          {/* 记录选择器 */}
+          {showRowPicker && matchedRows.length > 1 && (
+            <div style={styles.rowPicker}>
+              <div style={styles.rowPickerHeader}>
+                <span>找到 {matchedRows.length} 条匹配记录，请选择：</span>
                 <button
-                  style={styles.studentPickerClose}
+                  style={styles.rowPickerClose}
                   onClick={() => {
-                    setShowStudentPicker(false);
-                    setMatchedStudents([]);
-                    setStudentSearchQuery('');
+                    setShowRowPicker(false);
+                    setMatchedRows([]);
+                    setRowSearchQuery('');
                     setLookupMessage(null);
                   }}
                 >
                   ×
                 </button>
               </div>
-              <div style={styles.studentPickerList}>
-                {matchedStudents.map((student, idx) => {
-                  const nameField = headers.find(h => h.toLowerCase().includes('姓名'));
-                  const studentIdField = headers.find(h => h.toLowerCase().includes('学号'));
-                  const classField = headers.find(h => h.toLowerCase().includes('班级'));
-                  const name = nameField ? student[nameField] : '';
-                  const studentId = studentIdField ? student[studentIdField] : '';
-                  const className = classField ? student[classField] : '';
+              <div style={styles.rowPickerList}>
+                {matchedRows.map((row, idx) => {
+                  const nameField = headers.find(h => {
+                    const lower = h.toLowerCase();
+                    return lower.includes('姓名') || lower.includes('名称') || lower === 'name';
+                  });
+                  const idField = headers.find(h => {
+                    const lower = h.toLowerCase();
+                    return lower.includes('编号') || lower.includes('编码') || lower.includes('id') || lower.includes('学号');
+                  });
+                  // 额外分组列（如"班级/部门/地区"），用于区分多条同名记录
+                  const groupField = headers.find(h => {
+                    const lower = h.toLowerCase();
+                    return lower.includes('班级') || lower.includes('部门') || lower.includes('地区') || lower.includes('组别') || lower === 'group';
+                  });
+                  const name = nameField ? row[nameField] : '';
+                  const rowId = idField ? row[idField] : '';
+                  const groupLabel = groupField ? row[groupField] : '';
 
                   return (
                     <div
                       key={idx}
-                      style={styles.studentPickerItem}
-                      onClick={() => selectStudent(student)}
+                      style={styles.rowPickerItem}
+                      onClick={() => selectRow(row)}
                     >
-                      <span style={styles.studentPickerName}>{name}</span>
-                      {studentId && <span style={styles.studentPickerId}>{studentId}</span>}
-                      {className && <span style={styles.studentPickerClass}>{className}</span>}
+                      <span style={styles.rowPickerName}>{name}</span>
+                      {rowId && <span style={styles.rowPickerId}>{rowId}</span>}
+                      {groupLabel && <span style={styles.rowPickerClass}>{groupLabel}</span>}
                     </div>
                   );
                 })}
@@ -1254,36 +1253,17 @@ export default function OriginalFieldRadar({
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
                   </svg>
-                  推荐字段
+                  推荐指标
                 </button>
                 <button
-                  style={{ ...bs.quickBtn, ...(activeQuickMode === 'totalRank' ? bs.quickBtnActive : {}) }}
-                  onClick={quickSelectTotalAndRank}
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M12 20V10M18 20V4M6 20v-4" />
-                  </svg>
-                  总分+排名
-                </button>
-                <button
-                  style={{ ...bs.quickBtn, ...(activeQuickMode === 'sectionTotal' ? bs.quickBtnActive : {}) }}
-                  onClick={quickSelectSectionTotal}
+                  style={{ ...bs.quickBtn, ...(activeQuickMode === 'others' ? bs.quickBtnActive : {}) }}
+                  onClick={quickSelectOthers}
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <rect x="3" y="3" width="18" height="18" rx="2" />
                     <path d="M9 9h6v6H9z" />
                   </svg>
-                  模块合计
-                </button>
-                <button
-                  style={{ ...bs.quickBtn, ...(activeQuickMode === 'courseScore' ? bs.quickBtnActive : {}) }}
-                  onClick={quickSelectCourseScore}
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
-                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
-                  </svg>
-                  数值字段
+                  其他字段
                 </button>
                 <button style={bs.quickBtnDanger} onClick={quickClearAll}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1697,32 +1677,32 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '12px',
     fontWeight: 500,
   },
-  // 学生搜索框样式
-  studentSearchContainer: {
+  // 行查找搜索框样式
+  rowSearchContainer: {
     marginBottom: '16px',
     padding: '12px',
     background: '#f8fafc',
     borderRadius: '8px',
     border: '1px solid #e2e8f0',
   },
-  studentSearchRow: {
+  rowSearchRow: {
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
   },
-  studentSearchWrap: {
+  rowSearchWrap: {
     position: 'relative',
     display: 'flex',
     alignItems: 'center',
     flex: 1,
   },
-  studentSearchIcon: {
+  rowSearchIcon: {
     position: 'absolute',
     left: '10px',
     color: '#94a3b8',
     pointerEvents: 'none',
   },
-  studentSearchInput: {
+  rowSearchInput: {
     width: '100%',
     padding: '8px 12px 8px 36px',
     border: '1px solid #cbd5e1',
@@ -1731,7 +1711,7 @@ const styles: Record<string, React.CSSProperties> = {
     outline: 'none',
     transition: 'border-color 0.15s, box-shadow 0.15s',
   },
-  studentSearchButton: {
+  rowSearchButton: {
     padding: '8px 16px',
     border: 'none',
     borderRadius: '6px',
@@ -1773,15 +1753,15 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '6px',
     fontSize: '12px',
   },
-  // 学生选择器样式
-  studentPicker: {
+  // 记录选择器样式
+  rowPicker: {
     marginTop: '12px',
     background: '#fff',
     borderRadius: '8px',
     border: '1px solid #e2e8f0',
     boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
   },
-  studentPickerHeader: {
+  rowPickerHeader: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1792,7 +1772,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#475569',
     fontWeight: 500,
   },
-  studentPickerClose: {
+  rowPickerClose: {
     background: 'transparent',
     border: 'none',
     fontSize: '18px',
@@ -1801,11 +1781,11 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '0 4px',
     lineHeight: 1,
   },
-  studentPickerList: {
+  rowPickerList: {
     maxHeight: '200px',
     overflowY: 'auto',
   },
-  studentPickerItem: {
+  rowPickerItem: {
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
@@ -1814,17 +1794,17 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     transition: 'background 0.15s',
   },
-  studentPickerName: {
+  rowPickerName: {
     fontSize: '13px',
     fontWeight: 500,
     color: '#0f172a',
   },
-  studentPickerId: {
+  rowPickerId: {
     fontSize: '12px',
     color: '#64748b',
     fontFamily: 'monospace',
   },
-  studentPickerClass: {
+  rowPickerClass: {
     fontSize: '12px',
     color: '#64748b',
   },

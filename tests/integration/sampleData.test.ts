@@ -3,6 +3,7 @@
  */
 import { sampleDatasets } from '../../src/data/sampleDatasets.js';
 import { parseTableText } from '../../src/utils/parseTable.js';
+import { resolveFieldSchemas } from '../../src/field-schema/index.js';
 
 let passed = 0;
 let failed = 0;
@@ -36,13 +37,15 @@ for (const dataset of sampleDatasets) {
   assert(`${dataset.name}: parseSummary 存在`, result.summary !== null && result.summary !== undefined);
   assert(`${dataset.name}: fieldTypes 不为空`, result.summary?.fieldTypes !== undefined && result.summary.fieldTypes.length > 0);
   
-  // 验证至少存在一个可分析指标
-  const analyzableFields = result.summary?.fieldTypes.filter(f => {
-    const role = f.analysisRole;
-    return role === 'primaryTotal' || role === 'rank' || role === 'sectionTotal' || role === 'courseScore';
-  }) || [];
-  
-  assert(`${dataset.name}: 存在可分析指标`, analyzableFields.length > 0, `count=${analyzableFields.length}`);
+  // 通用模型验证：每个（业务/通用）示例数据集都应至少有一个可分析数值指标（metric）。
+  // 这些业务数据（满意度/电商/销售/用户行为/地区/游戏）不再是 courseScore/primaryTotal
+  // 等教育旧角色，而是通用 metric 角色。
+  const schemaFields = resolveFieldSchemas(result.headers, null, {
+    mode: 'generic',
+    rows: result.rows,
+  });
+  const metricCount = schemaFields.filter(f => f.analysisRole === 'metric').length;
+  assert(`${dataset.name}: 存在可分析指标(metric)`, metricCount > 0, `count=${metricCount}`);
   
   // 验证数据行数
   assert(`${dataset.name}: 数据行数正确`, result.rows.length === rows.length, `expected=${rows.length}, actual=${result.rows.length}`);

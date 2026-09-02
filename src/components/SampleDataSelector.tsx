@@ -62,10 +62,20 @@ export default function SampleDataSelector({ onSelect, isOpen, onClose }: Sample
               onClick={() => handleSelect(dataset)}
             >
               <div style={styles.cardHeader}>
-                <div style={styles.datasetName}>{dataset.name}</div>
+                <div style={styles.nameWrap}>
+                  {dataset.featured && <span style={styles.featuredBadge}>✨ 推荐</span>}
+                  <div style={styles.datasetName}>{dataset.name}</div>
+                </div>
                 <div style={styles.datasetCategory}>{dataset.category}</div>
               </div>
               <div style={styles.datasetDesc}>{dataset.description}</div>
+              {dataset.tags && dataset.tags.length > 0 && (
+                <div style={styles.tagRow}>
+                  {dataset.tags.map(tag => (
+                    <span key={tag} style={styles.tag}>{tag}</span>
+                  ))}
+                </div>
+              )}
               <div style={styles.datasetMeta}>
                 <span style={styles.metaItem}>
                   <span style={styles.metaIcon}>📋</span>
@@ -207,6 +217,20 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: '10px',
     gap: '8px',
   },
+  nameWrap: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+  },
+  featuredBadge: {
+    fontSize: '11px',
+    color: '#b45309',
+    background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
+    padding: '2px 8px',
+    borderRadius: '10px',
+    fontWeight: 600,
+    alignSelf: 'flex-start',
+  },
   datasetName: {
     fontSize: '15px',
     fontWeight: 600,
@@ -229,6 +253,22 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.6,
     marginBottom: '12px',
     flex: 1,
+  },
+  tagRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px',
+    marginBottom: '12px',
+  },
+  tag: {
+    fontSize: '11px',
+    color: '#475569',
+    background: '#f1f5f9',
+    border: '1px solid #e2e8f0',
+    padding: '2px 8px',
+    borderRadius: '10px',
+    fontWeight: 500,
+    whiteSpace: 'nowrap',
   },
   datasetMeta: {
     display: 'flex',

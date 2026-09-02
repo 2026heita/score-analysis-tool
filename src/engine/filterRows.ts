@@ -42,6 +42,8 @@ export interface FilterSummary {
 }
 
 /** 数值分析角色集合 */
+// @deprecated legacy 教育/旧解析角色白名单；仅旧 fieldMeta 链路使用。通用主链路用
+// analysisRole='metric' 或内容数值证据(numericRatio)判定，不再依赖这些教育角色。
 const NUMERIC_ROLES = new Set(['primaryTotal', 'rank', 'sectionTotal', 'courseScore', 'adjustment']);
 
 /** 内容证据：数值占比达到该阈值才视为"可数字筛选"（混合列允许少量非数值） */

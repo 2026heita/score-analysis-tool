@@ -13,6 +13,7 @@
 import type { FeatureStats, FeatureVector } from './types';
 import { extractNumericalValues } from './featureStandardizer';
 import { mean, stdDev } from '../utils/stats';
+import { detectFieldOutliers } from './outlierDetection';
 
 // 分析配置
 interface UnivariateConfig {
@@ -278,21 +279,30 @@ export const ERROR_VALUE_THRESHOLD = -900;
 /**
  * 从数值数组检测 IQR 异常值（唯一计算源）
  * 
- * 内部将 number[] 转为 FeatureVector[] 后调用 detectOutliers
+ * 内部委托给通用异常检测模块 detectFieldOutliers，享受结构化防护：
+ * - 有效样本过少（< 8）→ 不判异常
+ * - IQR=0 → 绝对偏差回退，避免零宽区间误判
+ * - 低基数离散整数 → 跳过
+ * 结果坍缩为旧签名的 { rowIndex, value, zScore } 以保持调用方兼容。
  */
 export function detectOutliersFromValues(
   values: number[]
 ): Array<{ rowIndex: number; value: number; zScore: number }> {
-  if (values.length < 4) return [];
-  
-  // 必须构造符合标准化的向量结构（{ type: 'numerical', value }），
-  // 否则 extractNumericalValues 无法读取出数值，检测结果恒为空。
-  const vectors: FeatureVector[] = values.map((v, i) => ({
-    rowIndex: i,
-    values: { _val: { type: 'numerical', value: v, original: String(v) } },
+  const result = detectFieldOutliers(values, { field: '_val' });
+  if (result.status !== 'detected') return [];
+
+  const clean = values.filter(v => typeof v === 'number' && Number.isFinite(v));
+  const meanValue = mean(clean);
+  const stdValue = stdDev(clean);
+
+  return result.records.map(r => ({
+    rowIndex: r.rowIndex,
+    value: r.value,
+    zScore:
+      stdValue === 0
+        ? 0
+        : roundTo((r.value - meanValue) / stdValue, 4),
   }));
-  
-  return detectOutliers(vectors, '_val');
 }
 
 /**

@@ -83,7 +83,7 @@ function isAnalyzableNumericField(
 
 /**
  * 检测是否为高唯一性长数字 ID 字段
- * 例如：学号、订单号、用户ID、商品ID、地区编码
+ * 例如：订单号、用户ID、商品ID、地区编码
  */
 function isHighUniqueLongNumberId(
   header: string,
@@ -106,7 +106,7 @@ function isHighUniqueLongNumberId(
   }
 
   // 检查字段名关键词
-  const idKeywords = ['学号', '考号', '考生号', '准考证', '身份证号', '编号', 'ID', 'id', '订单', '用户', '商品', '编码'];
+  const idKeywords = ['身份证号', '编号', 'ID', 'id', '订单', '用户', '商品', '编码'];
   const headerLower = header.toLowerCase();
   if (idKeywords.some(kw => headerLower.includes(kw.toLowerCase()))) {
     return true;
@@ -442,7 +442,7 @@ export function analyzeCorrelationsSimple(
   config: CorrelationConfig = {}
 ): CorrelationResult {
   // ID 字段关键词（用于简单版过滤）
-  const idKeywords = ['学号', '考号', '考生号', '准考证', '身份证号', '编号', 'ID', 'id', '订单', '用户', '商品', '编码'];
+  const idKeywords = ['身份证号', '编号', 'ID', 'id', '订单', '用户', '商品', '编码'];
   
   // 快速判断数值字段：数值比例 >= 70%，且排除 ID 字段
   const numericalFields: string[] = [];

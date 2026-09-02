@@ -1,6 +1,11 @@
 // ============================================================
-// 成绩表智能解析器 - 多工作表检测
+// 通用表格工作簿解析器 - 多工作表检测
 // ============================================================
+// 设计原则（通用模式，不包含教育/考试特定关键词）：
+// - 不因某个 sheet 出现"姓名+成绩"就认为它更像主表；
+// - 主表候选纯粹用"结构是否适合作为数据表"来评分：非空行数、列数、
+//   表头有效性、表头下方数据行数、可解析数值密度、结构一致性。
+// 业务语义（成交额、库存、成绩……）由上层 schema 推断决定，与本层无关。
 
 import type { SheetCandidate, WorkbookCandidate } from './types';
 import type { MergeRange } from './headerFlattener';
@@ -8,34 +13,16 @@ import { detectHeaderRow } from './headerDetection';
 import { parseNumericValueLegacy } from './numericParser';
 import { minMax } from '../stats';
 
-// 主成绩表关键词（加分关键词，不硬编码具体表名）
-const MAIN_SHEET_KEYWORDS = [
-  '成绩', '分数', '得分', '考试', '测评', '测试',
-  '成绩收集', '成绩统计', '成绩汇总', '考试结果',
-];
-
-// 字典表/代码表关键词（应避免作为主表）
+// 辅助/代码/说明类 sheet 关键词（通用业务层面几乎不可能是主数据表，应避免作为主表）
 const DICT_SHEET_KEYWORDS = [
-  '代码', '字典', '组合名称', '科目代码', '学校代码',
-  '说明', '备注', '参数', '配置', '对照', '映射',
-  'code', 'dict', 'dictionary', 'mapping', 'reference',
-];
-
-// 成绩相关字段关键词
-const SCORE_FIELD_KEYWORDS = [
-  '总分', '语文', '数学', '英语', '外语', '物理', '化学', '生物',
-  '政治', '历史', '地理', '成绩', '分数', '得分',
-];
-
-// 身份字段关键词
-const IDENTITY_FIELD_KEYWORDS = [
-  '姓名', '名字', '班级', '考号', '座号', '学号', '考生',
+  '代码', '字典', '说明', '备注', '参数', '配置', '对照', '映射',
+  'code', 'dict', 'dictionary', 'mapping', 'reference', 'readme',
 ];
 
 const HEADER_SCAN_ROWS = 30;
 
 /**
- * 检测多个工作表中最可能的主成绩表
+ * 检测多个工作表中最可能的主数据表
  * 
  * @param workbookSheets - 工作表数组，每项包含 { name, data }
  * @returns 排序后的候选列表，置信度最高的排在最前
@@ -75,6 +62,10 @@ export function detectMainWorksheet(
 
 /**
  * 评估单个工作表的候选分数
+ *
+ * 全部为结构化/通用评分，不依赖任何教育关键词。
+ * scoreKeywordsCount / hasIdentityField / hasScoreField 仅保留字段以兼容旧类型，
+ * 不再参与评分（通用模式一律为 0 / false）。
  */
 function evaluateSheetCandidate(name: string, data: unknown[][], merges: MergeRange[]): SheetCandidate {
   const rowCount = data.length;
@@ -84,7 +75,7 @@ function evaluateSheetCandidate(name: string, data: unknown[][], merges: MergeRa
 
   let score = 0;
 
-  // 1. 字典表关键词 → 大幅扣分
+  // 1. 辅助/说明/代码类 sheet 名称 → 大幅扣分（几乎不可能是主数据表）
   const nameLower = name.toLowerCase();
   for (const kw of DICT_SHEET_KEYWORDS) {
     if (nameLower.includes(kw.toLowerCase())) {
@@ -93,84 +84,46 @@ function evaluateSheetCandidate(name: string, data: unknown[][], merges: MergeRa
     }
   }
 
-  // 2. 主成绩表关键词 → 加分
-  for (const kw of MAIN_SHEET_KEYWORDS) {
-    if (nameLower.includes(kw.toLowerCase())) {
-      score += 15;
-      break;
-    }
-  }
-
-  // 3. 行数评分（主成绩表通常行数较多）
+  // 2. 行数评分（主数据表通常行数较多）
   if (rowCount >= 10) score += 5;
   if (rowCount >= 30) score += 5;
   if (rowCount >= 50) score += 3;
   if (rowCount < 5) score -= 10;
 
-  // 4. 列数评分
+  // 3. 列数评分（少于 3 列多半是说明/目录页）
   if (colCount >= 5) score += 3;
   if (colCount >= 10) score += 3;
   if (colCount < 3) score -= 5;
 
-  // 5. 扫描前几行，检查字段关键词
+  // 4. 数值密度评分：前几行中可解析为数值的单元格比例越高，越像数据表
+  let numericCellCount = 0;
+  let numericTotalCellCount = 0;
   const scanRows = data.slice(0, HEADER_SCAN_ROWS);
-  let scoreKeywordsCount = 0;
-  let hasIdentityField = false;
-  let hasScoreField = false;
-
   for (const row of scanRows) {
     if (!Array.isArray(row)) continue;
-    const rowText = row.map(v => String(v ?? '').trim()).join(' ');
-    const rowTextLower = rowText.toLowerCase();
-
-    for (const kw of SCORE_FIELD_KEYWORDS) {
-      if (rowTextLower.includes(kw.toLowerCase())) {
-        scoreKeywordsCount++;
-        hasScoreField = true;
-        break;
-      }
-    }
-
-    for (const kw of IDENTITY_FIELD_KEYWORDS) {
-      if (rowTextLower.includes(kw.toLowerCase())) {
-        hasIdentityField = true;
-        break;
-      }
+    for (const cell of row) {
+      const s = String(cell ?? '').trim();
+      if (s === '') continue;
+      numericTotalCellCount++;
+      if (parseNumericValueLegacy(s) !== null) numericCellCount++;
     }
   }
-
-  // 6. 字段关键词命中加分
-  score += scoreKeywordsCount * 8;
-
-  // 7. 包含身份字段加分
-  if (hasIdentityField) score += 10;
-
-  // 8. 包含成绩字段加分
-  if (hasScoreField) score += 8;
-
-  // 9. 计算数值列数量
-  let numericColCount = 0;
-  if (data.length > 1) {
-    const firstDataRow = data[Math.min(1, data.length - 1)];
-    if (Array.isArray(firstDataRow)) {
-      numericColCount = firstDataRow.filter(v => {
-        return parseNumericValueLegacy(String(v ?? '').trim()) !== null;
-      }).length;
-    }
+  if (numericTotalCellCount > 0) {
+    const density = numericCellCount / numericTotalCellCount;
+    if (density >= 0.5) score += 8;
+    else if (density >= 0.25) score += 4;
   }
-  score += numericColCount * 2;
 
-  // 10. 检测表头有效性
+  // 5. 检测表头有效性：有合法表头 + 表头后有足够多数据行 → 强主表信号
   const headerResult = detectHeaderRow(data, merges);
   if (headerResult.headerRowIndex >= 0) {
     score += 20;
-    // 如果表头后有多行数据，额外加分
     const dataRows = headerResult.dataRows.length;
     if (dataRows >= 5) score += 5;
     if (dataRows >= 20) score += 5;
   }
 
-  // 11. 行数/列数比：太宽的表可能不是成绩表
+  // 6. 行/列宽比：超过 50 列的表多半不是紧凑业务主表
   if (colCount > 50) score -= 5;
 
   // 归一化置信度到 0-100 范围
@@ -180,10 +133,10 @@ function evaluateSheetCandidate(name: string, data: unknown[][], merges: MergeRa
     name,
     rowCount,
     colCount,
-    scoreKeywordsCount,
-    hasIdentityField,
-    hasScoreField,
-    numericColCount,
+    scoreKeywordsCount: 0,
+    hasIdentityField: false,
+    hasScoreField: false,
+    numericColCount: numericCellCount,
     confidence,
   };
 }

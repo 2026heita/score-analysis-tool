@@ -11,6 +11,19 @@ export default function ParseReportPanel({ report }: ParseReportPanelProps) {
   const [showReasons, setShowReasons] = useState(false);
   const [onlyLowConfidence, setOnlyLowConfidence] = useState(false);
 
+  // 旧版分析角色 → 通用展示标签（仅做展示，不做角色决策）
+  const ROLE_LABEL: Record<string, string> = {
+    identity: '标识',
+    primaryTotal: '指标',
+    rank: '指标',
+    sectionTotal: '指标',
+    courseScore: '指标',
+    adjustment: '调整',
+    textMeta: '描述',
+    unknown: '未知',
+    invalid: '无效',
+  };
+
   // 筛选低置信度字段
   const displayFields = onlyLowConfidence
     ? fields.filter(f => f.confidence < 0.7)
@@ -25,8 +38,8 @@ export default function ParseReportPanel({ report }: ParseReportPanelProps) {
           <SummaryCard label="数据行数" value={summary.dataRowCount} />
           <SummaryCard label="字段总数" value={summary.fieldCount} />
           <SummaryCard label="推荐字段" value={summary.recommendedFieldCount} highlight />
-          <SummaryCard label="身份字段" value={summary.identityCount} />
-          <SummaryCard label="加扣分" value={summary.adjustmentCount} />
+          <SummaryCard label="标识字段" value={summary.identityCount} />
+          <SummaryCard label="调整项" value={summary.adjustmentCount} />
           <SummaryCard label="无效字段" value={summary.invalidCount} warn={summary.invalidCount > 0} />
           <SummaryCard label="低置信度" value={summary.lowConfidenceCount} warn={summary.lowConfidenceCount > 0} />
         </div>
@@ -108,7 +121,7 @@ export default function ParseReportPanel({ report }: ParseReportPanelProps) {
                       <span style={styles.fieldName}>{field.name}</span>
                     </div>
                     <div style={styles.fieldCell} className="prp-c-type">
-                      <span style={styles.typeBadge}>{field.analysisRole}</span>
+                      <span style={styles.typeBadge}>{ROLE_LABEL[field.analysisRole] ?? field.analysisRole}</span>
                     </div>
                     <div style={styles.fieldCell} className="prp-c-conf">
                       <span

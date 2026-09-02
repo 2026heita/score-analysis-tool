@@ -136,7 +136,8 @@ function checkIdentifier(
   }
   
   // 检查字段名是否包含标识符关键词
-  const identifierKeywords = ['id', 'code', 'no', 'num', '编号', '学号', '工号', '身份证号'];
+  // 仅含通用标识词；学号/考号等教育专用词由 legacy education 兼容层处理，不进入通用检测
+  const identifierKeywords = ['id', 'code', 'no', 'num', '编号', '工号', '身份证号'];
   const fieldNameLower = fieldName.toLowerCase();
   if (identifierKeywords.some(kw => fieldNameLower.includes(kw))) {
     if (uniqueRatio >= 0.8) {

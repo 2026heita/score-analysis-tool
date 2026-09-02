@@ -67,6 +67,8 @@ export interface SemanticDefinitions {
 // ============================================================
 
 /** 可分析的 analysisRole 列表 */
+// @deprecated legacy 教育角色白名单；仅供旧解析链路(parseSummary.fieldTypes)兼容回退使用。
+// 通用主链路优先走 buildSemanticDefinitionsFromResolved(ResolvedFieldSchema)，不消费这些教育角色。
 const ANALYZABLE_ROLES = ['primaryTotal', 'rank', 'sectionTotal', 'courseScore', 'adjustment'];
 
 /** 判断是否为可分析的 analysisRole */
@@ -75,6 +77,7 @@ function isAnalyzableRole(role: string): boolean {
 }
 
 /** 根据 analysisRole 获取 MetricType */
+// @deprecated legacy 教育角色映射；仅旧解析链路回退使用，主链路用 metric→'numeric' 通用映射。
 function getMetricType(role: string): MetricType {
   switch (role) {
     case 'primaryTotal': return 'total';
@@ -87,6 +90,7 @@ function getMetricType(role: string): MetricType {
 }
 
 /** 根据 analysisRole 获取 MetricDirection */
+// @deprecated 仅旧解析链路回退使用；rank 是小值优，故为 lower-is-better。
 function getMetricDirection(role: string): MetricDirection {
   // rank 字段：越小越好
   return role === 'rank' ? 'lower-is-better' : 'higher-is-better';
@@ -116,6 +120,8 @@ function buildMetricDefinition(meta: FieldMeta): MetricDefinition {
 }
 
 /** identity 字段中，属于 dimension（分组/类别）的关键词 */
+// @deprecated legacy 教育维度词表（班级/学校/科类/选科等）；仅旧解析链路回退使用，
+// 通用主链路按 analysisRole=dimension/identifier 直接构建，不依赖这些教育词。
 const DIMENSION_KEYWORDS = ['班级', '学校', '部门', '组别', '类别', '科类', '选科', '组合'];
 
 /** 判断 identity 字段是否为 entity */
@@ -134,6 +140,8 @@ function isEntityIdentity(meta: FieldMeta): boolean {
 }
 
 /** 判断 identity 字段是否为主键 */
+// @deprecated 含教育主键词(学号/考号)；仅旧解析链路回退使用。通用主链路由
+// buildEntityFromResolvedSchema 依据推断来源和置信度决定 isPrimaryKey。
 function isPrimaryKeyIdentity(meta: FieldMeta): boolean {
   const headerLower = meta.header.toLowerCase();
   
@@ -310,11 +318,10 @@ function buildMetricFromResolvedSchema(schema: ResolvedFieldSchema): MetricDefin
     isRecommended = false; // 未指定方向的指标不默认推荐
   }
 
-  // 确定 metric type
-  let type: MetricType = 'numeric';
-  if (schema.metricDirection === 'lower_is_better') {
-    type = 'rank';
-  }
+  // 确定 metric type。
+  // 通用语义：凡是 analysisRole='metric' 的字段一律是数值指标。
+  // lower_is_better 只是"方向"，不是"排名"，绝不把 lower_is_better 指标映射为 rank 类型。
+  const type: MetricType = 'numeric';
 
   return {
     name: schema.fieldId,

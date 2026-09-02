@@ -234,7 +234,8 @@ export function isRankField(
   }
 
   // 检查字段名关键词
-  const RANK_KEYWORDS = ['名次', '排名', '位次', '年级名次', '班级名次', '校排', '班排', '年排', '级排'];
+  // 仅含通用排名词；年级名次/班级名次/校排/班排/年排/级排等教育专用词由 legacy education 兼容层处理。
+  const RANK_KEYWORDS = ['名次', '排名', '位次'];
   const fieldNameLower = fieldName.toLowerCase();
   return RANK_KEYWORDS.some(kw => fieldNameLower.includes(kw.toLowerCase()));
 }

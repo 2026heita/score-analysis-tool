@@ -16,7 +16,9 @@ $tests = @(
     "tests/integration/acceptanceRound3.test.ts",
     "tests/integration/asyncRace.test.ts",
     "tests/integration/fieldWiring.test.ts",
-    "tests/integration/fieldConsumer.test.ts"
+    "tests/integration/fieldConsumer.test.ts",
+    "tests/integration/genericVsLegacy.test.ts",
+    "tests/integration/legacyBoundary.test.ts"
 )
 
 $totalPassed = 0

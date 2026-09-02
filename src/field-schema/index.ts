@@ -30,15 +30,12 @@ export {
   getEducationTemplateKeywords,
 } from './templates/education';
 
-// 旧模型兼容
+// 旧模型兼容（仅单向：旧 → 新，供 legacy 数据兼容，通用主链路不得反向使用）
 export {
   mapLegacyFieldTypeToDataType,
   mapLegacyAnalysisRoleToRole,
   mapLegacyAnalysisRoleToDirection,
   mapLegacyFieldMetaToSchema,
-  mapLegacyFieldMetasToSchemas,
-  mapNewDataTypeToLegacyFieldType,
-  mapNewRoleToLegacyAnalysisRole,
 } from './legacyAdapter';
 
 // 优先级解析

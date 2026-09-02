@@ -14,7 +14,7 @@ let passed = 0;
 let failed = 0;
 
 // ===== 内联 migrateState 和 loadSavedState 逻辑 =====
-const CURRENT_VERSION = 3;
+const CURRENT_VERSION = 4;
 
 function migrateState(raw) {
   const migrated = { ...raw };
@@ -24,6 +24,9 @@ function migrateState(raw) {
   }
   if (migrated.selectedDimension === undefined) {
     migrated.selectedDimension = '';
+  }
+  if (migrated.dataSource === undefined) {
+    migrated.dataSource = { type: 'manual' };
   }
 
   migrated.version = CURRENT_VERSION;
@@ -42,6 +45,7 @@ function getDefaultState() {
     analysisMode: 'scoreRate',
     filterConditions: [],
     selectedDimension: '',
+    dataSource: { type: 'manual' },
   };
 }
 
@@ -88,7 +92,8 @@ const oldV2 = {
 const migrated = migrateState(oldV2);
 assertEqual(migrated.filterConditions, [], 'v2 迁移后 filterConditions 为空数组');
 assertEqual(migrated.selectedDimension, '', 'v2 迁移后 selectedDimension 为空字符串');
-assertEqual(migrated.version, CURRENT_VERSION, '版本号升级到 3');
+assertEqual(migrated.dataSource, { type: 'manual' }, 'v2 迁移后 dataSource 默认 manual');
+assertEqual(migrated.version, CURRENT_VERSION, '版本号升级到 4');
 assertEqual(migrated.rawText, 'test data', '原始数据保留');
 assertEqual(migrated.selectedField, 'GMV', 'selectedField 保留');
 
@@ -134,12 +139,13 @@ const oldV1 = {
 const migrated3 = migrateState(oldV1);
 assertEqual(migrated3.filterConditions, [], 'v1 迁移后 filterConditions 为空');
 assertEqual(migrated3.selectedDimension, '', 'v1 迁移后 selectedDimension 为空');
-assertEqual(migrated3.version, CURRENT_VERSION, '版本号升级到 3');
+assertEqual(migrated3.dataSource, { type: 'manual' }, 'v1 迁移后 dataSource 默认 manual');
+assertEqual(migrated3.version, CURRENT_VERSION, '版本号升级到 4');
 
 // ============================================================
-// 测试 4: v3 数据不变
+// 测试 4: v3 数据迁移到 v4（补充 dataSource 默认值）
 // ============================================================
-console.log('\n4. v3 数据不变');
+console.log('\n4. v3 数据迁移到 v4');
 
 const currentV3 = {
   version: 3,
@@ -157,6 +163,31 @@ const currentV3 = {
 const migrated4 = migrateState(currentV3);
 assertEqual(migrated4.filterConditions.length, 1, 'v3 filterConditions 保留');
 assertEqual(migrated4.selectedDimension, '类目', 'v3 selectedDimension 保留');
+assertEqual(migrated4.dataSource, { type: 'manual' }, 'v3 缺少 dataSource 时迁移为 manual');
+assertEqual(migrated4.version, 4, 'v3 数据版本号升级到 4');
+
+// ============================================================
+// 测试 4b: 已含 retail-bi dataSource 的 v4 数据保留
+// ============================================================
+console.log('\n4b. v4 数据含 retail-bi dataSource 时保留');
+
+const currentV4Retail = {
+  version: 4,
+  rawText: '',
+  selectedField: '',
+  inputValue: '',
+  showAllFields: false,
+  activeChartTab: 'histogram',
+  originalFieldRadar: { selections: [], viewMode: 'bar' },
+  analysisMode: 'scoreRate',
+  filterConditions: [],
+  selectedDimension: '',
+  dataSource: { type: 'retail-bi', baseUrl: 'https://api.example.com', startDate: '2026-08-01', endDate: '2026-08-31' },
+};
+
+const migrated4b = migrateState(currentV4Retail);
+assertEqual(migrated4b.version, 4, 'v4 版本号保持 4');
+assertEqual(migrated4b.dataSource, currentV4Retail.dataSource, 'retail-bi dataSource 保留');
 
 // ============================================================
 // 测试 5: 默认状态包含新字段
@@ -166,8 +197,10 @@ console.log('\n5. 默认状态包含新字段');
 const def = getDefaultState();
 assert('filterConditions' in def, '默认状态包含 filterConditions');
 assert('selectedDimension' in def, '默认状态包含 selectedDimension');
+assert('dataSource' in def, '默认状态包含 dataSource');
 assertEqual(def.filterConditions, [], '默认 filterConditions 为空');
 assertEqual(def.selectedDimension, '', '默认 selectedDimension 为空');
+assertEqual(def.dataSource, { type: 'manual' }, '默认 dataSource 为 manual');
 
 // ============================================================
 // 测试 6: 字段不存在时自动清空 selectedDimension

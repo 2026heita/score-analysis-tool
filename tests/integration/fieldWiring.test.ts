@@ -191,9 +191,14 @@ for (const f of longFields) {
 const longMap = new Map(longFields.map(f => [f.sourceName, f]));
 
 const studentIdField = longMap.get('学号');
-assert('学号 → identifier/identifier',
-  studentIdField?.dataType === 'identifier' && studentIdField?.analysisRole === 'identifier',
+// 通用模式不得把"学号"当作教育领域标识/成绩来推断（学号词已移出 generic schema，
+// 由 legacy education 兼容层处理）。这里保证它不被误判为课程成绩/排名/总分。
+const forbiddenEduRoles = ['courseScore', 'primaryTotal', 'sectionTotal', 'rank', 'adjustment'];
+assert('学号(generic) 非教育角色（courseScore/rank/primaryTotal 等）',
+  studentIdField?.dataType === 'number' &&
+  !forbiddenEduRoles.includes(studentIdField?.analysisRole ?? ''),
   `实际: ${studentIdField?.dataType}/${studentIdField?.analysisRole}`);
+// education 模式（测试四）仍应把学号识别为 identifier，见下方"education 模式学号"断言
 
 const subjectField = longMap.get('科目');
 assert('科目 → category/dimension',
