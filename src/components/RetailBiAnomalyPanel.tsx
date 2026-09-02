@@ -10,10 +10,25 @@
  * - “主要驱动项”是指标分解结果，不表示因果关系。
  */
 
-import type { SalesAnomalyVO } from '../types/retailBi';
+import { useCallback, useState } from 'react';
+import type { AiDiagnosisVO, SalesAnomalyVO } from '../types/retailBi';
 
 interface RetailBiAnomalyPanelProps {
   data: SalesAnomalyVO[];
+  /**
+   * 可选的 AI 诊断请求回调（由父组件注入）。
+   * 未注入时隐藏 AI 智能分析入口，AI 作为可选扩展能力。
+   */
+  requestAiDiagnosis?: (dt: string) => Promise<AiDiagnosisVO>;
+}
+
+/**
+ * 单条异常的 AI 诊断请求状态。
+ */
+interface DiagnosisState {
+  status: 'idle' | 'loading' | 'success' | 'error';
+  data?: AiDiagnosisVO;
+  error?: string;
 }
 
 function formatPercent(value: number | null): string {
@@ -56,6 +71,34 @@ function getLevelStyle(level: string): React.CSSProperties {
   };
 }
 
+function getRiskStyle(risk: AiDiagnosisVO['riskLevel']): React.CSSProperties {
+  if (risk === 'SEVERE' || risk === 'HIGH') {
+    return {
+      color: '#991b1b',
+      background: '#fee2e2',
+      border: '1px solid #fecaca',
+    };
+  }
+  if (risk === 'MEDIUM') {
+    return {
+      color: '#92400e',
+      background: '#fef3c7',
+      border: '1px solid #fde68a',
+    };
+  }
+  return {
+    color: '#166534',
+    background: '#dcfce7',
+    border: '1px solid #bbf7d0',
+  };
+}
+
+function getSourceLabel(source: AiDiagnosisVO['source']): string {
+  if (source === 'AI') return 'AI 模型';
+  if (source === 'FALLBACK') return '规则兜底';
+  return source || '—';
+}
+
 function getChangeColor(value: number | null): string {
   if (value === null || value === undefined || Number.isNaN(value)) {
     return '#94a3b8';
@@ -65,7 +108,24 @@ function getChangeColor(value: number | null): string {
   return '#64748b';
 }
 
-export default function RetailBiAnomalyPanel({ data }: RetailBiAnomalyPanelProps) {
+export default function RetailBiAnomalyPanel({ data, requestAiDiagnosis }: RetailBiAnomalyPanelProps) {
+  const [diagnosisMap, setDiagnosisMap] = useState<Record<string, DiagnosisState>>({});
+
+  const handleRequestAi = useCallback(
+    async (dt: string) => {
+      if (!requestAiDiagnosis) return;
+      setDiagnosisMap((prev) => ({ ...prev, [dt]: { status: 'loading' } }));
+      try {
+        const diagnosis = await requestAiDiagnosis(dt);
+        setDiagnosisMap((prev) => ({ ...prev, [dt]: { status: 'success', data: diagnosis } }));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '未知错误';
+        setDiagnosisMap((prev) => ({ ...prev, [dt]: { status: 'error', error: message } }));
+      }
+    },
+    [requestAiDiagnosis],
+  );
+
   const highCount = data.filter((row) => row.anomalyLevel === 'HIGH').length;
   const mediumCount = data.filter((row) => row.anomalyLevel === 'MEDIUM').length;
   const totalLoss = data.reduce(
@@ -167,6 +227,122 @@ export default function RetailBiAnomalyPanel({ data }: RetailBiAnomalyPanelProps
                       </strong>
                     </div>
                   </div>
+
+                  {requestAiDiagnosis && (
+                    <div style={styles.aiSection}>
+                      {(() => {
+                        const state = diagnosisMap[row.dt];
+                        if (!state || state.status === 'idle') {
+                          return (
+                            <button
+                              type="button"
+                              style={styles.aiButton}
+                              onClick={() => handleRequestAi(row.dt)}
+                            >
+                              AI 智能分析
+                            </button>
+                          );
+                        }
+                        if (state.status === 'loading') {
+                          return (
+                            <div style={styles.aiLoading}>
+                              AI 正在分析本次经营异常，请稍候&hellip;
+                            </div>
+                          );
+                        }
+                        if (state.status === 'error') {
+                          return (
+                            <div style={styles.aiError}>
+                              <span>AI 分析失败：{state.error}</span>
+                              <button
+                                type="button"
+                                style={styles.aiRetryButton}
+                                onClick={() => handleRequestAi(row.dt)}
+                              >
+                                重试
+                              </button>
+                            </div>
+                          );
+                        }
+                        const d = state.data as AiDiagnosisVO;
+                        return (
+                          <div style={styles.aiResult}>
+                            <div style={styles.aiResultHeader}>
+                              <span style={styles.aiResultTitle}>AI 智能诊断</span>
+                              <span style={{ ...styles.riskBadge, ...getRiskStyle(d.riskLevel) }}>
+                                {d.riskLevel}
+                              </span>
+                              <span style={styles.sourceBadge}>来源：{getSourceLabel(d.source)}</span>
+                            </div>
+
+                            <div style={styles.aiBlock}>
+                              <span style={styles.aiBlockLabel}>根因</span>
+                              <p style={styles.aiParagraph}>{d.rootCause}</p>
+                            </div>
+
+                            {d.keyDrivers && d.keyDrivers.length > 0 && (
+                              <div style={styles.aiBlock}>
+                                <span style={styles.aiBlockLabel}>关键驱动</span>
+                                <ul style={styles.aiList}>
+                                  {d.keyDrivers.map((driver, i) => (
+                                    <li key={i} style={styles.aiListItem}>
+                                      <strong>{driver.name}</strong>
+                                      {driver.value !== undefined && (
+                                        <span>：{String(driver.value)}</span>
+                                      )}
+                                      {driver.note && (
+                                        <span style={styles.aiListNote}>（{driver.note}）</span>
+                                      )}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+
+                            <div style={styles.aiBlock}>
+                              <span style={styles.aiBlockLabel}>影响评估</span>
+                              {typeof d.impactAssessment === 'string' ? (
+                                <p style={styles.aiParagraph}>{d.impactAssessment}</p>
+                              ) : Array.isArray(d.impactAssessment) && d.impactAssessment.length > 0 ? (
+                                <ul style={styles.aiList}>
+                                  {d.impactAssessment.map((item, i) => (
+                                    <li key={i} style={styles.aiListItem}>
+                                      <strong>{item.label}</strong>
+                                      <span>：{item.value}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <p style={styles.aiParagraph}>—</p>
+                              )}
+                            </div>
+
+                            {d.suggestions && d.suggestions.length > 0 && (
+                              <div style={styles.aiBlock}>
+                                <span style={styles.aiBlockLabel}>建议</span>
+                                <ul style={styles.aiList}>
+                                  {d.suggestions.map((item, i) => {
+                                    const s =
+                                      typeof item === 'string'
+                                        ? { text: item, priority: undefined }
+                                        : item;
+                                    return (
+                                      <li key={i} style={styles.aiListItem}>
+                                        {s.priority && (
+                                          <span style={styles.aiPriority}>{s.priority}</span>
+                                        )}
+                                        <span>{s.text}</span>
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
                 </div>
               </details>
             ))}
@@ -341,5 +517,116 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '11px',
     lineHeight: 1.6,
     color: '#94a3b8',
+  },
+  aiSection: {
+    marginTop: '12px',
+  },
+  aiButton: {
+    padding: '7px 14px',
+    borderRadius: '7px',
+    border: '1px solid #c7d2fe',
+    background: '#eef2ff',
+    color: '#4338ca',
+    fontSize: '13px',
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  aiLoading: {
+    padding: '10px 12px',
+    borderRadius: '7px',
+    border: '1px solid #e2e8f0',
+    background: '#f1f5f9',
+    color: '#64748b',
+    fontSize: '13px',
+  },
+  aiError: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '10px',
+    padding: '10px 12px',
+    borderRadius: '7px',
+    border: '1px solid #fecaca',
+    background: '#fef2f2',
+    color: '#991b1b',
+    fontSize: '13px',
+  },
+  aiRetryButton: {
+    flexShrink: 0,
+    padding: '4px 10px',
+    borderRadius: '6px',
+    border: '1px solid #fca5a5',
+    background: '#fff',
+    color: '#991b1b',
+    fontSize: '12px',
+    cursor: 'pointer',
+  },
+  aiResult: {
+    padding: '12px',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    background: '#fff',
+  },
+  aiResultHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: '8px',
+    marginBottom: '10px',
+  },
+  aiResultTitle: {
+    fontSize: '13px',
+    fontWeight: 700,
+    color: '#0f172a',
+  },
+  riskBadge: {
+    padding: '2px 7px',
+    borderRadius: '999px',
+    fontSize: '11px',
+    fontWeight: 700,
+  },
+  sourceBadge: {
+    padding: '2px 7px',
+    borderRadius: '999px',
+    background: '#f1f5f9',
+    color: '#64748b',
+    fontSize: '11px',
+  },
+  aiBlock: {
+    marginBottom: '10px',
+  },
+  aiBlockLabel: {
+    display: 'block',
+    marginBottom: '4px',
+    fontSize: '11px',
+    fontWeight: 600,
+    color: '#64748b',
+  },
+  aiParagraph: {
+    margin: '0',
+    fontSize: '13px',
+    lineHeight: 1.7,
+    color: '#475569',
+  },
+  aiList: {
+    margin: '0',
+    paddingLeft: '18px',
+  },
+  aiListItem: {
+    fontSize: '13px',
+    lineHeight: 1.7,
+    color: '#475569',
+  },
+  aiListNote: {
+    color: '#94a3b8',
+  },
+  aiPriority: {
+    display: 'inline-block',
+    marginRight: '6px',
+    fontSize: '11px',
+    padding: '1px 6px',
+    borderRadius: '999px',
+    background: '#eef2ff',
+    color: '#4338ca',
   },
 };

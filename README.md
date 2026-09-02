@@ -163,12 +163,27 @@
 - `GET {baseUrl}/api/v1/dashboard/overview/trend?startDate=...&endDate=...`
 - `GET {baseUrl}/api/v1/dashboard/overview?date=...`
 - `GET {baseUrl}/api/v1/dashboard/overview/comparison?date=...`
+- `POST {baseUrl}/api/v1/dashboard/anomalies/{dt}/ai-analysis`
 
 说明：
 
 - 趋势接口使用开始日期和结束日期；
 - 单日概览与日环比使用结束日期作为查询日期；
 - 重新加载时会清理上一轮的概览、环比和经营异常结果；概览、环比或经营异常请求失败不会影响已经成功加载的趋势数据。
+
+平台仍定位为通用数据分析平台。经营异常分析新增 **AI 智能分析** 作为可选扩展能力，通过与外部零售 BI 后端接口协作增强展示效果，同时保持以下边界：
+
+- 前端不包含 AI 模型，不进行模型训练
+- 前端不负责异常判断，也不自动生成业务决策
+- 前端仅负责 API 调用、结果展示与用户交互
+
+AI 智能分析能力：
+
+- 支持调用外部零售 BI 后端 AI 异常诊断接口
+- 在经营异常详情中展示 AI 分析结果，包括：风险等级、关键影响因素、影响评估、优化建议
+- 结果来源标签支持 `AI` 与 `FALLBACK`（规则兜底）
+
+AI 诊断是对已有统计异常的解释性展示，属于平台的可选扩展能力；未配置或调用失败时不影响原有异常分析流程。
 
 示例请求（canonical 主案例）：
 

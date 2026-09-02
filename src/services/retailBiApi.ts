@@ -9,6 +9,7 @@
  */
 
 import type {
+  AiDiagnosisVO,
   ApiResponse,
   RetailBiConnectionConfig,
   SalesAnomalyVO,
@@ -423,6 +424,95 @@ export async function fetchSalesAnomalies(
   if (!Array.isArray(apiResponse.data)) {
     throw new RetailBiApiError(
       '零售 BI 服务返回的数据格式不正确',
+      apiResponse.code,
+      requestId,
+    );
+  }
+
+  return apiResponse.data;
+}
+
+/**
+ * 请求指定日期的 AI 异常诊断结果。
+ *
+ * POST 到 /api/v1/dashboard/anomalies/{dt}/ai-analysis，发送空对象 body。
+ * AI 诊断作为可选扩展能力：失败时由调用方决定重试或提示，不影响异常分析主流程。
+ */
+export async function fetchAiDiagnosis(
+  baseUrl: string,
+  dt: string,
+): Promise<AiDiagnosisVO> {
+  const resolvedBaseUrl = resolveBaseUrl(baseUrl);
+
+  let url: URL;
+
+  try {
+    url = new URL(
+      `/api/v1/dashboard/anomalies/${encodeURIComponent(dt)}/ai-analysis`,
+      resolvedBaseUrl,
+    );
+  } catch {
+    throw new RetailBiApiError(
+      'API 基础地址格式不正确，请检查后重新输入',
+    );
+  }
+
+  let response: Response;
+
+  try {
+    response = await fetch(url.toString(), {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({}),
+    });
+  } catch (error) {
+    const detail =
+      error instanceof Error ? error.message : '未知网络错误';
+
+    throw new RetailBiApiError(
+      `无法连接零售 BI 服务：${detail}`,
+    );
+  }
+
+  const apiResponse =
+    await parseApiResponse<AiDiagnosisVO>(response);
+
+  const requestId =
+    apiResponse?.requestId
+    || response.headers.get('X-Request-Id')
+    || undefined;
+
+  if (!response.ok) {
+    throw new RetailBiApiError(
+      apiResponse?.message
+      || `请求失败，HTTP 状态码：${response.status}`,
+      response.status,
+      requestId,
+    );
+  }
+
+  if (apiResponse === null) {
+    throw new RetailBiApiError(
+      '零售 BI 服务返回的内容不是有效 JSON',
+      response.status,
+      requestId,
+    );
+  }
+
+  if (apiResponse.code !== 200) {
+    throw new RetailBiApiError(
+      apiResponse.message || '零售 BI 服务返回业务错误',
+      apiResponse.code,
+      requestId,
+    );
+  }
+
+  if (apiResponse.data === null) {
+    throw new RetailBiApiError(
+      '零售 BI 服务未返回诊断结果',
       apiResponse.code,
       requestId,
     );

@@ -5,6 +5,7 @@ import { latestAppVersion } from './data/updateLogs';
 import { APP_NAME } from './config/app';
 import type { ChartTab, DataSourceState, OriginalFieldRadarState, ParsedTable } from './types';
 import type { RetailBiConnectionConfig, SalesAnomalyVO, SalesOverviewVO, SalesOverviewComparisonVO } from './types/retailBi';
+import { fetchAiDiagnosis } from './services/retailBiApi';
 import UsageGuide from './components/UsageGuide';
 import UpdateNotice from './components/UpdateNotice';
 import { clearOriginalFieldRadarCache } from './components/charts/OriginalFieldRadar';
@@ -450,6 +451,21 @@ export default function App() {
     setRetailBiAnomalies(anomalies);
   }, []);
 
+  // ===== AI 异常诊断回调（可选扩展能力，不影响异常分析主流程） =====
+  const handleRequestAiDiagnosis = useCallback(
+    async (dt: string) => {
+      if (dataSource.type !== 'retail-bi') {
+        throw new Error('零售 BI 基础地址未配置');
+      }
+      const baseUrl = dataSource.baseUrl;
+      if (!baseUrl) {
+        throw new Error('零售 BI 基础地址未配置');
+      }
+      return fetchAiDiagnosis(baseUrl, dt);
+    },
+    [dataSource.type],
+  );
+
   const handleFillSample = useCallback(() => {
     setShowSampleSelector(true);
   }, []);
@@ -599,7 +615,7 @@ export default function App() {
           {/* 零售 BI 经营异常 */}
           {retailBiAnomalies !== null && (
             <div style={{ marginTop: '20px' }}>
-              <RetailBiAnomalyPanel data={retailBiAnomalies} />
+              <RetailBiAnomalyPanel data={retailBiAnomalies} requestAiDiagnosis={handleRequestAiDiagnosis} />
             </div>
           )}
 

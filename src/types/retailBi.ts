@@ -98,3 +98,42 @@ export interface SalesAnomalyVO {
   primaryDriver: 'ORDERS' | 'AVG_ORDER_VALUE' | string | null;
   sourceSystem: string;
 }
+
+/**
+ * AI 诊断的关键驱动项。
+ * name 为驱动指标名；value 与 note 为可选的补充说明。
+ */
+export interface AiDriver {
+  name: string;
+  value?: number | string;
+  note?: string;
+}
+
+/**
+ * AI 诊断建议项。
+ * priority 为建议优先级（LOW / MEDIUM / HIGH，可为空）；
+ * text 为具体建议描述。
+ *
+ * 兼容后端两种返回格式：
+ * - 对象格式 { priority?: string; text: string }；
+ * - 字符串格式（建议纯文本，此时无优先级）。
+ */
+export type AiSuggestion =
+  | { priority?: 'LOW' | 'MEDIUM' | 'HIGH' | string; text: string }
+  | string;
+
+/**
+ * AI 异常诊断结果（ai-analysis 接口返回）。
+ *
+ * 该结果仅作为“统计/业务解释”的扩展展示，不修改异常分析逻辑；
+ * source 标明内容来源为 AI 还是后端兜底 FALLBACK。
+ */
+export interface AiDiagnosisVO {
+  dt: string;
+  rootCause: string;
+  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'SEVERE' | string;
+  keyDrivers: AiDriver[];
+  impactAssessment: string | Array<{ label: string; value: string }>;
+  suggestions: AiSuggestion[];
+  source: 'AI' | 'FALLBACK' | string;
+}
