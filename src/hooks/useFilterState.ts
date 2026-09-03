@@ -65,6 +65,9 @@ export function useFilterState(
   const filteredParsedData = useMemo(() => {
     if (!parsedData || !filterResult) return parsedData;
     if (filterResult.filterSummary.activeConditions === 0) return parsedData;
+    // 筛选结果为空时不允许覆盖原始分析数据：保留原始行，仅由上下文提示展示空结果，
+    // 避免后续分析（统计/图表/相对位置/导出）因行数归零而消失。
+    if (filterResult.filterSummary.filteredCount === 0) return parsedData;
     return { ...parsedData, rows: filterResult.filteredRows };
   }, [parsedData, filterResult]);
 

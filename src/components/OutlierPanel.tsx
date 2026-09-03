@@ -27,6 +27,8 @@ import { detectFieldOutliers } from '../engine/outlierDetection';
 import type { OutlierStatus } from '../engine/outlierDetection';
 import OutlierDetailsDialog from './OutlierDetailsDialog';
 import type { ResolvedFieldSchema } from '../field-schema';
+import HelpPopover from './help/HelpPopover';
+import { getHelp } from '../data/helpContent';
 
 /** 异常值条目 */
 export interface OutlierEntry {
@@ -219,6 +221,7 @@ export default function OutlierPanel({
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 14, fontWeight: 600 }}>{selectedField} — 异常值候选</span>
+          <HelpPopover content={getHelp('outlier')} />
           {hasBadgeCount ? (
             <span style={{
               fontSize: 12,

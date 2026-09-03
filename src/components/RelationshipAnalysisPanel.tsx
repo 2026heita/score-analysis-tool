@@ -6,6 +6,8 @@
 
 import { useState } from 'react';
 import type { CorrelationResult, CorrelationPair } from '../engine/correlationAnalyzer';
+import HelpPopover from './help/HelpPopover';
+import { getHelp } from '../data/helpContent';
 
 interface RelationshipAnalysisPanelProps {
   correlationResult: CorrelationResult | null;
@@ -58,6 +60,7 @@ export default function RelationshipAnalysisPanel({ correlationResult }: Relatio
 
   return (
     <div style={styles.container}>
+      <div style={styles.headerRow}>
       <button
         style={styles.header}
         onClick={() => setExpanded(!expanded)}
@@ -73,6 +76,8 @@ export default function RelationshipAnalysisPanel({ correlationResult }: Relatio
           {numericalFields.length} 个字段 · {totalPairs} 对关系
         </span>
       </button>
+      <HelpPopover content={getHelp('relation')} />
+      </div>
 
       {expanded && (
         <div style={styles.body}>
@@ -298,11 +303,17 @@ const styles: Record<string, React.CSSProperties> = {
     background: '#fff',
     boxShadow: '0 2px 8px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
   },
+  headerRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    paddingRight: '10px',
+  },
   header: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    width: '100%',
+    flex: '1 1 auto',
     padding: '14px 16px',
     border: 'none',
     background: 'linear-gradient(135deg, #0891b2 0%, #0e7490 100%)',

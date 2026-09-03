@@ -12,6 +12,8 @@
 
 import { useCallback, useState } from 'react';
 import type { AiDiagnosisVO, SalesAnomalyVO } from '../types/retailBi';
+import HelpPopover from './help/HelpPopover';
+import { getHelp } from '../data/helpContent';
 
 interface RetailBiAnomalyPanelProps {
   data: SalesAnomalyVO[];
@@ -137,7 +139,7 @@ export default function RetailBiAnomalyPanel({ data, requestAiDiagnosis }: Retai
     <div style={styles.container}>
       <div style={styles.header}>
         <div>
-          <div style={styles.headerTitle}>经营异常分析</div>
+          <div style={styles.headerTitle}>经营异常分析 <HelpPopover content={getHelp('ai')} /></div>
           <div style={styles.headerSubtitle}>
             Hive ADS 异常结果 · 前端仅展示，不重复计算规则
           </div>

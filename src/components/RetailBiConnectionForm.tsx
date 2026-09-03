@@ -16,6 +16,8 @@
 import { useState, useEffect, useRef } from 'react';
 import type { ParsedTable } from '../types';
 import type { RetailBiConnectionConfig, SalesAnomalyVO, SalesOverviewVO, SalesOverviewComparisonVO } from '../types/retailBi';
+import HelpPopover from './help/HelpPopover';
+import { getHelp } from '../data/helpContent';
 import {
   getDefaultRetailBiBaseUrl,
   fetchSalesTrend,
@@ -60,16 +62,6 @@ interface StoredConnectionConfig {
 const STORAGE_KEY = 'game-score.retail-bi.connection';
 
 /**
- * 旧版 localhost 地址列表（需要清除的默认值）。
- */
-const LEGACY_LOCALHOST_URLS = new Set([
-  'http://localhost:8080',
-  'http://localhost:8080/',
-  'http://127.0.0.1:8080',
-  'http://127.0.0.1:8080/',
-]);
-
-/**
  * 允许的 profile 值白名单。
  */
 const ALLOWED_PROFILES = new Set([
@@ -101,21 +93,14 @@ function getRetailDataProfile(): { value: string | null; isValid: boolean } {
 /**
  * 从 localStorage 读取连接配置。
  *
- * 如果保存的地址是旧版 localhost 默认值，则清除该存储键。
+ * 直接返回已保存的用户配置；不再在加载时清除 localhost 等旧默认值，
+ * 确保用户手动配置的 baseUrl（含本地 localhost 联调地址）能在刷新后正确恢复。
  */
 function loadStoredConfig(): StoredConnectionConfig | null {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (!stored) return null;
-    const config = JSON.parse(stored) as StoredConnectionConfig;
-
-    // 兼容旧配置：清除 localhost 默认值
-    if (config.baseUrl && LEGACY_LOCALHOST_URLS.has(config.baseUrl)) {
-      localStorage.removeItem(STORAGE_KEY);
-      return null;
-    }
-
-    return config;
+    return JSON.parse(stored) as StoredConnectionConfig;
   } catch {
     return null;
   }
@@ -405,6 +390,7 @@ export function RetailBiConnectionForm({
               </span>
               <span style={styles.title}>外部数据源</span>
               <span style={styles.optionalBadge}>可选</span>
+              <HelpPopover content={getHelp('external')} />
             </div>
             <span style={styles.subtitle}>
               连接已配置的业务分析服务并加载结构化数据
@@ -452,7 +438,10 @@ export function RetailBiConnectionForm({
 
           <div className="retail-bi-date-row" style={styles.dateRow}>
             <div className="retail-bi-date-group" style={styles.dateGroup}>
-              <label style={styles.label} htmlFor="retail-bi-start-date">开始日期</label>
+              <span style={styles.dateRangeLabelWrap}>
+                <label style={styles.label} htmlFor="retail-bi-start-date">开始日期</label>
+                <HelpPopover content={getHelp('retail_date_range')} />
+              </span>
               <div style={styles.dateInputGroup}>
                 <button
                   type="button"
@@ -693,6 +682,10 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: '4px',
+  },
+  dateRangeLabelWrap: {
+    display: 'inline-flex',
+    alignItems: 'center',
   },
   label: {
     fontSize: '13px',

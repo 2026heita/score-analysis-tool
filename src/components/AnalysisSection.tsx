@@ -37,6 +37,8 @@ import { DebugPanel } from './DebugPanel';
 import type { ChartTab, OriginalFieldRadarState, ParsedTable } from '../types';
 import type { ParseSummary } from '../utils/tableParser/types';
 import type { FilterCondition } from '../engine/filterRows';
+import HelpPopover from './help/HelpPopover';
+import { getHelp } from '../data/helpContent';
 
 // 相对位置方向覆盖类型（仅本组件使用）
 type PositionDirectionOverride = 'higher_is_better' | 'lower_is_better';
@@ -604,7 +606,7 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
 
           {parseSummary && (
             <section style={styles.section}>
-              <h2 style={styles.sectionTitle}>识别摘要</h2>
+              <h2 style={styles.sectionTitle}>识别摘要 <HelpPopover content={getHelp('field')} /></h2>
               <div style={styles.summaryGrid}>
                 <SummaryItem label="已识别主表" value={parseSummary.sheetName} />
                 <SummaryItem label="识别字段" value={`${parseSummary.fieldCount} 个`} />
@@ -701,9 +703,9 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
           />
 
           {filterResult?.filterSummary && filterResult.filterSummary.activeConditions > 0 && filterResult.filterSummary.filteredCount === 0 && (
-            <section style={{ ...styles.section, ...styles.errorSection }}>
-              <p style={styles.errorText}>
-                当前筛选条件下无可分析数据，请调整筛选条件后重试。
+            <section style={styles.section}>
+              <p style={styles.warning}>
+                当前筛选条件下无匹配记录，已保留原始数据继续分析展示；可调整筛选条件后重新筛选。
               </p>
             </section>
           )}
@@ -720,8 +722,8 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
             )}
             <div style={styles.settingsRow}>
               <div style={styles.settingItem}>
-                <label style={styles.settingLabel}>分析字段</label>
-                <select style={styles.select} value={selectedField} onChange={e => {
+                <label style={styles.settingLabel}>分析字段 <HelpPopover content={getHelp('position_field')} /></label>
+              <select style={styles.select} value={selectedField} onChange={e => {
                   // 切换字段时清空用户输入值，避免旧值用于新字段分析
                   if (e.target.value !== selectedField) {
                     setInputValue('');
@@ -781,7 +783,7 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
                 </select>
               </div>
               <div style={styles.settingItem}>
-                <label style={styles.settingLabel}>你的数值</label>
+                <label style={styles.settingLabel}>你的数值 <HelpPopover content={getHelp('reference_value')} /></label>
                 <input type="number" style={styles.input} placeholder="输入数值" value={inputValue} onChange={e => setInputValue(e.target.value)} />
               </div>
               <div style={styles.settingItem}>
@@ -829,7 +831,7 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
             {availableDimensions.length > 0 && (
               <div style={{ ...styles.settingsRow, marginTop: '12px' }}>
                 <div style={styles.settingItem}>
-                  <label style={styles.settingLabel}>分组维度（可选）</label>
+                  <label style={styles.settingLabel}>分组维度（可选）<HelpPopover content={getHelp('group_dimension')} /></label>
                   <select
                     style={styles.select}
                     value={selectedDimension}
@@ -908,7 +910,7 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
             <ErrorBoundary>
             <section style={styles.section}>
               <div style={styles.positionHeader}>
-                <h2 style={styles.sectionTitle}>相对位置</h2>
+                <h2 style={styles.sectionTitle}>相对位置 <HelpPopover content={getHelp('position')} /></h2>
               </div>
 
               {summaryText && <div style={styles.summaryBox}>{summaryText}</div>}
@@ -962,6 +964,10 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
                   {activeChartTab === 'quartile' && <QuartilePieChart {...chartProps.quartile} />}
                   {activeChartTab === 'timeseries' && (
                     <>
+                      <div style={styles.chartHelpRow}>
+                        <span style={styles.chartHelpLabel}>时间趋势</span>
+                        <HelpPopover content={getHelp('timeseries')} />
+                      </div>
                       {timeField && timeSeriesData ? (
                         <>
                           <TimeSeriesLineChart
@@ -1036,7 +1042,7 @@ export default function AnalysisSection(props: AnalysisSectionProps) {
             <ErrorBoundary>
             <section style={styles.section}>
               <div style={styles.positionHeader}>
-                <h2 style={styles.sectionTitle}>分组分析</h2>
+                <h2 style={styles.sectionTitle}>分组分析 <HelpPopover content={getHelp('group')} /></h2>
                 <button
                   className="copy-btn"
                   style={styles.exportButton}
@@ -1153,6 +1159,8 @@ function SummaryItem({ label, value, highlight }: { label: string; value: string
 const styles: Record<string, React.CSSProperties> = {
   section: { background: '#fff', borderRadius: '14px', padding: '20px', marginBottom: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(99,102,241,0.04)', transition: 'box-shadow 0.2s, transform 0.2s', border: '1px solid rgba(226, 232, 240, 0.8)' },
   sectionTitle: { margin: '0 0 14px', fontSize: '16px', fontWeight: 600, color: '#334155', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' },
+  chartHelpRow: { display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '8px' },
+  chartHelpLabel: { fontSize: '14px', fontWeight: 600, color: '#334155' },
   hint: { margin: '0 0 10px', fontSize: '13px', color: '#4338ca', background: 'linear-gradient(135deg, #eef2ff 0%, #f0f7ff 100%)', padding: '8px 12px', borderRadius: '8px', borderLeft: '3px solid #6366f1' },
   error: { margin: '8px 0 0', color: '#ef4444', fontSize: '14px' },
   warning: { margin: '8px 0 0', color: '#92400e', fontSize: '13px', background: '#fffbeb', padding: '6px 10px', borderRadius: '6px' },

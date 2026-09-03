@@ -42,7 +42,7 @@ export default function AnalysisContextHint({
     return (
       <div style={styles.container}>
         <div style={styles.emptyHint}>
-          当前筛选条件下无可分析数据（{originalCount} 行 → 0 行），请调整筛选条件。
+          当前筛选条件下无匹配记录（{originalCount} 行 → 0 行），已保留原始数据用于分析展示；可调整筛选条件后重新筛选。
         </div>
       </div>
     );

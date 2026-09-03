@@ -10,6 +10,8 @@ import {
 } from '../../utils/chartLabel';
 import EChartsWrapper from './EChartsWrapper';
 import type { OriginalFieldRadarState } from '../../types';
+import HelpPopover from '../help/HelpPopover';
+import { getHelp } from '../../data/helpContent';
 // @deprecated 教育/高考功能已收敛至 legacy 区
 import { FIXED_SUBJECT_ORDER } from '../../config/education';
 
@@ -91,6 +93,12 @@ function resolveFieldLabelBudget(containerWidth: number): number {
 // 确保 formatter 换行后任何单行都不会再次溢出被截断。
 function labelPxWidthForBudget(budget: number): number {
   return Math.max(80, Math.round(budget * 11.5));
+}
+
+// 轻量日期规范化，仅用于比较（不改变原始数据）：
+// 兼容 ISO 带时间部分，如 2009-12-18T00:00:00.000Z -> 2009-12-18
+function normalizeTimeValue(value: string): string {
+  return value.trim().split('T')[0];
 }
 
 export default function OriginalFieldRadar({
@@ -493,15 +501,15 @@ export default function OriginalFieldRadar({
   const [lookupMessage, setLookupMessage] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null);
   const [emptyFields, setEmptyFields] = useState<string[]>([]);
 
-  // 查找并填充某行数据（点击按钮或回车触发）。按"名称/标识"通用字段精确或模糊匹配。
+  // 查找并填充某行数据（点击按钮或回车触发）。按"唯一定位字段"精确或模糊匹配。
   const performRowLookup = useCallback(() => {
     const query = rowSearchQuery.trim();
     if (!query) {
-      setLookupMessage({ type: 'warning', text: '请输入名称或标识' });
+      setLookupMessage({ type: 'warning', text: '请输入唯一定位字段值' });
       return;
     }
 
-    // 查找名称字段和标识字段（通用业务词为主；教育词作为合法数据列名兼容保留）
+    // 查找唯一定位字段（覆盖通用业务词；保留既有兼容词，不新增识别规则）
     const nameField = headers.find(h => {
       const lower = h.toLowerCase();
       return lower.includes('姓名') || lower.includes('名称') || lower.includes('学生姓名') || lower === 'name';
@@ -512,10 +520,15 @@ export default function OriginalFieldRadar({
         || lower.includes('订单号') || lower.includes('账号') || lower.includes('id')
         || lower.includes('学号') || lower.includes('考生号') || lower.includes('考号') || lower.includes('准考证号');
     });
+    // 时间定位字段：只按已有 role 识别，不自行增加日期字段名判断
+    const timeField = headers.find(h => (getFieldAnalysisRole ? getFieldAnalysisRole(h) === 'time' : false));
 
     if (!nameField && !idField) {
-      setLookupMessage({ type: 'error', text: '未找到名称或标识字段' });
-      return;
+      if (!timeField) {
+        setLookupMessage({ type: 'error', text: '当前数据未包含可用于记录定位的字段' });
+        return;
+      }
+      setLookupMessage({ type: 'warning', text: '未找到唯一定位字段，尝试使用时间字段定位记录' });
     }
 
     const queryLower = query.toLowerCase();
@@ -571,11 +584,30 @@ export default function OriginalFieldRadar({
       }
     }
 
+    // 优先级4：时间字段定位（仅当唯一定位/名称字段均未匹配时执行）
+    // 规范化后比较，多行同日复用选择器，不自动选第一条
+    if (timeField) {
+      const normQuery = normalizeTimeValue(query);
+      const timeMatches = rows.filter(row => {
+        const val = (row[timeField] || '').trim();
+        return val !== '' && normalizeTimeValue(val) === normQuery;
+      });
+      if (timeMatches.length === 1) {
+        fillRowData(timeMatches[0]);
+        return;
+      } else if (timeMatches.length > 1) {
+        setMatchedRows(timeMatches);
+        setShowRowPicker(true);
+        setLookupMessage({ type: 'warning', text: `找到 ${timeMatches.length} 条记录，请选择` });
+        return;
+      }
+    }
+
     // 未找到
-    setLookupMessage({ type: 'error', text: '未找到匹配记录，请检查名称或标识。' });
+    setLookupMessage({ type: 'error', text: '未找到匹配记录，请检查唯一定位字段值。' });
     setMatchedRows([]);
     setShowRowPicker(false);
-  }, [rowSearchQuery, headers, rows]);
+  }, [rowSearchQuery, headers, rows, getFieldAnalysisRole]);
 
   // 填充行数据（只更新 fieldValues，不修改 selectedFields）
   const fillRowData = useCallback((row: Record<string, string>) => {
@@ -886,7 +918,7 @@ export default function OriginalFieldRadar({
 
   return (
     <div>
-      {/* 查找某一行的数据并自动填充：按名称或标识列匹配 */}
+      {/* 查找某一行并自动填充：按系统识别的唯一定位字段列匹配 */}
       {rows.length > 0 && (
         <div style={styles.rowSearchContainer}>
           <div style={styles.rowSearchRow}>
@@ -897,7 +929,7 @@ export default function OriginalFieldRadar({
               </svg>
               <input
                 type="text"
-                placeholder="输入名称或标识查找并自动填充"
+                placeholder="输入唯一定位字段值查找记录并自动填充"
                 value={rowSearchQuery}
                 onChange={e => setRowSearchQuery(e.target.value)}
                 onKeyDown={e => {
@@ -914,6 +946,10 @@ export default function OriginalFieldRadar({
             >
               查找并填充
             </button>
+          </div>
+          <div style={styles.rowSearchHint}>
+            支持基于系统识别的标识字段定位记录
+            <HelpPopover content={getHelp('record')} />
           </div>
 
           {/* 查找反馈消息 */}
@@ -1722,6 +1758,12 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     whiteSpace: 'nowrap',
     flexShrink: 0,
+  },
+  rowSearchHint: {
+    marginTop: '8px',
+    fontSize: '12px',
+    color: '#64748b',
+    lineHeight: '1.5',
   },
   lookupMessage: {
     marginTop: '10px',

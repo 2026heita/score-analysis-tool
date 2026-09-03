@@ -11,6 +11,8 @@
  */
 
 import type { FilterCondition, TextOperator, NumericOperator, FilterSummary } from '../engine/filterRows';
+import HelpPopover from './help/HelpPopover';
+import { getHelp } from '../data/helpContent';
 
 interface FilterPanelProps {
   /** 所有字段名 */
@@ -128,6 +130,7 @@ export default function FilterPanel({
       <div style={styles.header} onClick={onToggleCollapse}>
         <span style={styles.arrow}>{collapsed ? '▶' : '▼'}</span>
         <span style={styles.headerTitle}>数据筛选</span>
+        <HelpPopover content={getHelp('filter')} />
         {hasActiveConditions && (
           <span style={styles.badge}>
             {filterSummary.activeConditions} 个条件 · {filterSummary.filteredCount} / {filterSummary.originalCount} 行
@@ -144,6 +147,7 @@ export default function FilterPanel({
 
             return (
               <div key={i} style={styles.row}>
+                <span style={styles.selectWrap}>
                 <select
                   style={styles.select}
                   value={cond.field}
@@ -154,7 +158,10 @@ export default function FilterPanel({
                     <option key={h} value={h}>{h}</option>
                   ))}
                 </select>
+                <HelpPopover content={getHelp('filter_field')} />
+                </span>
 
+                <span style={styles.selectWrap}>
                 <select
                   style={styles.select}
                   value={cond.operator}
@@ -166,8 +173,11 @@ export default function FilterPanel({
                     <option key={op.value} value={op.value}>{op.label}</option>
                   ))}
                 </select>
+                <HelpPopover content={getHelp('filter_condition')} />
+                </span>
 
                 {cond.operator === 'between' ? (
+                  <span style={styles.selectWrap}>
                   <div style={styles.betweenGroup}>
                     <input
                       style={styles.betweenInput}
@@ -187,7 +197,10 @@ export default function FilterPanel({
                       aria-label="最大值"
                     />
                   </div>
+                  <HelpPopover content={getHelp('filter_value')} />
+                  </span>
                 ) : needsValue && (
+                  <span style={styles.selectWrap}>
                   <input
                     style={styles.input}
                     type="text"
@@ -195,6 +208,8 @@ export default function FilterPanel({
                     onChange={e => handleValueChange(i, e.target.value)}
                     placeholder="输入筛选值"
                   />
+                  <HelpPopover content={getHelp('filter_value')} />
+                  </span>
                 )}
 
                 <button
@@ -261,6 +276,11 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
+  },
+  selectWrap: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '2px',
   },
   select: {
     padding: '6px 8px',
