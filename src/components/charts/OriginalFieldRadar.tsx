@@ -10,6 +10,13 @@ import {
 } from '../../utils/chartLabel';
 import EChartsWrapper from './EChartsWrapper';
 import type { OriginalFieldRadarState } from '../../types';
+import {
+  getRadarSelectedFieldsCache,
+  getRadarFieldValuesCache,
+  getRadarViewModeCache,
+  setRadarCache,
+  clearOriginalFieldRadarCache,
+} from './originalFieldRadarCache';
 import HelpPopover from '../help/HelpPopover';
 import { getHelp } from '../../data/helpContent';
 // @deprecated 教育/高考功能已收敛至 legacy 区
@@ -36,22 +43,6 @@ type ViewMode = 'bar' | 'radar';
 type QuickMode = 'recommended' | 'others' | null;
 
 const EXCLUDED_DEFAULT = ['名次', '排名', '序号', '编号'];
-
-// 模块级缓存：在组件重新挂载时保留字段选择和数值
-// 这是为了解决组件因父组件重渲染或 ReactECharts 导致的意外卸载/重新挂载问题
-let _cachedSelectedFields: string[] | null = null;
-let _cachedFieldValues: Record<string, number> | null = null;
-let _cachedViewMode: 'bar' | 'radar' | null = null;
-
-/**
- * 显式清除模块级缓存
- * 应在切换数据集、清空数据、加载示例数据时调用，防止旧数据污染新数据集。
- */
-export function clearOriginalFieldRadarCache(): void {
-  _cachedSelectedFields = null;
-  _cachedFieldValues = null;
-  _cachedViewMode = null;
-}
 
 // 字段分组配置：每个字段只属于一个分组（基于通用分析角色）
 const FIELD_GROUP_CONFIG = [
@@ -108,15 +99,13 @@ export default function OriginalFieldRadar({
   // 缓存清理：当 headers 变化时（说明切换了文件或重新解析），清空缓存
   const headersKey = headers.join(',');
   useEffect(() => {
-    _cachedSelectedFields = null;
-    _cachedFieldValues = null;
-    _cachedViewMode = null;
+    clearOriginalFieldRadarCache();
   }, [headersKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 分离状态：字段选择（稳定）和用户输入值（频繁变化）
   // 优先使用缓存，其次使用 initialSelections，避免组件重新挂载时状态丢失
   const [selectedFields, setSelectedFields] = useState<string[]>(() => {
-    const cached = _cachedSelectedFields;
+    const cached = getRadarSelectedFieldsCache();
     if (cached && cached.length > 0) {
       return cached;
     }
@@ -125,7 +114,7 @@ export default function OriginalFieldRadar({
   });
 
   const [fieldValues, setFieldValues] = useState<Record<string, number>>(() => {
-    const cached = _cachedFieldValues;
+    const cached = getRadarFieldValuesCache();
     if (cached && Object.keys(cached).length > 0) {
       return cached;
     }
@@ -139,7 +128,7 @@ export default function OriginalFieldRadar({
   });
 
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    const cached = _cachedViewMode;
+    const cached = getRadarViewModeCache();
     if (cached) {
       return cached;
     }
@@ -149,9 +138,7 @@ export default function OriginalFieldRadar({
 
   // 关键修复：在渲染时立即同步缓存，而不是在 useLayoutEffect 中
   // 这样即使组件被 ReactECharts 重新挂载，缓存也已更新
-  _cachedSelectedFields = selectedFields;
-  _cachedFieldValues = { ...fieldValues };
-  _cachedViewMode = viewMode;
+  setRadarCache(selectedFields, fieldValues, viewMode);
 
   // 动画 token：每次切换 viewMode 时递增，驱动 shouldAnimate
   const [animationToken, setAnimationToken] = useState(0);
@@ -188,16 +175,8 @@ export default function OriginalFieldRadar({
 
   // 使用 useLayoutEffect 同步更新缓存，确保在组件重新挂载前缓存已更新
   useLayoutEffect(() => {
-    _cachedSelectedFields = selectedFields;
+    setRadarCache(selectedFields, fieldValues, viewMode);
   }, [selectedFields]);
-
-  useLayoutEffect(() => {
-    _cachedFieldValues = { ...fieldValues };
-  }, [fieldValues]);
-
-  useLayoutEffect(() => {
-    _cachedViewMode = viewMode;
-  }, [viewMode]);
 
   // 使用 ref 存储最新的 fieldValues 和 onStateChange，避免在 effect 依赖数组中添加它们
   const fieldValuesRef = useRef(fieldValues);
