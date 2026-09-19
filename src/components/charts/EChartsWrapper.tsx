@@ -42,9 +42,19 @@ export default function EChartsWrapper({ option, style, chartTypes }: EChartsWra
   useEffect(() => {
     if (ready) return;
     let cancelled = false;
-    ensureECharts(chartTypes).then(() => {
-      if (!cancelled && !isEChartsReady(chartTypes)) setReady(true);
-    });
+    // 临时调试日志：首次依赖动态模块(chartTypes 含雷达等)时记录加载起点
+    console.info('[echarts] load: ready=false, chartType=', chartTypes.join(','));
+    ensureECharts(chartTypes)
+      .then(() => {
+        if (cancelled) return;
+        // 修复：旧逻辑 `!isEChartsReady(chartTypes)` 在“加载成功”后恰恰为 false，
+        // 导致 ready 永远置不回 true → 首次进入条形图（chartTypes 含 radar）常驻骨架空白。
+        // 加载成功后应无条件按真实就绪态刷新 ready，让图表按期用最新 option 初始化。
+        setReady(isEChartsReady(chartTypes));
+      })
+      .catch((err) => {
+        console.error('[echarts] dynamic module load failed:', chartTypes.join(','), err);
+      });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, chartTypes.join(',')]);
@@ -62,6 +72,9 @@ export default function EChartsWrapper({ option, style, chartTypes }: EChartsWra
       const h = dom.clientHeight;
       if (w === 0 || h === 0) return false;
       const instance = core.init(dom, undefined, { width: w, height: h });
+      // 临时调试日志
+      const seriesArr = ((option?.series as any) ?? []);
+      console.info('[echarts] init:', { chartType: chartTypes.join(','), width: w, height: h, hasSeries: seriesArr.length > 0, seriesCount: seriesArr.length });
       // 首次 setOption：notMerge=true，播放入场动画
       instance.setOption(option, { notMerge: true, lazyUpdate: false });
       chartRef.current = instance;
@@ -86,6 +99,8 @@ export default function EChartsWrapper({ option, style, chartTypes }: EChartsWra
         if (w === 0 || h === 0) return;
         const last = lastSizeRef.current;
         if (!last || last.w !== w || last.h !== h) {
+          // 临时调试日志
+          console.info('[echarts] resize:', { width: w, height: h });
           inst.resize({ width: w, height: h });
           lastSizeRef.current = { w, h };
         }
@@ -107,6 +122,9 @@ export default function EChartsWrapper({ option, style, chartTypes }: EChartsWra
           lastSizeRef.current = { w, h };
         }
       }
+      // 临时调试日志
+      const sArr = ((option?.series as any) ?? []);
+      console.info('[echarts] setOption(update):', { chartType: chartTypes.join(','), hasSeries: sArr.length > 0, seriesCount: sArr.length });
       existing.setOption(option, { notMerge: false, lazyUpdate: false });
     }
 
@@ -143,6 +161,8 @@ export default function EChartsWrapper({ option, style, chartTypes }: EChartsWra
         resizeObserverRef.current = null;
       }
       if (chartRef.current) {
+        // 临时调试日志
+        console.info('[echarts] dispose');
         chartRef.current.dispose();
         chartRef.current = null;
       }
