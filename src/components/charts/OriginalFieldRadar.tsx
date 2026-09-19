@@ -10,8 +10,28 @@ import {
 } from '../../utils/chartLabel';
 import EChartsWrapper from './EChartsWrapper';
 import type { OriginalFieldRadarState } from '../../types';
+import {
+  getRadarSelectedFieldsCache,
+  getRadarFieldValuesCache,
+  getRadarViewModeCache,
+  setRadarCache,
+  clearOriginalFieldRadarCache,
+} from './originalFieldRadarCache';
 import HelpPopover from '../help/HelpPopover';
 import { getHelp } from '../../data/helpContent';
+// 记录定位字段识别引擎：字段分析 / 语义匹配 / 组合定位 / 模糊探索（离线、通用）
+import {
+  analyzeLocatorFields,
+  buildLocatorReport,
+  matchRowsByField,
+  matchRowsByCombo,
+  lookupNormalizers,
+} from '../../utils/tableParser/recordLocator';
+import type {
+  LocatorFieldAnalysis,
+  LocatorReport,
+  LocatorSemantic,
+} from '../../utils/tableParser/recordLocator';
 // @deprecated 教育/高考功能已收敛至 legacy 区
 import { FIXED_SUBJECT_ORDER } from '../../config/education';
 
@@ -36,22 +56,6 @@ type ViewMode = 'bar' | 'radar';
 type QuickMode = 'recommended' | 'others' | null;
 
 const EXCLUDED_DEFAULT = ['名次', '排名', '序号', '编号'];
-
-// 模块级缓存：在组件重新挂载时保留字段选择和数值
-// 这是为了解决组件因父组件重渲染或 ReactECharts 导致的意外卸载/重新挂载问题
-let _cachedSelectedFields: string[] | null = null;
-let _cachedFieldValues: Record<string, number> | null = null;
-let _cachedViewMode: 'bar' | 'radar' | null = null;
-
-/**
- * 显式清除模块级缓存
- * 应在切换数据集、清空数据、加载示例数据时调用，防止旧数据污染新数据集。
- */
-export function clearOriginalFieldRadarCache(): void {
-  _cachedSelectedFields = null;
-  _cachedFieldValues = null;
-  _cachedViewMode = null;
-}
 
 // 字段分组配置：每个字段只属于一个分组（基于通用分析角色）
 const FIELD_GROUP_CONFIG = [
@@ -95,10 +99,34 @@ function labelPxWidthForBudget(budget: number): number {
   return Math.max(80, Math.round(budget * 11.5));
 }
 
-// 轻量日期规范化，仅用于比较（不改变原始数据）：
-// 兼容 ISO 带时间部分，如 2009-12-18T00:00:00.000Z -> 2009-12-18
-function normalizeTimeValue(value: string): string {
-  return value.trim().split('T')[0];
+// 计算"查找并填充"模块的数据源身份（identity）。
+// 仅用于判断数据是否切换，绝不反向关联分析/统计/图表状态：
+// 由 表头 + 行数 + 轻量内容采样 派生的确定性指纹，能覆盖
+// 上传新文件 / 切换 sheet / 重新解析 / 切换数据集 / 清空数据 等全部触发点。
+function dataSourceKey(headers: string[], rows: Record<string, string>[]): string {
+  let code = 2166136261; // FNV-1a 初值
+  for (const h of headers) {
+    const cell = h;
+    for (let k = 0; k < cell.length; k++) {
+      code ^= cell.charCodeAt(k);
+      code = Math.imul(code, 16777619);
+    }
+    code = Math.imul(code ^ 0x01020304, 16777619);
+  }
+  // 内容采样：前 40 行 × 前 4 列，避免大表全量哈希开销
+  const sample = Math.min(rows.length, 40);
+  for (let i = 0; i < sample; i++) {
+    const row = rows[i];
+    for (let c = 0; c < Math.min(headers.length, 4); c++) {
+      const cell = String(row?.[headers[c]] ?? '');
+      for (let k = 0; k < cell.length; k++) {
+        code ^= cell.charCodeAt(k);
+        code = Math.imul(code, 16777619);
+      }
+    }
+    code = Math.imul(code ^ 0x0A0B0C0D, 16777619);
+  }
+  return headers.join('\u0001') + '::' + rows.length + '::' + (code >>> 0).toString(36);
 }
 
 export default function OriginalFieldRadar({
@@ -108,15 +136,17 @@ export default function OriginalFieldRadar({
   // 缓存清理：当 headers 变化时（说明切换了文件或重新解析），清空缓存
   const headersKey = headers.join(',');
   useEffect(() => {
-    _cachedSelectedFields = null;
-    _cachedFieldValues = null;
-    _cachedViewMode = null;
+    clearOriginalFieldRadarCache();
   }, [headersKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // "查找并填充"模块的数据源身份 + 上一次识别值，用于在数据切换时复位该模块
+  const currentDataSourceKey = useMemo(() => dataSourceKey(headers, rows), [headers, rows]);
+  const prevDataSourceKeyRef = useRef<string>(currentDataSourceKey);
 
   // 分离状态：字段选择（稳定）和用户输入值（频繁变化）
   // 优先使用缓存，其次使用 initialSelections，避免组件重新挂载时状态丢失
   const [selectedFields, setSelectedFields] = useState<string[]>(() => {
-    const cached = _cachedSelectedFields;
+    const cached = getRadarSelectedFieldsCache();
     if (cached && cached.length > 0) {
       return cached;
     }
@@ -125,7 +155,7 @@ export default function OriginalFieldRadar({
   });
 
   const [fieldValues, setFieldValues] = useState<Record<string, number>>(() => {
-    const cached = _cachedFieldValues;
+    const cached = getRadarFieldValuesCache();
     if (cached && Object.keys(cached).length > 0) {
       return cached;
     }
@@ -139,7 +169,7 @@ export default function OriginalFieldRadar({
   });
 
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    const cached = _cachedViewMode;
+    const cached = getRadarViewModeCache();
     if (cached) {
       return cached;
     }
@@ -148,10 +178,23 @@ export default function OriginalFieldRadar({
   });
 
   // 关键修复：在渲染时立即同步缓存，而不是在 useLayoutEffect 中
-  // 这样即使组件被 ReactECharts 重新挂载，缓存也已更新
-  _cachedSelectedFields = selectedFields;
-  _cachedFieldValues = { ...fieldValues };
-  _cachedViewMode = viewMode;
+  // 这样即使组件被 ReactECharts 重新挂载，缓存也已更新。
+  // 注意：字段选择属于"当前表"的业务状态。切表后组件不以 key 重挂载，
+  // selectedFields 仍是旧表字段。这里把写缓存/上报的字段收敛到当前表头，
+  // 从源头杜绝旧字段被 setRadarCache()/onStateChange 重新写回（残留根因）。
+  const validFieldSet = useMemo(() => new Set(headers), [headers]);
+  const validSelectedFields = useMemo(
+    () => selectedFields.filter(f => validFieldSet.has(f)),
+    [selectedFields, validFieldSet],
+  );
+  const validFieldValues = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(fieldValues)) {
+      if (validFieldSet.has(k)) out[k] = v;
+    }
+    return out;
+  }, [fieldValues, validFieldSet]);
+  setRadarCache(validSelectedFields, validFieldValues, viewMode);
 
   // 动画 token：每次切换 viewMode 时递增，驱动 shouldAnimate
   const [animationToken, setAnimationToken] = useState(0);
@@ -188,16 +231,8 @@ export default function OriginalFieldRadar({
 
   // 使用 useLayoutEffect 同步更新缓存，确保在组件重新挂载前缓存已更新
   useLayoutEffect(() => {
-    _cachedSelectedFields = selectedFields;
-  }, [selectedFields]);
-
-  useLayoutEffect(() => {
-    _cachedFieldValues = { ...fieldValues };
-  }, [fieldValues]);
-
-  useLayoutEffect(() => {
-    _cachedViewMode = viewMode;
-  }, [viewMode]);
+    setRadarCache(validSelectedFields, validFieldValues, viewMode);
+  }, [validSelectedFields, validFieldValues]);
 
   // 使用 ref 存储最新的 fieldValues 和 onStateChange，避免在 effect 依赖数组中添加它们
   const fieldValuesRef = useRef(fieldValues);
@@ -222,32 +257,63 @@ export default function OriginalFieldRadar({
   const [matchedRows, setMatchedRows] = useState<Record<string, string>[]>([]);
   const [showRowPicker, setShowRowPicker] = useState(false);
 
-  // 组合 selections 用于渲染
+  // ---- 鲁棒记录定位：字段分析 + 诊断 + 组合定位 + 调试 ----
+  // 每次表头/数据变化时重新分析定位字段（离线）
+  const locatorAnalysis = useMemo<LocatorFieldAnalysis[]>(
+    () => analyzeLocatorFields(headers, rows),
+    [headers, rows],
+  );
+  // 可靠唯一标识字段（可直接定位）
+  const primaryIdField = useMemo(
+    () => locatorAnalysis.find(a => a.semantic === 'identifier' && a.uniqueness >= 0.95 && a.isCandidate)?.fieldName ?? null,
+    [locatorAnalysis],
+  );
+  // 最佳的姓名 / 分组 / 标识候选（供组合定位与候选展示）
+  const bestNameField = useMemo(
+    () => locatorAnalysis.filter(a => a.semantic === 'name' && a.isCandidate).sort((x, y) => y.confidence - x.confidence)[0]?.fieldName ?? null,
+    [locatorAnalysis],
+  );
+  const bestGroupField = useMemo(
+    () => locatorAnalysis.filter(a => a.semantic === 'group' && a.isCandidate).sort((x, y) => y.confidence - x.confidence)[0]?.fieldName ?? null,
+    [locatorAnalysis],
+  );
+  const locatorCandidates = useMemo(
+    () => locatorAnalysis.filter(a => a.isCandidate).sort((x, y) => y.confidence - x.confidence),
+    [locatorAnalysis],
+  );
+  // 组合定位输入（键为字段名）
+  const [comboVals, setComboVals] = useState<Record<string, string>>({});
+  // 最近一次查找的诊断报告
+  const [lastReport, setLastReport] = useState<LocatorReport | null>(null);
+  // 调试面板开关（开发/诊断用）
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
+
+  // 组合 selections 用于渲染（收敛到当前表头，切表后旧字段不渲染、不回写）
   const selections = useMemo(() => {
-    return selectedFields.map(field => ({
+    return validSelectedFields.map(field => ({
       field,
-      userValue: fieldValues[field],
+      userValue: validFieldValues[field],
     }));
-  }, [selectedFields, fieldValues]);
+  }, [validSelectedFields, validFieldValues]);
 
   const excluded = excludedKeywords ?? EXCLUDED_DEFAULT;
 
   // 字段列表、视图模式或数值变化时通知父组件
   // 使用 useLayoutEffect 确保在组件卸载前父组件的状态已经被更新
   useLayoutEffect(() => {
-    if (selectedFields.length > 0) {
+    if (validSelectedFields.length > 0) {
       const state = {
-        selections: selectedFields
+        selections: validSelectedFields
           .map(field => ({
             field,
-            userValue: fieldValues[field],
+            userValue: validFieldValues[field],
           }))
           .filter(sel => sel.userValue !== undefined && !isNaN(sel.userValue)),
         viewMode,
       };
       onStateChangeRef.current?.(state);
     }
-  }, [selectedFields, viewMode, fieldValues]);
+  }, [validSelectedFields, viewMode, validFieldValues]);
 
   const numericFields = useMemo(() => {
     return headers.filter(h => isNumericField(h) && !excluded.some(kw => h.includes(kw)));
@@ -498,123 +564,229 @@ export default function OriginalFieldRadar({
   }, [pasteText, selections, showToast]);
 
   // 查找反馈消息
-  const [lookupMessage, setLookupMessage] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null);
+  const [lookupMessage, setLookupMessage] = useState<{
+    type: 'success' | 'error' | 'warning';
+    title?: string;
+    text: string;
+    lines?: string[];
+  } | null>(null);
   const [emptyFields, setEmptyFields] = useState<string[]>([]);
 
-  // 查找并填充某行数据（点击按钮或回车触发）。按"唯一定位字段"精确或模糊匹配。
+  // 语义标签
+  const semanticLabel: Record<LocatorSemantic, string> = {
+    identifier: '标识',
+    name: '姓名',
+    group: '分组',
+    time: '时间',
+    other: '其他',
+  };
+
+  // 清空查找结果态
+  const resetLocateUi = useCallback(() => {
+    setMatchedRows([]);
+    setShowRowPicker(false);
+  }, []);
+
+  // 集中重置"查找并填充"模块。数据源切换时必须恢复初始状态，
+  // 只清本模块业务状态，绝不触碰 图表/统计/字段选择(selectedFields,
+  // fieldValues, viewMode)/数据解析 等其他分析状态。
+  const resetSearchAndFillState = useCallback(() => {
+    setRowSearchQuery('');     // 清空搜索关键词 / 恢复默认 placeholder
+    setComboVals({});          // 清空组合定位输入
+    setMatchedRows([]);        // 清空匹配结果
+    setShowRowPicker(false);   // 关闭记录选择器
+    setLookupMessage(null);    // 清空错误/提示信息
+    setEmptyFields([]);        // 清空填充预览/空字段提示
+    setLastReport(null);       // 清空候选字段诊断
+    setShowDebugPanel(false);  // 关闭调试面板
+  }, []);
+
+  // 数据源身份变化 → 完整复位"查找并填充"模块 + 字段选择/数值业务状态。
+// 根因：组件不以 key 重挂载（RadarAnalysis 无 key），且 selectedFields/
+// fieldValues 只载入一次（useState 初始化自缓存/initialSelections）。切表后
+// 组件保持挂载，旧表字段仍留在状态里，并在每次渲染被 setRadarCache() 写回模块
+// 缓存、被 onStateChange 上报给 App → 旧字段"残留"。这里在数据身份变化时：
+//   1) 复位查找并填充（现有）；2) 将 selectedFields/fieldValues 收敛到当前表头；
+//   3) 清掉被旧字段重新污染的内存缓存。
+// 用 useLayoutEffect（绘制前执行）避免旧字段闪现。临时开发日志便于定位回写点。
+useLayoutEffect(() => {
+    if (prevDataSourceKeyRef.current !== currentDataSourceKey) {
+      prevDataSourceKeyRef.current = currentDataSourceKey;
+      const validHeaders = new Set(headers);
+
+      // 临时开发日志
+      console.info('[OriginalFieldRadar] dataset change: selectedFields=', selectedFields);
+      const oldFields = selectedFields.map(f => f);
+      const staleFields = selectedFields.filter(f => !validHeaders.has(f));
+
+      resetSearchAndFillState();
+
+      if (staleFields.length > 0) {
+        setSelectedFields(prev => prev.filter(f => validHeaders.has(f)));
+        setFieldValues(prev => {
+          const out: Record<string, number> = {};
+          for (const [k, v] of Object.entries(prev)) {
+            if (validHeaders.has(k)) out[k] = v;
+          }
+          return out;
+        });
+        // 旧字段边界清缓存，避免被 setRadarCache()/onStateChange 回写污染
+        clearOriginalFieldRadarCache();
+        console.info('[OriginalFieldRadar] pruned stale fields=', staleFields, '→', oldFields.filter(f => validHeaders.has(f)));
+      } else {
+        // 无旧字段残留，但 App 侧可能已清缓存；此处保持一致避免脏读
+        if (getRadarSelectedFieldsCache() && getRadarSelectedFieldsCache()!.some(f => !validHeaders.has(f))) {
+          clearOriginalFieldRadarCache();
+        }
+      }
+    }
+  }, [currentDataSourceKey, resetSearchAndFillState]);
+
+  // 组合定位
+  const performComboLookup = useCallback(() => {
+    const combos = Object.entries(comboVals)
+      .filter(([, v]) => v.trim() !== '')
+      .map(([field, value]) => ({ field, value }));
+    if (combos.length === 0) {
+      setLookupMessage({ type: 'warning', title: '请填写组合定位条件', text: '至少填写一个定位字段值（如 姓名 或 班级）。' });
+      return;
+    }
+    const matched = matchRowsByCombo(combos, rows, locatorAnalysis);
+    resetLocateUi();
+
+    if (matched.length === 1) {
+      fillRowData(matched[0]);
+      return;
+    }
+    if (matched.length > 1) {
+      setMatchedRows(matched);
+      setShowRowPicker(true);
+      setLookupMessage({
+        type: 'warning',
+        title: `组合条件匹配到 ${matched.length} 条记录`,
+        text: '请选择要填充的记录。',
+        lines: combos.map(c => `${c.field}：${c.value}`),
+      });
+      return;
+    }
+    setLookupMessage({
+      type: 'error',
+      title: '未找到匹配记录',
+      text: `按 ${combos.map(c => `「${c.field}=${c.value}」`).join('，')} 未找到对应记录。`,
+      lines: ['请检查组合条件是否与表格中显示一致（支持忽略空格与全半角差异）。'],
+    });
+  }, [comboVals, rows, locatorAnalysis, resetLocateUi]);
+
+  // 查找并填充某行数据（点击按钮或回车触发）。
+  // 升级为多层鲁棒识别：唯一定位字段 → 姓名/标识模糊探索 → 组合定位 → 诊断。
   const performRowLookup = useCallback(() => {
     const query = rowSearchQuery.trim();
     if (!query) {
-      setLookupMessage({ type: 'warning', text: '请输入唯一定位字段值' });
+      setLookupMessage({ type: 'warning', title: '请输入定位值', text: '请输入唯一定位字段值后查找。' });
+      resetLocateUi();
+      setLastReport(null);
       return;
     }
 
-    // 查找唯一定位字段（覆盖通用业务词；保留既有兼容词，不新增识别规则）
-    const nameField = headers.find(h => {
-      const lower = h.toLowerCase();
-      return lower.includes('姓名') || lower.includes('名称') || lower.includes('学生姓名') || lower === 'name';
-    });
-    const idField = headers.find(h => {
-      const lower = h.toLowerCase();
-      return lower.includes('编号') || lower.includes('代号') || lower.includes('编码') || lower.includes('工号')
-        || lower.includes('订单号') || lower.includes('账号') || lower.includes('id')
-        || lower.includes('学号') || lower.includes('考生号') || lower.includes('考号') || lower.includes('准考证号');
-    });
-    // 时间定位字段：只按已有 role 识别，不自行增加日期字段名判断
+    // 时间字段兜底（沿用既有 role 识别，作为最后一层策略）
     const timeField = headers.find(h => (getFieldAnalysisRole ? getFieldAnalysisRole(h) === 'time' : false));
 
-    if (!nameField && !idField) {
-      if (!timeField) {
-        setLookupMessage({ type: 'error', text: '当前数据未包含可用于记录定位的字段' });
-        return;
-      }
-      setLookupMessage({ type: 'warning', text: '未找到唯一定位字段，尝试使用时间字段定位记录' });
-    }
+    // 生成诊断报告（含各候选字段的命中统计）
+    const report = buildLocatorReport(locatorAnalysis, query, rows);
+    setLastReport(report);
+    resetLocateUi();
 
-    const queryLower = query.toLowerCase();
-
-    // 优先级1：标识精确匹配
-    if (idField) {
-      const exactIdMatch = rows.filter(row => {
-        const id = (row[idField] || '').trim();
-        return id.toLowerCase() === queryLower;
-      });
-      if (exactIdMatch.length === 1) {
-        fillRowData(exactIdMatch[0]);
-        return;
-      } else if (exactIdMatch.length > 1) {
-        setMatchedRows(exactIdMatch);
+    // ---- 策略1：优先可靠唯一标识字段精确/模糊匹配 ----
+    if (primaryIdField) {
+      const matched = matchRowsByField(primaryIdField, query, rows, { semantic: 'identifier' });
+      if (matched.length === 1) { fillRowData(matched[0]); return; }
+      if (matched.length > 1) {
+        setMatchedRows(matched);
         setShowRowPicker(true);
-        setLookupMessage({ type: 'warning', text: `找到 ${exactIdMatch.length} 条相同标识的记录，请选择` });
+        setLookupMessage({
+          type: 'warning',
+          title: `「${primaryIdField}」匹配到 ${matched.length} 条记录`,
+          text: '请选择要填充的记录。',
+        });
         return;
       }
     }
 
-    // 优先级2：名称精确匹配
-    if (nameField) {
-      const exactNameMatch = rows.filter(row => {
-        const name = (row[nameField] || '').trim();
-        return name.toLowerCase() === queryLower;
-      });
-      if (exactNameMatch.length === 1) {
-        fillRowData(exactNameMatch[0]);
+    // ---- 策略2：在识别到的所有定位候选字段间模糊探索（去空格/大小写/全半角/符号清洗）----
+    for (const cand of locatorCandidates) {
+      const matched = matchRowsByField(cand.fieldName, query, rows, { semantic: cand.semantic });
+      if (matched.length === 1) {
+        fillRowData(matched[0]);
         return;
-      } else if (exactNameMatch.length > 1) {
-        setMatchedRows(exactNameMatch);
+      }
+      if (matched.length > 1) {
+        setMatchedRows(matched);
         setShowRowPicker(true);
-        setLookupMessage({ type: 'warning', text: `找到 ${exactNameMatch.length} 条相同名称的记录，请选择` });
+        setLookupMessage({
+          type: 'warning',
+          title: `「${cand.fieldName}」匹配到 ${matched.length} 条记录`,
+          text: `存在 ${matched.length} 条同名/同值记录，可用 姓名+分组 组合定位后选择。`,
+        });
         return;
       }
     }
 
-    // 优先级3：名称模糊匹配
-    if (nameField) {
-      const fuzzyNameMatch = rows.filter(row => {
-        const name = (row[nameField] || '').trim().toLowerCase();
-        return name.includes(queryLower);
-      });
-      if (fuzzyNameMatch.length === 1) {
-        fillRowData(fuzzyNameMatch[0]);
-        return;
-      } else if (fuzzyNameMatch.length > 1) {
-        setMatchedRows(fuzzyNameMatch);
-        setShowRowPicker(true);
-        setLookupMessage({ type: 'warning', text: `找到 ${fuzzyNameMatch.length} 条匹配记录，请选择` });
+    // ---- 策略3：扫描全部文本列做自动探索（最后手段）----
+    for (const header of headers) {
+      if (locatorCandidates.some(c => c.fieldName === header)) continue;
+      const matched = matchRowsByField(header, query, rows, { semantic: 'other' });
+      if (matched.length === 1) {
+        fillRowData(matched[0]);
         return;
       }
     }
 
-    // 优先级4：时间字段定位（仅当唯一定位/名称字段均未匹配时执行）
-    // 规范化后比较，多行同日复用选择器，不自动选第一条
+    // ---- 策略4：时间字段定位（规范化后比较）----
     if (timeField) {
-      const normQuery = normalizeTimeValue(query);
+      const normQuery = lookupNormalizers.digitsOnly(query);
       const timeMatches = rows.filter(row => {
-        const val = (row[timeField] || '').trim();
-        return val !== '' && normalizeTimeValue(val) === normQuery;
+        const raw = (row[timeField] || '').trim();
+        const norm = lookupNormalizers.digitsOnly(raw);
+        const baseNorm = normQuery && norm !== '';
+        return baseNorm && norm === normQuery;
       });
-      if (timeMatches.length === 1) {
-        fillRowData(timeMatches[0]);
-        return;
-      } else if (timeMatches.length > 1) {
+      if (timeMatches.length === 1) { fillRowData(timeMatches[0]); return; }
+      if (timeMatches.length > 1) {
         setMatchedRows(timeMatches);
         setShowRowPicker(true);
-        setLookupMessage({ type: 'warning', text: `找到 ${timeMatches.length} 条记录，请选择` });
+        setLookupMessage({ type: 'warning', title: `匹配到 ${timeMatches.length} 条记录`, text: '请选择要填充的记录。' });
         return;
       }
     }
 
-    // 未找到
-    setLookupMessage({ type: 'error', text: '未找到匹配记录，请检查唯一定位字段值。' });
-    setMatchedRows([]);
-    setShowRowPicker(false);
-  }, [rowSearchQuery, headers, rows, getFieldAnalysisRole]);
+    // ---- 未找到：输出结构化诊断（替代原先的弱提示）----
+    const hasMatches = report.candidates.some(c => c.matchedCount > 0);
+    const lines: string[] = [];
+    const shown = report.candidates.slice(0, 3);
+    if (shown.length > 0) {
+      for (const c of shown) {
+        const flag = c.isUniqueField ? '（唯一）' : '';
+        lines.push(
+          `${semanticLabel[c.semantic]}「${c.fieldName}」${flag}：匹配 ${c.matchedCount} 条，识别度 ${(c.confidence * 100).toFixed(0)}%`,
+        );
+      }
+    }
+    lines.push(hasMatches ? '存在匹配但无法唯一确定，请使用组合定位。' : report.suggestion);
+
+    setLookupMessage({
+      type: 'error',
+      title: hasMatches ? '无法唯一确定记录' : '未找到可靠唯一字段',
+      text: hasMatches ? '匹配到多条候选，请补充条件精确定位。' : '未能直接定位到单条记录。',
+      lines: lines.length > 0 ? lines : undefined,
+    });
+  }, [rowSearchQuery, headers, rows, locatorAnalysis, locatorCandidates, primaryIdField, getFieldAnalysisRole, resetLocateUi]);
 
   // 填充行数据（只更新 fieldValues，不修改 selectedFields）
   const fillRowData = useCallback((row: Record<string, string>) => {
     const updates: Record<string, number> = {};
     const emptyFieldsList: string[] = [];
 
-    for (const field of selectedFields) {
+    for (const field of validSelectedFields) {
       const rawValue = row[field];
       if (rawValue !== undefined && rawValue !== null && rawValue !== '') {
         const parsed = parseNumericValue(rawValue);
@@ -636,32 +808,25 @@ export default function OriginalFieldRadar({
     // 记录空字段
     setEmptyFields(emptyFieldsList);
 
-    // 显示反馈消息
-    const nameField = headers.find(h => {
-      const lower = h.toLowerCase();
-      return lower.includes('姓名') || lower.includes('名称') || lower === 'name';
-    });
-    const idField = headers.find(h => {
-      const lower = h.toLowerCase();
-      return lower.includes('编号') || lower.includes('编码') || lower.includes('id') || lower.includes('学号') || lower.includes('考号');
-    });
-    const rowName = nameField ? row[nameField] : '';
-    const rowId = idField ? row[idField] : '';
+    // 显示反馈消息（使用鲁棒识别的定位字段作为展示名）
+    const rowName = bestNameField ? row[bestNameField] : '';
+    const rowId = (primaryIdField && row[primaryIdField]) || (bestGroupField && row[bestGroupField]) || '';
     const displayName = rowName || rowId || '记录';
 
     if (filledCount > 0) {
       setLookupMessage({ 
         type: 'success', 
+        title: '已找到并填充',
         text: `已找到：${displayName}${rowId ? ` / ${rowId}` : ''}，已填充 ${filledCount} 个字段。` 
       });
     } else {
-      setLookupMessage({ type: 'warning', text: `已找到：${displayName}，但该记录所有字段均无数据。` });
+      setLookupMessage({ type: 'warning', title: '已找到', text: `已找到：${displayName}，但该记录所有字段均无数据。` });
     }
 
     // 清空选择器
     setMatchedRows([]);
     setShowRowPicker(false);
-  }, [selectedFields, headers]);
+  }, [validSelectedFields, bestNameField, bestGroupField, primaryIdField]);
 
   // 选择行（从候选列表中选择）
   const selectRow = useCallback((row: Record<string, string>) => {
@@ -948,11 +1113,57 @@ export default function OriginalFieldRadar({
             </button>
           </div>
           <div style={styles.rowSearchHint}>
-            支持基于系统识别的标识字段定位记录
+            支持基于自识别的标识 / 姓名 / 分组字段定位记录
             <HelpPopover content={getHelp('record')} />
           </div>
 
-          {/* 查找反馈消息 */}
+          {/* 识别的定位字段（候选） */}
+          {locatorCandidates.length > 0 && (
+            <div style={styles.locatorChipRow}>
+              <span style={styles.locatorChipLabel}>已识别定位字段：</span>
+              {locatorCandidates.map(c => (
+                <span key={c.fieldName} style={styles.locatorChip}>
+                  <span style={styles.locatorChipSemantic}>{semanticLabel[c.semantic]}</span>
+                  {c.fieldName}
+                  {c.uniqueness >= 0.95 && c.semantic === 'identifier' && (
+                    <span style={styles.locatorChipUnique}>唯一</span>
+                  )}
+                  <span style={styles.locatorChipPct}>{(c.confidence * 100).toFixed(0)}%</span>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* 组合定位（无唯一标识 / 或需要姓名+分组消歧时） */}
+          {(bestNameField || bestGroupField) && (
+            <div style={styles.comboBox}>
+              <div style={styles.comboBoxHeader}>
+                <span>组合定位</span>
+                <span style={styles.comboBoxSub}>当单值无法唯一确定时，组合多个字段定位（如 姓名 + 班级）</span>
+              </div>
+              <div style={styles.comboRow}>
+                {[...new Set([bestNameField, bestGroupField])].filter((f): f is string => !!f).map(f => {
+                  const meta = locatorAnalysis.find(a => a.fieldName === f);
+                  return (
+                    <div key={f} style={styles.comboItem}>
+                      <span style={styles.comboLabel}>{f}{meta ? `（${semanticLabel[meta.semantic]}）` : ''}</span>
+                      <input
+                        type="text"
+                        style={styles.comboInput}
+                        value={comboVals[f] ?? ''}
+                        placeholder={meta?.sampleValues?.[0] ? `如 ${meta.sampleValues[0]}` : '输入值'}
+                        onChange={e => setComboVals(prev => ({ ...prev, [f]: e.target.value }))}
+                        onKeyDown={e => { if (e.key === 'Enter') performComboLookup(); }}
+                      />
+                    </div>
+                  );
+                })}
+                <button style={styles.comboButton} onClick={performComboLookup}>组合查找</button>
+              </div>
+            </div>
+          )}
+
+          {/* 查找反馈消息（支持标题 + 多行诊断） */}
           {lookupMessage && (
             <div style={{
               ...styles.lookupMessage,
@@ -960,7 +1171,13 @@ export default function OriginalFieldRadar({
               ...(lookupMessage.type === 'error' ? styles.lookupMessageError : {}),
               ...(lookupMessage.type === 'warning' ? styles.lookupMessageWarning : {}),
             }}>
-              {lookupMessage.text}
+              {lookupMessage.title && <div style={styles.lookupMessageTitle}>{lookupMessage.title}</div>}
+              <div>{lookupMessage.text}</div>
+              {lookupMessage.lines && (
+                <ul style={styles.lookupMessageLines}>
+                  {lookupMessage.lines.map((ln, i) => <li key={i}>{ln}</li>)}
+                </ul>
+              )}
             </div>
           )}
 
@@ -990,22 +1207,9 @@ export default function OriginalFieldRadar({
               </div>
               <div style={styles.rowPickerList}>
                 {matchedRows.map((row, idx) => {
-                  const nameField = headers.find(h => {
-                    const lower = h.toLowerCase();
-                    return lower.includes('姓名') || lower.includes('名称') || lower === 'name';
-                  });
-                  const idField = headers.find(h => {
-                    const lower = h.toLowerCase();
-                    return lower.includes('编号') || lower.includes('编码') || lower.includes('id') || lower.includes('学号');
-                  });
-                  // 额外分组列（如"班级/部门/地区"），用于区分多条同名记录
-                  const groupField = headers.find(h => {
-                    const lower = h.toLowerCase();
-                    return lower.includes('班级') || lower.includes('部门') || lower.includes('地区') || lower.includes('组别') || lower === 'group';
-                  });
-                  const name = nameField ? row[nameField] : '';
-                  const rowId = idField ? row[idField] : '';
-                  const groupLabel = groupField ? row[groupField] : '';
+                  const name = bestNameField ? row[bestNameField] : '';
+                  const rowId = primaryIdField ? row[primaryIdField] : '';
+                  const groupLabel = bestGroupField ? row[bestGroupField] : '';
 
                   return (
                     <div
@@ -1013,13 +1217,42 @@ export default function OriginalFieldRadar({
                       style={styles.rowPickerItem}
                       onClick={() => selectRow(row)}
                     >
-                      <span style={styles.rowPickerName}>{name}</span>
+                      <span style={styles.rowPickerName}>{name || '（无姓名）'}</span>
                       {rowId && <span style={styles.rowPickerId}>{rowId}</span>}
                       {groupLabel && <span style={styles.rowPickerClass}>{groupLabel}</span>}
                     </div>
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {/* 调试面板（开发/诊断用） */}
+          <div style={styles.debugToggleRow}>
+            <button style={styles.debugToggle} onClick={() => setShowDebugPanel(v => !v)}>
+              {showDebugPanel ? '收起诊断' : '诊断信息'}
+            </button>
+          </div>
+          {showDebugPanel && (
+            <div style={styles.debugPanel}>
+              <div style={styles.debugTitle}>字段定位诊断</div>
+              <div style={styles.debugLine}>扫描字段数量：{locatorAnalysis.length}</div>
+              {lastReport && (
+                <div style={styles.debugLine}>唯一字段：{lastReport.uniqueField ?? '未发现'}</div>
+              )}
+              <div style={styles.debugSubTitle}>识别字段：</div>
+              {locatorAnalysis.map(a => (
+                <div key={a.fieldName} style={styles.debugEntry}>
+                  <span style={styles.debugFieldName}>{a.fieldName}</span>
+                  <span style={styles.debugTag}>{semanticLabel[a.semantic]}</span>
+                  <span style={styles.debugScore}>score {a.confidence.toFixed(2)}</span>
+                  <span style={styles.debugPct}>唯一 {(a.uniqueness * 100).toFixed(0)}%</span>
+                  {a.sampleValues[0] && <span style={styles.debugSample}>例：{a.sampleValues.join(' / ')}</span>}
+                </div>
+              ))}
+              {lastReport && (
+                <div style={styles.debugSuggestion}>建议：{lastReport.suggestion}</div>
+              )}
             </div>
           )}
         </div>
@@ -1161,12 +1394,13 @@ export default function OriginalFieldRadar({
       {/* 图表 */}
       {viewMode === 'bar' && barOption && (
         <div ref={barContainerRef} style={{ minHeight: '320px', width: '100%' }}>
-          <EChartsWrapper option={barOption} chartTypes={['bar', 'radar']} style={{ height: barChartHeight, width: '100%' }} />
+          {/* 条形图只需 bar（静态注册，无需等待 radar 动态加载），避免首次进入时的骨架空白 */}
+          <EChartsWrapper option={barOption} chartTypes={['bar']} style={{ height: barChartHeight, width: '100%' }} />
         </div>
       )}
       {viewMode === 'radar' && radarOption && (
         <div ref={barContainerRef} style={{ minHeight: '320px', width: '100%' }}>
-          <EChartsWrapper option={radarOption} chartTypes={['bar', 'radar']} style={{ height: '400px', width: '100%' }} />
+          <EChartsWrapper option={radarOption} chartTypes={['radar']} style={{ height: '400px', width: '100%' }} />
         </div>
       )}
       
@@ -1764,6 +1998,189 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '12px',
     color: '#64748b',
     lineHeight: '1.5',
+  },
+  // 已识别定位字段候选
+  locatorChipRow: {
+    marginTop: '10px',
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: '6px',
+  },
+  locatorChipLabel: {
+    fontSize: '12px',
+    color: '#64748b',
+    fontWeight: 500,
+  },
+  locatorChip: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '5px',
+    padding: '3px 9px',
+    background: '#eff6ff',
+    border: '1px solid #bfdbfe',
+    borderRadius: '12px',
+    fontSize: '12px',
+    color: '#1e40af',
+    fontWeight: 500,
+  },
+  locatorChipSemantic: {
+    fontSize: '10px',
+    padding: '0 4px',
+    borderRadius: '3px',
+    background: '#dbeafe',
+    color: '#2563eb',
+  },
+  locatorChipUnique: {
+    fontSize: '10px',
+    padding: '0 4px',
+    borderRadius: '3px',
+    background: '#d1fae5',
+    color: '#059669',
+  },
+  locatorChipPct: {
+    fontSize: '11px',
+    color: '#64748b',
+    fontWeight: 400,
+  },
+  // 组合定位
+  comboBox: {
+    marginTop: '10px',
+    padding: '10px 12px',
+    background: '#fff',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
+  },
+  comboBoxHeader: {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: '8px',
+    flexWrap: 'wrap',
+    fontSize: '13px',
+    fontWeight: 600,
+    color: '#334155',
+    marginBottom: '8px',
+  },
+  comboBoxSub: {
+    fontSize: '11px',
+    fontWeight: 400,
+    color: '#94a3b8',
+  },
+  comboRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '10px',
+    alignItems: 'center',
+  },
+  comboItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '3px',
+    minWidth: '150px',
+    flex: '1 1 160px',
+  },
+  comboLabel: {
+    fontSize: '11px',
+    color: '#64748b',
+  },
+  comboInput: {
+    padding: '7px 10px',
+    border: '1px solid #cbd5e1',
+    borderRadius: '6px',
+    fontSize: '13px',
+    outline: 'none',
+  },
+  comboButton: {
+    padding: '8px 16px',
+    border: '1px solid #bfdbfe',
+    borderRadius: '6px',
+    background: '#eff6ff',
+    color: '#1d4ed8',
+    fontSize: '13px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  },
+  // 查找消息
+  lookupMessageTitle: {
+    fontSize: '13px',
+    fontWeight: 600,
+    marginBottom: '3px',
+  },
+  lookupMessageLines: {
+    margin: '6px 0 0',
+    paddingLeft: '16px',
+    fontSize: '12px',
+    lineHeight: '1.6',
+  },
+  // 调试面板
+  debugToggleRow: {
+    marginTop: '10px',
+  },
+  debugToggle: {
+    border: 'none',
+    background: 'transparent',
+    color: '#94a3b8',
+    fontSize: '12px',
+    cursor: 'pointer',
+    padding: '2px 4px',
+  },
+  debugPanel: {
+    marginTop: '8px',
+    padding: '12px',
+    background: '#0f172a',
+    borderRadius: '8px',
+    color: '#e2e8f0',
+    fontSize: '12px',
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+  },
+  debugTitle: {
+    fontSize: '13px',
+    fontWeight: 600,
+    color: '#93c5fd',
+    marginBottom: '6px',
+  },
+  debugLine: {
+    marginBottom: '4px',
+  },
+  debugSubTitle: {
+    marginTop: '8px',
+    marginBottom: '4px',
+    color: '#93c5fd',
+    fontWeight: 600,
+  },
+  debugEntry: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+    alignItems: 'center',
+    padding: '3px 0',
+    borderBottom: '1px solid #1e293b',
+  },
+  debugFieldName: {
+    fontWeight: 600,
+    color: '#e2e8f0',
+    minWidth: '90px',
+  },
+  debugTag: {
+    padding: '0 5px',
+    borderRadius: '3px',
+    background: '#334155',
+    color: '#cbd5e1',
+    fontSize: '11px',
+  },
+  debugScore: {
+    color: '#6ee7b7',
+  },
+  debugPct: {
+    color: '#fcd34d',
+  },
+  debugSample: {
+    color: '#94a3b8',
+  },
+  debugSuggestion: {
+    marginTop: '8px',
+    color: '#fcd34d',
   },
   lookupMessage: {
     marginTop: '10px',

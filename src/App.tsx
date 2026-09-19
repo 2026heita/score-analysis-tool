@@ -8,7 +8,7 @@ import type { RetailBiConnectionConfig, SalesAnomalyVO, SalesOverviewVO, SalesOv
 import { fetchAiDiagnosis } from './services/retailBiApi';
 import UsageGuide from './components/UsageGuide';
 import UpdateNotice from './components/UpdateNotice';
-import { clearOriginalFieldRadarCache } from './components/charts/OriginalFieldRadar';
+import { clearOriginalFieldRadarCache } from './components/charts/originalFieldRadarCache';
 import SampleDataSelector from './components/SampleDataSelector';
 import { isNumericField as checkIsNumericField } from './engine/analysisEngine';
 import type { SampleDataset } from './data/sampleDatasets';

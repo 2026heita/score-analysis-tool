@@ -1,10 +1,29 @@
 /**
- * v1.9.1: ECharts 按需加载 + 预加载优化。
+ * ECharts 模块加载（v2.4：显式模块导入，替换原「整包动态 import + 全部 use」）。
  *
- * - ensureECharts(): 按需 dynamic import chart/component 模块
- * - preloadECharts(): requestIdleCallback 预加载，不阻塞首屏
- * - getEChartsCore(): 同步获取已缓存的 echarts core（避免重复 import）
+ * 背景：
+ * - 旧实现 `import('echarts/charts')` + `(charts as any)[name]` 会把整个
+ *   echarts/charts、echarts/components 命名空间打进运行 chunk（各约 260KB），
+ *   既无 tree-shaking，又是 core→charts→components→renderers 四段串行 waterfall。
+ * - 现在默认高频图表（bar / line，覆盖 Histogram / GroupBar / CDF / TimeSeries）
+ *   于模块加载时静态注册，跟随 AnalysisSection / 图表 chunk，首次渲染无需动态加载。
+ * - 低频图表（boxplot / pie / radar）仍按需加载，但为显式命名导入，
+ *   由 Rollup 真正 tree-shake。
  */
+
+// 显式模块导入（可被 tree-shaking 精减）
+import * as echartsCore from 'echarts/core';
+import { BarChart, LineChart } from 'echarts/charts';
+import {
+  GridComponent,
+  TooltipComponent,
+  TitleComponent,
+  LegendComponent,
+  GraphicComponent,
+  MarkLineComponent,
+  MarkPointComponent,
+} from 'echarts/components';
+import { CanvasRenderer } from 'echarts/renderers';
 
 // 模块名映射：chart type key → echarts/charts 导出名
 const CHART_MODULE_NAMES: Record<string, string> = {
@@ -16,129 +35,163 @@ const CHART_MODULE_NAMES: Record<string, string> = {
   radar: 'RadarChart',
 };
 
-// 已加载的模块集合（全局缓存）
-const _loaded = new Set<string>();
+/** 静态注册的图表安装模块（默认高频：bar / line） */
+const STATIC_CHARTS = [BarChart, LineChart];
+/** 静态注册的组件安装模块（Title/Tooltip/Grid + bar/line 使用的扩展） */
+const STATIC_COMPONENTS = [
+  GridComponent,
+  TooltipComponent,
+  TitleComponent,
+  LegendComponent,
+  GraphicComponent,
+  MarkLineComponent,
+  MarkPointComponent,
+  CanvasRenderer,
+];
 
-// echarts 核心实例（全局缓存）
-let _core: any = null;
+/** 静态注册后即已可用的图表 + 组件名集合（用于 isEChartsReady 判定） */
+const STATIC_READY_NAMES = new Set<string>([
+  'BarChart',
+  'LineChart',
+  'GridComponent',
+  'TooltipComponent',
+  'TitleComponent',
+  'LegendComponent',
+  'GraphicComponent',
+  'MarkLineComponent',
+  'MarkPointComponent',
+  'CanvasRenderer',
+]);
 
-// 加载中的 Promise（防止重复加载）
-let _loadingPromise: Promise<any> | null = null;
+// 全局图表实例（echarts/core 命名空间，含 init()/use()）
+let _core: typeof echartsCore | null = null;
 
-/** 同步获取已缓存的 echarts core（仅在 ensureECharts 完成后可用） */
-export function getEChartsCore(): any {
+// 已注册（静态 + 动态）的模块名集合，用于 isEChartsReady 判定
+const _loadedNames = new Set<string>(STATIC_READY_NAMES);
+
+/** 静态注册默认高频模块（仅在 AnalysisSection / 图表 chunk 加载时执行一次） */
+function registerStatic(): void {
+  if (_core) return;
+  echartsCore.use([...STATIC_CHARTS, ...STATIC_COMPONENTS]);
+  _core = echartsCore;
+}
+
+/** 同步获取已注册的 echarts core */
+export function getEChartsCore(): typeof echartsCore | null {
+  registerStatic();
   return _core;
 }
 
-/** 检查指定模块是否已加载 */
+/** 检查指定图表类型所需模块是否已全部注册 */
 export function isEChartsReady(chartTypes: string[]): boolean {
+  registerStatic();
   if (!_core) return false;
   for (const t of chartTypes) {
     const name = CHART_MODULE_NAMES[t];
-    if (name && !_loaded.has(name)) return false;
+    if (name && !_loadedNames.has(name)) return false;
   }
   for (const c of getRequiredComponents(chartTypes)) {
-    if (!_loaded.has(c)) return false;
+    if (!_loadedNames.has(c)) return false;
   }
   return true;
 }
 
-/** 确保 echarts core + 指定的 chart / component 模块已加载 */
-export async function ensureECharts(chartTypes: string[]): Promise<any> {
-  // 如果正在加载中，等待完成
-  if (_loadingPromise) {
-    await _loadingPromise;
-    // 加载完成后检查是否已覆盖所需模块
-    if (isEChartsReady(chartTypes)) return _core;
-  }
+/**
+ * 确保 echarts core + 指定低频图表（boxplot / pie / radar）已加载。
+ * 静态模块（bar / line）已随 chunk 注册，这里只处理动态模块，避免串行 waterfall。
+ */
+export async function ensureECharts(chartTypes: string[]): Promise<typeof echartsCore | null> {
+  registerStatic();
+  if (!_core) return _core;
 
-  const toLoad: string[] = [];
-
-  for (const t of chartTypes) {
-    const name = CHART_MODULE_NAMES[t];
-    if (name && !_loaded.has(name)) {
-      toLoad.push(name);
-    }
-  }
-
-  const componentNames = getRequiredComponents(chartTypes);
-  for (const c of componentNames) {
-    if (!_loaded.has(c)) {
-      toLoad.push(c);
-    }
-  }
-
-  if (!_core && toLoad.length === 0) {
-    // core 未加载但模块已加载（不应该发生，但兜底）
-    toLoad.push('*core*');
-  }
-
-  if (toLoad.length === 0 && _core) return _core;
-
-  // 防止并发加载
-  _loadingPromise = _doLoad(toLoad);
-  try {
-    _core = await _loadingPromise;
-    return _core;
-  } finally {
-    _loadingPromise = null;
-  }
-}
-
-async function _doLoad(toLoad: string[]): Promise<any> {
-  // 加载 core（仅一次）
-  if (!_core) {
-    _core = await import('echarts/core');
-    _loaded.add('*core*');
-  }
-
-  // 过滤出仍需加载的模块
-  const chartModules = toLoad.filter(n => Object.values(CHART_MODULE_NAMES).includes(n) && !_loaded.has(n));
-  const compModules = toLoad.filter(n => !Object.values(CHART_MODULE_NAMES).includes(n) && !_loaded.has(n) && n !== '*core*');
+  const { chartModules, compModules } = collectMissing(chartTypes);
+  if (chartModules.length === 0 && compModules.length === 0) return _core;
 
   const modules: any[] = [];
+  const namesToLoad: string[] = [];
 
-  if (chartModules.length > 0) {
-    const charts = await import('echarts/charts');
-    for (const name of chartModules) {
-      const mod = (charts as any)[name];
-      if (mod) {
-        modules.push(mod);
-        _loaded.add(name);
-      }
-    }
+  // 低频图表：显式命名导入（Rollup 会 tree-shake）
+  if (chartModules.includes('BoxplotChart')) {
+    const { BoxplotChart: M } = await import('echarts/charts');
+    modules.push(M); namesToLoad.push('BoxplotChart');
+  }
+  if (chartModules.includes('ScatterChart')) {
+    const { ScatterChart: M } = await import('echarts/charts');
+    modules.push(M); namesToLoad.push('ScatterChart');
+  }
+  if (chartModules.includes('PieChart')) {
+    const { PieChart: M } = await import('echarts/charts');
+    modules.push(M); namesToLoad.push('PieChart');
+  }
+  if (chartModules.includes('RadarChart')) {
+    const { RadarChart: M } = await import('echarts/charts');
+    modules.push(M); namesToLoad.push('RadarChart');
   }
 
-  if (compModules.length > 0) {
-    const components = await import('echarts/components');
-    for (const name of compModules) {
-      const mod = (components as any)[name];
-      if (mod) {
-        modules.push(mod);
-        _loaded.add(name);
-      }
-    }
+  // 低频组件：显式命名导入
+  if (compModules.includes('LegendComponent')) {
+    const { LegendComponent: M } = await import('echarts/components');
+    modules.push(M); namesToLoad.push('LegendComponent');
   }
-
-  if (compModules.includes('CanvasRenderer')) {
-    const renderers = await import('echarts/renderers');
-    if ((renderers as any).CanvasRenderer) {
-      modules.push((renderers as any).CanvasRenderer);
-      _loaded.add('CanvasRenderer');
-    }
+  if (compModules.includes('RadarComponent')) {
+    const { RadarComponent: M } = await import('echarts/components');
+    modules.push(M); namesToLoad.push('RadarComponent');
   }
 
   if (modules.length > 0) {
-    _core.use(modules);
+    echartsCore.use(modules);
+    namesToLoad.forEach((n) => _loadedNames.add(n));
   }
 
   return _core;
 }
 
+/** 计算缺失的图表/组件模块名 */
+function collectMissing(chartTypes: string[]): {
+  chartModules: string[];
+  compModules: string[];
+} {
+  registerStatic();
+  const chartModules: string[] = [];
+  const compModules: string[] = [];
+  for (const t of chartTypes) {
+    const name = CHART_MODULE_NAMES[t];
+    if (name && !_loadedNames.has(name) && !chartModules.includes(name)) {
+      chartModules.push(name);
+    }
+  }
+  for (const c of getRequiredComponents(chartTypes)) {
+    if (!_loadedNames.has(c) && !compModules.includes(c)) {
+      compModules.push(c);
+    }
+  }
+  return { chartModules, compModules };
+}
+
 /**
- * v1.9.1: 使用 requestIdleCallback 预加载 echarts 模块。
- * 在用户可能触发图表前（hover / dataset ready）调用，
- * 不阻塞首屏渲染。
+ * 根据 chartTypes 推断需要的组件（足够 bar/line/boxplot/pie/radar）。
+ * 名称需与 echarts/components、echarts/renderers 的实际导出名一致。
+ */
+function getRequiredComponents(chartTypes: string[]): string[] {
+  const comps = new Set<string>();
+
+  comps.add('TitleComponent');
+  comps.add('TooltipComponent');
+  comps.add('CanvasRenderer');
+  // bar/line 静态注册时已登记，此处按需补充低频组件名
+  const needsGrid = chartTypes.some(t => ['bar', 'line', 'boxplot', 'scatter'].includes(t));
+  if (needsGrid) comps.add('GridComponent');
+  if (chartTypes.some(t => ['pie', 'radar', 'bar', 'line'].includes(t))) comps.add('LegendComponent');
+  if (chartTypes.includes('line')) comps.add('MarkPointComponent');
+  if (chartTypes.includes('bar')) comps.add('MarkLineComponent');
+  if (chartTypes.includes('radar')) comps.add('RadarComponent');
+
+  return Array.from(comps);
+}
+
+/**
+ * 低频模块（boxplot / pie / radar）在浏览器空闲期预加载。
+ * 属于纯优化项：默认 bar/line 图表首次渲染不依赖它。
  */
 export function preloadECharts(chartTypes: string[]): void {
   if (isEChartsReady(chartTypes)) return;
@@ -152,36 +205,6 @@ export function preloadECharts(chartTypes: string[]): void {
   if (typeof requestIdleCallback !== 'undefined') {
     requestIdleCallback(doPreload, { timeout: 2000 });
   } else {
-    // 降级：使用 setTimeout
     setTimeout(doPreload, 100);
   }
-}
-
-/** 根据 chartTypes 推断需要的 component */
-function getRequiredComponents(chartTypes: string[]): string[] {
-  const comps = new Set<string>();
-
-  comps.add('TitleComponent');
-  comps.add('TooltipComponent');
-  comps.add('CanvasRenderer');
-
-  const needsGrid = chartTypes.some(t => ['bar', 'line', 'boxplot', 'scatter'].includes(t));
-  if (needsGrid) {
-    comps.add('GridComponent');
-  }
-
-  const needsLegend = chartTypes.some(t => ['pie', 'radar', 'bar', 'line'].includes(t));
-  if (needsLegend) {
-    comps.add('LegendComponent');
-  }
-
-  if (chartTypes.includes('line')) {
-    comps.add('MarkPointComponent');
-  }
-
-  if (chartTypes.includes('bar')) {
-    comps.add('MarkLineComponent');
-  }
-
-  return Array.from(comps);
 }
