@@ -1,7 +1,7 @@
 {
   "name": "score-analyzer",
   "private": true,
-  "version": "2.3.0",
+  "version": "2.3.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -22,6 +22,7 @@
     "test:metric-layer": "node scripts/testMetricLayer.mjs",
     "test:export-analysis": "node scripts/testExportAnalysis.mjs",
     "test:outlier": "node --experimental-loader ./tests/ts-loader-hooks.mjs scripts/testOutlierDetection.ts",
+    "test:record-locator": "node --experimental-loader ./tests/ts-loader-hooks.mjs scripts/testRecordLocator.ts",
     "test:outlier-details": "node --experimental-loader ./tests/ts-loader-hooks.mjs scripts/testOutlierDetails.ts",
     "check:release-note": "node scripts/checkReleaseNote.mjs",
     "finalAcceptance": "node scripts/finalAcceptance.mjs"
